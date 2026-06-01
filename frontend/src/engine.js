@@ -145,12 +145,9 @@ export function initHand({ players, buttonSeat, sb, bb, ante, straddleSeat, stra
     refSeat = buyButton.seat;
     buttonFinal = buyButton.seat;
   } else {
-    // BB ante is SPREAD across the table: each player posts an equal share
-    // (round(ante / player count)) as a dead-money ante, in seat order.
-    if (ante > 0 && ps.length > 0) {
-      const per = Math.round(ante / ps.length);
-      if (per > 0) for (const p of ps) post(p, "posts_ante", per, false);
-    }
+    // Big Blind Ante: the BB posts the entire ante for the table (exact — never
+    // split per-player, which caused rounding that skewed the pot by ±1–2).
+    if (ante > 0) post(find(bbSeat), "posts_ante", ante, false);
     post(find(sbSeat), "posts_sb", sb, true);
     post(find(bbSeat), "posts_bb", bb, true);
 

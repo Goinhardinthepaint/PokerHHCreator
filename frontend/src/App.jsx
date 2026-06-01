@@ -1238,7 +1238,7 @@ const styles = {
   betInput: { width: 92, padding: "8px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 7, color: "#fde68a", fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" },
   slider: { width: 120, accentColor: "#f59e0b" },
 
-  errorInline: { color: "#fca5a5", fontSize: 13, marginBottom: 8 },
+  errorInline: { position: "absolute", top: -2, left: "50%", transform: "translate(-50%,-100%)", background: "#7f1d1d", color: "#fee2e2", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 -4px 20px rgba(239,68,68,.4)", zIndex: 20 },
 
   pickerOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
   pickerBox: { background: "#0e1626", border: "1px solid #334155", borderRadius: 12, padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,.6)" },
