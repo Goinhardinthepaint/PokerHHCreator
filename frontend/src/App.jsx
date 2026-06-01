@@ -6,7 +6,6 @@ import {
   advanceStreet,
   buildHandDict,
   computeEndStacks,
-  resolveSidePots,
   utgStraddles,
   positionLabels,
   potTotal,
@@ -263,6 +262,7 @@ export default function App() {
   const [configDraft, setConfigDraft] = useState(""); // save/restore session JSON
   const [showHistory, setShowHistory] = useState(false); // session-history modal
   const [copiedAll, setCopiedAll] = useState(false); // transient "Copied!" feedback
+  const [flash, setFlash] = useState(""); // transient green "Hand #N saved" toast
 
   const named = useMemo(() => roster.filter((p) => p.name.trim()), [roster]);
   // Session/roster are editable until betting actually starts — so the button
@@ -323,11 +323,6 @@ export default function App() {
   const nextStreet = needBoard ? STREETS[STREETS.indexOf(eng.street) + 1] : null;
   const canComplete = inBetting && eng.actorSeat == null && (eng.handOver || eng.street === "river");
   const surv = eng ? survivors(eng) : [];
-  // Multiway all-in side pots, auto-resolved by hand strength (null otherwise).
-  const potResult = useMemo(
-    () => (eng && !rit ? resolveSidePots(eng, holeCards, board) : null),
-    [eng, holeCards, board, rit]
-  );
 
   // When every surviving player has hole cards AND the board is complete, the
   // showdown can be evaluated authoritatively — the winner is no longer a guess.
@@ -511,43 +506,42 @@ export default function App() {
     if (phase === "complete") setPhase("betting");
   }
 
-  function completeHand() {
-    setPhase("complete");
-    if (surv.length >= 2 && !winner) setWinner(surv[0]);
-    if (rit && surv.length >= 2 && !winner2) setWinner2(surv[0]);
-  }
-
-  async function generate() {
+  // One click: validate the YouTube link, auto-generate the PT4 text, save it to
+  // the session, flash confirmation, and advance to the next hand.
+  async function completeHand() {
     setError("");
+    // 1. YouTube link validation
+    const link = youtubeLink.trim();
+    if (!link) return setError("Add a timestamped YouTube link before completing.");
+    if (!/youtube\.com|youtu\.be/i.test(link)) return setError("Enter a valid YouTube link (youtube.com or youtu.be).");
+    if (!/[?&](?:t|start)=/.test(link)) return setError("This link has no timestamp. Add ?t=SECONDS to the URL.");
+    // 2. Winner must be determinable — for a multiway showdown that means cards in.
+    if (surv.length >= 2 && !autoEval) {
+      return setError("Enter hole cards for every player still in so the winner can be scored.");
+    }
+
     try {
-      // When the showdown is evaluable, the evaluator's winner(s) are authoritative.
-      const effWinner = autoEval ? autoEval.winner : winner;
-      const effWinners = autoEval ? autoEval.winners : winner ? [winner] : [];
-      // Buy-the-button uses a single live blind + combined dead ante; suppress
-      // the normal SB/BB position fields so the formatter doesn't infer blinds.
-      const hand = buildHandDict(eng, { stakes, holeCards, board, board2, rit, winner: effWinner, winner2, winners: effWinners, positions: buyButton ? {} : positions });
+      const effWinner = autoEval ? autoEval.winner : winner || surv[0];
+      const effWinners = autoEval ? autoEval.winners : surv.length === 1 ? [surv[0]] : [winner || surv[0]];
+      const hand = buildHandDict(eng, { stakes, holeCards, board, board2, rit: false, winner: effWinner, winner2, winners: effWinners, positions: buyButton ? {} : positions });
       if (buyButton) hand.buy_button_seat = buyButton.seat;
-      const { url, startSec } = parseYouTube(youtubeLink);
+      const { url, startSec } = parseYouTube(link);
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
-      // The canonical timestamped link becomes the PokerTracker table name, so
-      // clicking it jumps straight to the hand in the video.
-      if (url) hand.table_name = url;
+      if (url) hand.table_name = url; // timestamped link → PT4 table name
+
       const resp = await fetch("/api/format", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hand,
-          hand_index: handNumber - 1,
-          stream_url: url,
-          start_sec: startSec,
-          end_sec: startSec,
-        }),
+        body: JSON.stringify({ hand, hand_index: handNumber - 1, stream_url: url, start_sec: startSec, end_sec: startSec }),
       });
       const data = await resp.json();
       if (!resp.ok) return setError(data.error || `Server error ${resp.status}`);
-      setPreview(data.text);
-      // Record this hand into the running session (replace if regenerated).
-      setSessionHands((hs) => [...hs.filter((h) => h.n !== handNumber), { n: handNumber, text: data.text }].sort((a, b) => a.n - b.n));
+
+      const n = handNumber;
+      setSessionHands((hs) => [...hs.filter((h) => h.n !== n), { n, text: data.text }].sort((a, b) => a.n - b.n));
+      setFlash(`Hand #${n} saved`);
+      setTimeout(() => setFlash(""), 1800);
+      nextHand(); // carries over stacks, rotates button, clears, increments hand #
     } catch (e) {
       setError(`Could not reach server: ${e.message}. Is server.py running on :8000?`);
     }
@@ -615,16 +609,6 @@ export default function App() {
     setConfigDraft("");
     setError("");
     setPhase("setup");
-  }
-
-  function download() {
-    const blob = new Blob([preview], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hand_${handNumber}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   function nextHand() {
@@ -837,6 +821,10 @@ export default function App() {
             })()}
           </div>
           <div style={styles.topMeta}>
+            <span style={styles.statTracker}>
+              Hands: <strong style={{ color: "#f8fafc" }}>{sessionHands.length}</strong>
+              {"  ·  "}Earnings: <strong style={{ color: "#4ade80" }}>${(sessionHands.length * 0.4).toFixed(2)}</strong>
+            </span>
             <span>{stakes} {Number(ante) > 0 ? `· $${ante} ante` : ""}</span>
             {phase !== "setup" && (
               <>
@@ -1105,87 +1093,8 @@ export default function App() {
         );
       })()}
 
-      {/* Complete modal */}
-      {phase === "complete" && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHead}>
-              <span>Hand #{handNumber} — Complete</span>
-              <button style={styles.miniX} onClick={() => setPhase("betting")}>✕</button>
-            </div>
-
-            {potResult ? (
-              <div style={styles.potBreakdown}>
-                <div style={styles.label}>Side pots — auto-resolved by hand strength</div>
-                {potResult.pots.map((p, i) => (
-                  <div key={i} style={styles.potRow}>
-                    <span>{p.type === "main" ? "Main pot" : potResult.pots.length > 2 ? `Side pot-${i}` : "Side pot"} · {fmtChips(p.amount)}</span>
-                    <span style={styles.potWinner}>→ {p.winners.join(", ")}</span>
-                  </div>
-                ))}
-              </div>
-            ) : autoEval ? (
-              <div style={styles.potBreakdown}>
-                <div style={styles.label}>
-                  {autoEval.winners.length >= 2 ? (
-                    <span style={styles.chopTag}>⚖ CHOPPED POT — split {autoEval.winners.length} ways</span>
-                  ) : (
-                    "Winner — decided by the cards"
-                  )}
-                </div>
-                {surv.map((n) => {
-                  const isW = autoEval.winners.includes(n);
-                  const share = Math.floor(potTotal(eng) / autoEval.winners.length);
-                  return (
-                    <div key={n} style={styles.potRow}>
-                      <span>{n} · {autoEval.descriptions[n] || ""}</span>
-                      {isW && <span style={styles.potWinner}>🏆 {autoEval.winners.length >= 2 ? "chops" : "wins"} {fmtChips(autoEval.winners.length >= 2 ? share : potTotal(eng))}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              surv.length >= 2 && (
-                <div style={styles.row}>
-                  <div style={styles.col}>
-                    <label style={styles.label}>{rit ? "Winner — Run 1" : "Winner"}</label>
-                    <select style={styles.input} value={winner} onChange={(e) => setWinner(e.target.value)}>
-                      {surv.map((n) => (<option key={n} value={n}>{n}</option>))}
-                    </select>
-                  </div>
-                  {rit && (
-                    <div style={styles.col}>
-                      <label style={styles.label}>Winner — Run 2</label>
-                      <select style={styles.input} value={winner2} onChange={(e) => setWinner2(e.target.value)}>
-                        {surv.map((n) => (<option key={n} value={n}>{n}</option>))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              )
-            )}
-
-            {surv.length >= 2 && !potResult && (
-              <label style={styles.checkRow}>
-                <input type="checkbox" checked={rit} onChange={(e) => { setRit(e.target.checked); if (e.target.checked && !winner2) setWinner2(winner || surv[0]); }} />
-                <span>Run it twice (fill Run 2 board on the table)</span>
-              </label>
-            )}
-
-            <button style={styles.genBtn} onClick={generate}>⚡ GENERATE PT4</button>
-            {error && <div style={styles.errorInline}>⚠ {error}</div>}
-
-            <pre style={styles.preview}>{preview || "Click Generate to format this hand."}</pre>
-
-            <div style={styles.modalBtns}>
-              <button style={{ ...styles.dlBtn, opacity: preview ? 1 : 0.4 }} disabled={!preview} onClick={download}>↓ This hand</button>
-              <button style={{ ...styles.dlBtn, background: "#0e7490", color: "#e0f2fe", opacity: sessionHands.length ? 1 : 0.4 }} disabled={!sessionHands.length} onClick={downloadSession}>⤓ Session ({sessionHands.length})</button>
-              <button style={styles.nextBtn} onClick={nextHand}>Next Hand ↻</button>
-            </div>
-            <div style={styles.modalNote}>Stacks carry over to the next hand · the button rotates automatically.</div>
-          </div>
-        </div>
-      )}
+      {/* Transient "Hand #N saved" confirmation */}
+      {flash && <div style={styles.flashToast}>✓ {flash}</div>}
 
       {/* Session history — full-screen view of every hand this session */}
       {showHistory && (
@@ -1241,6 +1150,8 @@ const styles = {
   topMeta: { display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "#94a3b8" },
   topBtn: { padding: "6px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   sessionBtn: { padding: "6px 12px", background: "#0e7490", border: "1px solid #155e75", borderRadius: 7, color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "6px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap" },
+  flashToast: { position: "fixed", top: 64, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: "#16a34a", color: "#f0fdf4", fontWeight: 800, fontSize: 15, letterSpacing: 0.5, padding: "12px 28px", borderRadius: 10, boxShadow: "0 8px 30px rgba(34,197,94,.5)" },
   historyOverlay: { position: "fixed", inset: 0, background: "#070b12", zIndex: 60, display: "flex", flexDirection: "column" },
   historyHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", borderBottom: "1px solid #1e293b", flexShrink: 0 },
   historyTitle: { fontSize: 16, fontWeight: 800, letterSpacing: 0.5, color: "#f8fafc" },
