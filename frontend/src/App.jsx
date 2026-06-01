@@ -260,6 +260,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [sessionHands, setSessionHands] = useState(() => pick("sessionHands", [])); // [{n, text}] accumulated PT4 hands
   const [configDraft, setConfigDraft] = useState(""); // save/restore session JSON
+  const [showHistory, setShowHistory] = useState(false); // session-history modal
+  const [copiedAll, setCopiedAll] = useState(false); // transient "Copied!" feedback
 
   const named = useMemo(() => roster.filter((p) => p.name.trim()), [roster]);
   // Session/roster are editable until betting actually starts — so the button
@@ -676,16 +678,26 @@ export default function App() {
     setBuyMenuSeat(null);
   }
 
+  // All session hands as one PT4 text block (each hand separated by 2 blank lines).
+  const sessionText = sessionHands.map((h) => h.text.trimEnd()).join("\n\n\n") + (sessionHands.length ? "\n" : "");
+
   function downloadSession() {
     if (!sessionHands.length) return;
-    const text = sessionHands.map((h) => h.text.trimEnd()).join("\n\n\n") + "\n";
-    const blob = new Blob([text], { type: "text/plain" });
+    const blob = new Blob([sessionText], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `session_${sessionHands.length}hands.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function copyAllHands() {
+    if (!sessionHands.length || !navigator.clipboard) return;
+    navigator.clipboard.writeText(sessionText).then(
+      () => { setCopiedAll(true); setTimeout(() => setCopiedAll(false), 1500); },
+      () => {}
+    );
   }
 
   // ── Layout positions ──────────────────────────────────────────────────────
@@ -831,8 +843,8 @@ export default function App() {
               </>
             )}
             {sessionHands.length > 0 && (
-              <button style={styles.sessionBtn} title="Download all session hands as one .txt" onClick={downloadSession}>
-                ⤓ Session ({sessionHands.length})
+              <button style={styles.sessionBtn} title="View, copy or download every hand this session" onClick={() => setShowHistory(true)}>
+                📋 View All Hands ({sessionHands.length})
               </button>
             )}
             <span style={styles.handTag}>Hand #{handNumber}</span>
@@ -1172,6 +1184,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Session history — full-screen view of every hand this session */}
+      {showHistory && (
+        <div style={styles.historyOverlay}>
+          <div style={styles.historyHead}>
+            <span style={styles.historyTitle}>Session History — {sessionHands.length} hand{sessionHands.length === 1 ? "" : "s"}</span>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button style={styles.histBtn} disabled={!sessionHands.length} onClick={copyAllHands}>{copiedAll ? "✓ Copied!" : "⧉ Copy All"}</button>
+              <button style={{ ...styles.histBtn, background: "#22c55e", color: "#06210f", borderColor: "#22c55e" }} disabled={!sessionHands.length} onClick={downloadSession}>↓ Download All</button>
+              <button style={styles.histBtn} onClick={() => setShowHistory(false)}>✕ Close</button>
+            </div>
+          </div>
+          <pre style={styles.historyText}>{sessionText || "No hands generated yet — generate a hand to start the session."}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -1212,6 +1239,11 @@ const styles = {
   topMeta: { display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "#94a3b8" },
   topBtn: { padding: "6px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   sessionBtn: { padding: "6px 12px", background: "#0e7490", border: "1px solid #155e75", borderRadius: 7, color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  historyOverlay: { position: "fixed", inset: 0, background: "#070b12", zIndex: 60, display: "flex", flexDirection: "column" },
+  historyHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", borderBottom: "1px solid #1e293b", flexShrink: 0 },
+  historyTitle: { fontSize: 16, fontWeight: 800, letterSpacing: 0.5, color: "#f8fafc" },
+  histBtn: { padding: "9px 16px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  historyText: { flex: 1, margin: 0, padding: "18px 24px", overflowY: "auto", background: "#06090f", color: "#a5d6a7", fontSize: 12.5, lineHeight: 1.55, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" },
   handTag: { background: "#f59e0b22", color: "#f59e0b", padding: "4px 10px", borderRadius: 20, fontWeight: 700, fontSize: 12 },
 
   tableWrap: { position: "relative", flex: 1, margin: "16px 60px 8px", minHeight: 440 },
