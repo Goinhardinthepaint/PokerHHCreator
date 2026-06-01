@@ -717,7 +717,8 @@ export default function App() {
     const s = Math.sin(ang);
     const sx = Math.sign(c) * Math.pow(Math.abs(c), p);
     const sy = Math.sign(s) * Math.pow(Math.abs(s), p);
-    return { left: 50 + 45 * sx, top: 50 + 41 * sy };
+    // Wide spread horizontally (47) vs vertically (40) for the widescreen oval.
+    return { left: 50 + 47 * sx, top: 50 + 40 * sy };
   }
 
   const actorName = hasActor ? eng.players.find((p) => p.seat === eng.actorSeat).name : "";
@@ -727,7 +728,7 @@ export default function App() {
   return (
     <div style={styles.app}>
       {/* Sidebar */}
-      <aside style={{ ...styles.sidebar, width: sidebarOpen ? 300 : 0, padding: sidebarOpen ? "20px 18px" : 0 }}>
+      <aside style={{ ...styles.sidebar, width: sidebarOpen ? 280 : 0, padding: sidebarOpen ? "20px 16px" : 0 }}>
         {sidebarOpen && (
           <div style={styles.sidebarInner}>
             <div style={styles.sideHead}>SESSION</div>
@@ -809,7 +810,7 @@ export default function App() {
         )}
       </aside>
 
-      <button style={{ ...styles.sidebarToggle, left: sidebarOpen ? 300 : 0 }} onClick={() => setSidebarOpen((o) => !o)}>
+      <button style={{ ...styles.sidebarToggle, left: sidebarOpen ? 280 : 0 }} onClick={() => setSidebarOpen((o) => !o)}>
         {sidebarOpen ? "‹" : "›"}
       </button>
 
@@ -870,7 +871,7 @@ export default function App() {
                 {rit && <div style={styles.runLabel}>RUN 1</div>}
                 <div style={styles.boardRow}>
                   {[0, 1, 2, 3, 4].map((i) => (
-                    <Card key={i} card={board[i]} size="md" faceDownIfEmpty={false} onClick={() => openBoard(i)} />
+                    <Card key={i} card={board[i]} size="lg" faceDownIfEmpty={false} onClick={() => openBoard(i)} />
                   ))}
                 </div>
                 {rit && (
@@ -878,7 +879,7 @@ export default function App() {
                     <div style={styles.runLabel}>RUN 2</div>
                     <div style={styles.boardRow}>
                       {[0, 1, 2, 3, 4].map((i) => (
-                        <Card key={i} card={board2[i]} size="md" faceDownIfEmpty={false} onClick={() => openBoard2(i)} />
+                        <Card key={i} card={board2[i]} size="lg" faceDownIfEmpty={false} onClick={() => openBoard2(i)} />
                       ))}
                     </div>
                   </>
@@ -1247,9 +1248,10 @@ const styles = {
   historyText: { flex: 1, margin: 0, padding: "18px 24px", overflowY: "auto", background: "#06090f", color: "#a5d6a7", fontSize: 12.5, lineHeight: 1.55, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" },
   handTag: { background: "#f59e0b22", color: "#f59e0b", padding: "4px 10px", borderRadius: 20, fontWeight: 700, fontSize: 12 },
 
-  tableWrap: { position: "relative", flex: 1, margin: "16px 60px 8px", minHeight: 440 },
+  tableWrap: { position: "relative", flex: 1, margin: "12px 16px 6px", minHeight: 420 },
   rail: {
-    position: "absolute", left: "2%", top: "8%", width: "96%", height: "82%", borderRadius: 9999,
+    // Wide horizontal oval filling the available width (widescreen, ~2:1+).
+    position: "absolute", left: "0.5%", top: "5%", width: "99%", height: "90%", borderRadius: 9999,
     background: "linear-gradient(160deg,#6b4423 0%,#4a2f18 45%,#2e1d0e 100%)",
     boxShadow: "0 26px 64px rgba(0,0,0,.65), inset 0 3px 8px rgba(255,255,255,.10), inset 0 -8px 24px rgba(0,0,0,.55)",
     border: "1px solid #160d05",
@@ -1282,7 +1284,7 @@ const styles = {
   potValue: { fontSize: 22, fontWeight: 800, color: "#fde68a", textShadow: "0 2px 6px rgba(0,0,0,.5)" },
   boardArea: { position: "absolute", left: "50%", top: "52%", transform: "translate(-50%,-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
   runLabel: { fontSize: 9, letterSpacing: 2, color: "#cbe8d5", opacity: 0.65, fontWeight: 700 },
-  boardRow: { display: "flex", gap: 6 },
+  boardRow: { display: "flex", gap: 12 },
 
   seat: { position: "absolute", transform: "translate(-50%,-50%)", zIndex: 5 },
   emptySeat: { width: 96, padding: "10px 8px", textAlign: "center", borderRadius: 12, border: "2px dashed #2b3a52", background: "rgba(10,15,26,.5)", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
