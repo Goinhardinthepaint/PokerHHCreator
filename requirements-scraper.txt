@@ -1,0 +1,11 @@
+# Full dependencies for the YouTube scraper pipeline (/api/run).
+# The deployed hand-builder app does NOT need these — see requirements.txt.
+# Install with:  pip install -r requirements-scraper.txt
+anthropic>=0.40.0
+opencv-python>=4.9.0
+yt-dlp>=2024.1.0
+Pillow>=10.0.0
+webvtt-py>=0.5.0
+numpy>=1.24.0
+flask>=3.0.0
+flask-cors>=4.0.0

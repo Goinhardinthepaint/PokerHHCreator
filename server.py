@@ -21,14 +21,10 @@ from flask_cors import CORS
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.ingest.youtube import ingest_youtube
-from src.video.extractor import extract_frames
-from src.video.pipeline import VideoPipeline, hand_states_to_dicts
-from src.vision.analyzer import FrameAnalyzer
-from src.transcript.parser import parse_vtt
-from src.video.detector import is_side_game
-from src.validate.validator import validate_session
-from src.export.pt4_formatter import format_session, format_hand, HandValidationError
+# Only the hand-builder formatter/evaluator are imported eagerly — they're
+# stdlib-only. The heavy scraper deps (opencv, yt-dlp, …) are imported lazily
+# inside the pipeline functions so the deployed app needs only flask/flask-cors.
+from src.export.pt4_formatter import format_hand, HandValidationError
 from src.export.hand_evaluator import evaluate_best_hand
 
 app = Flask(__name__)
@@ -54,6 +50,9 @@ def _ts_to_sec(ts):
 
 
 def _scan_transcript_side_games(vtt_path, start_sec, end_sec):
+    from src.transcript.parser import parse_vtt
+    from src.video.detector import is_side_game
+
     side_game_times = set()
     try:
         segments = parse_vtt(vtt_path)
@@ -72,6 +71,14 @@ def _scan_transcript_side_games(vtt_path, start_sec, end_sec):
 
 def _run_pipeline(params):
     """Run the full pipeline in a background thread, emitting events."""
+    # Heavy scraper deps loaded only when the scraper actually runs.
+    from src.ingest.youtube import ingest_youtube
+    from src.video.extractor import extract_frames
+    from src.video.pipeline import VideoPipeline, hand_states_to_dicts
+    from src.vision.analyzer import FrameAnalyzer
+    from src.validate.validator import validate_session
+    from src.export.pt4_formatter import format_session
+
     global _running
     _running = True
     _stop_flag.clear()
