@@ -1,0 +1,44 @@
+PokerStars Hand #81195293388:  Hold'em No Limit ($50/$100 USD) - 2026/05/19 10:05:12 ET
+Table 'Livestream M_2300-4100' 9-max Seat #1 is the button
+Seat 1: Alex ($20513 in chips)
+Seat 2: Dylan ($13213 in chips)
+Seat 3: Francisco ($16763 in chips)
+Seat 4: Otto ($50713 in chips)
+Seat 5: Airball ($4713 in chips)
+Seat 6: Steve ($10013 in chips)
+Seat 7: Greedo ($75813 in chips)
+Seat 8: Tom ($10013 in chips)
+Alex: posts the ante $13
+Dylan: posts the ante $13
+Francisco: posts the ante $13
+Otto: posts the ante $13
+Airball: posts the ante $13
+Steve: posts the ante $13
+Greedo: posts the ante $13
+Tom: posts the ante $13
+Dylan: posts small blind $50
+Airball: posts big blind $100
+*** HOLE CARDS ***
+Steve: folds
+Greedo: folds
+Tom: folds
+Alex: folds
+Dylan: folds
+Francisco: raises $16637 to $16737 and is all-in
+Otto: folds
+Airball: calls $4600 and is all-in
+*** FLOP *** [8h 5c Ks]
+Francisco: folds
+*** SHOW DOWN ***
+Airball collected $21591 from pot
+*** SUMMARY ***
+Total pot $21591 | Rake $0
+Board [8h 5c Ks]
+Seat 1: Alex folded before Flop (didn't bet)
+Seat 2: Dylan folded before Flop
+Seat 3: Francisco folded on the Flop
+Seat 4: Otto folded before Flop (didn't bet)
+Seat 5: Airball (big blind) collected ($21591)
+Seat 6: Steve (big blind) folded before Flop (didn't bet)
+Seat 7: Greedo folded before Flop (didn't bet)
+Seat 8: Tom folded before Flop (didn't bet)

@@ -1,0 +1,34 @@
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# ── Node ─────────────────────────────────────────────────
+node_modules/
+
+# ── Secrets / local env ──────────────────────────────────
+.env
+.env.*
+*.local
+
+# ── Large scraper media (multi-GB — never commit) ────────
+downloads/
+*.mp4
+*.webm
+*.mkv
+
+# ── Scraper-generated caches / binaries ──────────────────
+output/frames_cache_*.json
+output/grids/
+output/*.png
+output/*.jpg
+output/*.jpeg
+*.vtt
+
+# ── OS / editor ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,44 @@
+PokerStars Hand #166001110417:  Hold'em No Limit ($50/$100 USD) - 2026/05/21 15:53:14 ET
+Table 'HCL_54m00s-57m00s p0Q7LW64ecM' 9-max Seat #1 is the button
+Seat 1: Greedo ($13567 in chips)
+Seat 2: Francisco ($10017 in chips)
+Seat 3: Dylan ($18167 in chips)
+Seat 4: Otto ($47717 in chips)
+Seat 5: Steve ($48467 in chips)
+Seat 6: Airball ($19717 in chips)
+Otto: posts the ante $100
+Steve: posts the ante $100
+Airball: posts the ante $100
+Greedo: posts the ante $100
+Francisco: posts the ante $100
+Dylan: posts the ante $100
+Francisco: posts small blind $50
+Dylan: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Steve [As 9h]
+Dealt to Airball [Ac Jd]
+Otto: folds
+Steve: calls $100
+Airball: raises $3900 to $4000
+Greedo: folds
+Francisco: folds
+Dylan: folds
+*** FLOP *** [8d Td 8c]
+Steve: bets $100
+Airball: raises $3400 to $3500
+Steve: folds
+Uncalled bet ($3400) returned to Airball
+*** SHOW DOWN ***
+Greedo: shows [Ks Kd] (One pair, Kings — wins after Dylan folds to flop bet)
+Dylan: shows [9d 8d] (Three of a kind, Eights with 9-Q kickers — folded to Greedo's flop bet)
+Greedo collected $5050 from pot
+*** SUMMARY ***
+Total pot $5050 | Rake $0
+Board [8d Td 8c]
+Seat 1: Greedo showed [Ks Kd] and won ($5050) with One pair, Kings — wins after Dylan folds to flop bet
+Seat 2: Francisco (small blind) folded before Flop
+Seat 3: Dylan (big blind) showed [9d 8d] and lost with Three of a kind, Eights with 9-Q kickers — folded to Greedo's flop bet
+Seat 4: Otto folded before Flop (didn't bet)
+Seat 5: Steve folded on the Flop
+Seat 6: Airball mucked hand
+

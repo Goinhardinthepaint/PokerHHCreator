@@ -1,0 +1,1400 @@
+[
+  {
+    "hand_num": 2,
+    "players": [
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "STR",
+        "stack": 20700,
+        "hole_cards": [
+          "Qh",
+          "3d"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "UTG+1",
+        "stack": 48800,
+        "hole_cards": [
+          "Qs",
+          "3c"
+        ]
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "UTG+2",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "CO",
+        "stack": 16000,
+        "hole_cards": [
+          "Qc",
+          "3h"
+        ]
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "BTN",
+        "stack": 18950,
+        "hole_cards": [
+          "9d",
+          "8h"
+        ]
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "SB",
+        "stack": 18700,
+        "hole_cards": [
+          "7s",
+          "5h"
+        ]
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "BB",
+        "stack": 51250,
+        "hole_cards": [
+          "6c",
+          "4h"
+        ]
+      }
+    ],
+    "straddle": {
+      "player": "Alex",
+      "amount": 200
+    },
+    "action": {
+      "preflop": [
+        {
+          "player": "Alex",
+          "action": "posts_straddle",
+          "amount": 200
+        },
+        {
+          "player": "Airball",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Steve",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 150
+        },
+        {
+          "player": "Otto",
+          "action": "calls",
+          "amount": 100
+        },
+        {
+          "player": "Alex",
+          "action": "checks",
+          "amount": 0
+        }
+      ],
+      "flop": [
+        {
+          "player": "Dylan",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "bets",
+          "amount": 200
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "turn": [
+        {
+          "player": "Dylan",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "bets",
+          "amount": 1300
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 1300
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "river": [
+        {
+          "player": "Dylan",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        }
+      ]
+    },
+    "board": {
+      "flop": [
+        "Ad",
+        "5d",
+        "Td"
+      ],
+      "turn": "Jh",
+      "river": "7d"
+    },
+    "showdown": [],
+    "pot": 3700,
+    "notes": "Alex's position is UTG, Airball is UTG+1, Steve is UTG+2. Blinds/Ante: $50(SB)+$100(BB)+$100(Ante)=$250. Preflop contributions: Alex $200 (straddle), Dylan $50 (SB) + $150 (call) = $200, Otto $100 (BB) + $100 (call) = $200. Total calculated preflop pot: $250 + $200 + $150 + $100 = $700. The overlay shows POT $400 at the end of preflop, POT $600 after Alex's flop bet, POT $800 after Dylan's flop call, and POT $2100 after Alex's turn bet. These overlay pot amounts are inconsistent with the documented blinds, straddle, and betting actions. Dylan's preflop 'CALL $100' overlay is incorrect; his stack change indicates he called $150. The video segment ends after Dylan checks the river; Alex's river action is not shown."
+  },
+  {
+    "hand_num": 3,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "HJ",
+        "stack": 16000,
+        "hole_cards": [
+          "Ks",
+          "8h"
+        ]
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "CO",
+        "stack": 20750,
+        "hole_cards": [
+          "As",
+          "Qh"
+        ]
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "BTN",
+        "stack": 17200,
+        "hole_cards": null
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "SB",
+        "stack": 51200,
+        "hole_cards": [
+          "Ah",
+          "2d"
+        ]
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "BB",
+        "stack": 20500,
+        "hole_cards": [
+          "3s",
+          "2h"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "STR",
+        "stack": 48800,
+        "hole_cards": null
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "UTG+1",
+        "stack": null,
+        "hole_cards": null
+      }
+    ],
+    "straddle": {
+      "player": "Airball",
+      "amount": 200
+    },
+    "action": {
+      "preflop": [
+        {
+          "player": "Airball",
+          "action": "posts_straddle",
+          "amount": 200
+        },
+        {
+          "player": "Steve",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Otto",
+          "action": "raises",
+          "amount": 700
+        },
+        {
+          "player": "Alex",
+          "action": "calls",
+          "amount": 700
+        },
+        {
+          "player": "Airball",
+          "action": "raises",
+          "amount": 4000
+        },
+        {
+          "player": "Francisco",
+          "action": "calls",
+          "amount": 4000
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 4000
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [
+        {
+          "player": "Airball",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "all_in",
+          "amount": 16750
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 13200
+        },
+        {
+          "player": "Airball",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "turn": [],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "3d",
+        "8c",
+        "9c"
+      ],
+      "turn": "Jd",
+      "river": "Kh"
+    },
+    "showdown": [
+      {
+        "player": "Francisco",
+        "hole_cards": [
+          "As",
+          "Qh"
+        ],
+        "hand_description": "Board 1: King-high straight (K\u2665 Q\u2665 J\u2666 9\u2663 8\u2663). Wins half pot. Board 2: Pair of Queens (Q\u2665 Q\u2663) with Ace kicker. Wins half pot.",
+        "result": "wins"
+      },
+      {
+        "player": "Dylan",
+        "hole_cards": [
+          "Ks",
+          "5d"
+        ],
+        "hand_description": "Board 1: Pair of Kings (K\u2660 K\u2665) with J\u2666 kicker. Loses half pot. Board 2: King-high (K\u2660 Q\u2663 J\u2663 9\u2663 8\u2663). Loses half pot.",
+        "result": "loses"
+      }
+    ],
+    "pot": 38650,
+    "notes": "Dylan and Francisco ran it twice. The community cards for the second board were: Flop 3\u2666 8\u2663 9\u2663, Turn J\u2663, River Q\u2663. Based on the visible cards, Francisco wins both boards: Board 1 with a King-high straight (K\u2665 Q\u2665 J\u2666 9\u2663 8\u2663) and Board 2 with a pair of Queens (Q\u2665 Q\u2663) with Ace kicker (A\u2660 J\u2663 9\u2663). Dylan's best hands were a pair of Kings (K\u2660 K\u2665) on Board 1 and a King-high hand (K\u2660 Q\u2663 J\u2663 9\u2663 8\u2663) on Board 2. Therefore, Francisco should scoop the entire pot. However, the commentator states 'Dylan scoops' and the overlay graphics at 41:06 show 'FRANCISCO CO Wins $3,550' and 'DYLAN BTN Wins $21,450', which directly contradicts the card-based showdown results."
+  },
+  {
+    "hand_num": 4,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "UTG+1",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "HJ",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "CO",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "BTN",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "UTG",
+        "stack": 19600,
+        "hole_cards": [
+          "Qd",
+          "7d"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "UTG+1",
+        "stack": 42300,
+        "hole_cards": [
+          "As",
+          "5h"
+        ]
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "BB",
+        "stack": 19700,
+        "hole_cards": [
+          "6s",
+          "5s"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Alex",
+          "action": "raises",
+          "amount": 900
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "raises",
+          "amount": 2500
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Steve",
+          "action": "calls",
+          "amount": 2200
+        }
+      ],
+      "flop": [
+        {
+          "player": "Airball",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Steve",
+          "action": "bets",
+          "amount": 2000
+        },
+        {
+          "player": "Airball",
+          "action": "calls",
+          "amount": 2000
+        }
+      ],
+      "turn": [
+        {
+          "player": "Airball",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Steve",
+          "action": "bets",
+          "amount": 3000
+        },
+        {
+          "player": "Airball",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Steve",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "8h",
+        "4s",
+        "Kc"
+      ],
+      "turn": "Qs",
+      "river": null
+    },
+    "showdown": [],
+    "pot": 12300,
+    "notes": "Player positions in the prior analysis's JSON did not match their active roles in this specific hand (Alex was UTG, Airball UTG+1, Steve BB). Stack sizes and hole cards for Alex and Steve were also incorrect or missing in the prior analysis's JSON. The initial pot at 42:38 was $300, indicating $50/100 blinds plus likely an ante. The commentator incorrectly stated 'Airball takes it down on the flop' at 43:18; Steve actually won the pot on the turn when Airball folded. The pot size displayed at 44:50 ($9,400) had a minor discrepancy from calculated pot ($9,300) after flop action. The final pot reflects Steve's win on the turn."
+  },
+  {
+    "hand_num": 5,
+    "players": [
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "BTN",
+        "stack": 15000,
+        "hole_cards": [
+          "Kh",
+          "Ks"
+        ]
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "HJ",
+        "stack": 35450,
+        "hole_cards": [
+          "9s",
+          "8d"
+        ]
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "CO",
+        "stack": 48200,
+        "hole_cards": [
+          "Ad",
+          "4d"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Alex",
+          "action": "raises",
+          "amount": 4000
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 4000
+        },
+        {
+          "player": "Otto",
+          "action": "raises",
+          "amount": 15000
+        },
+        {
+          "player": "Alex",
+          "action": "all_in",
+          "amount": 15000
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [],
+      "turn": [],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "4s",
+        "Js",
+        "Qd"
+      ],
+      "turn": "Kd",
+      "river": "4h"
+    },
+    "showdown": [
+      {
+        "player": "Alex",
+        "hole_cards": [
+          "Kh",
+          "Ks"
+        ],
+        "hand_description": "Board 1: Full House, Kings full of Fours (K K K 4 4). Board 2: Pair of Kings, Ace kicker (K K A Q J)",
+        "result": "wins"
+      },
+      {
+        "player": "Otto",
+        "hole_cards": [
+          "Ad",
+          "4d"
+        ],
+        "hand_description": "Board 1: Full House, Fours full of Kings (4 4 4 K A). Board 2: Two Pair, Aces and Fours (A A 4 4 Q)",
+        "result": "wins"
+      }
+    ],
+    "pot": 39400,
+    "notes": "The overlay graphic showing 'SB' next to Alex's stack at 45:00 is inconsistent with Alex having the dealer button. The provided player roster for the session was used for player positions (Alex BTN, Dylan HJ, Otto CO) and confirmed consistent with a 6-max table where Alex is BTN. The initial pot of $9,400 at 45:00 is assumed to be the result of earlier preflop actions. Dylan's action to Otto's raise is a fold, despite a brief overlay graphic stating 'DYLAN RAISE $11,000'. This is inferred because the final pot of $39,400 only accounts for contributions from Alex ($15,000) and Otto ($15,000) plus initial contributions that built the $9,400 pot, and because the players discuss running it twice, which implies only two players remain in the pot. The preflop actions 'raises 4000', 'calls 4000', 'raises 15000', 'all_in 15000' should be interpreted as 'raises to 4000', 'calls to 4000', 'raises to 15000', 'all-in for 15000 total', respectively. The board was run twice. Board 1 turn: K\u2666, river: 4\u2665. Board 2 turn: 8\u2665, river: A\u2660. Actual hand evaluation shows Alex wins Board 1 (KKK44 beats 444KK) and Otto wins Board 2 (AA44Q beats KKAQJ), resulting in a pot split. This contradicts the commentary 'Alex scoops' and the 'ALEX WINS $21,400' graphic (not exactly half of the $39,400 pot)."
+  },
+  {
+    "hand_num": 6,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "BB",
+        "stack": 15600,
+        "hole_cards": [
+          "Ts",
+          "3d"
+        ]
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "UTG",
+        "stack": 18350,
+        "hole_cards": [
+          "9s",
+          "5h"
+        ]
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "UTG+1",
+        "stack": 20450,
+        "hole_cards": null
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "HJ",
+        "stack": 47900,
+        "hole_cards": [
+          "9h",
+          "6d"
+        ]
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "CO",
+        "stack": 39000,
+        "hole_cards": [
+          "8c",
+          "7d"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "BTN",
+        "stack": 47350,
+        "hole_cards": [
+          "Ad",
+          "4s"
+        ]
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "SB",
+        "stack": 19300,
+        "hole_cards": [
+          "6h",
+          "6c"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Francisco",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "calls",
+          "amount": 350
+        },
+        {
+          "player": "Steve",
+          "action": "raises",
+          "amount": 400
+        },
+        {
+          "player": "Greedo",
+          "action": "calls",
+          "amount": 3900
+        },
+        {
+          "player": "Airball",
+          "action": "raises",
+          "amount": 4000
+        },
+        {
+          "player": "Steve",
+          "action": "all_in",
+          "amount": 19700
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "calls",
+          "amount": 3800
+        },
+        {
+          "player": "Airball",
+          "action": "calls",
+          "amount": 15700
+        },
+        {
+          "player": "Francisco",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [],
+      "turn": [],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "5d",
+        "Jc",
+        "Jh"
+      ],
+      "turn": "7h",
+      "river": "3s"
+    },
+    "showdown": [
+      {
+        "player": "Airball",
+        "hole_cards": [
+          "Ad",
+          "4s"
+        ],
+        "hand_description": "Two pair, Jacks and Fours",
+        "result": "loses"
+      },
+      {
+        "player": "Steve",
+        "hole_cards": [
+          "6h",
+          "6c"
+        ],
+        "hand_description": "Two pair, Jacks and Sixes",
+        "result": "wins"
+      }
+    ],
+    "pot": 39800,
+    "notes": "The preflop action displays are highly inconsistent. The values for 'to call' and player stacks do not always reconcile. The amounts provided are based on direct observation of the 'TO CALL' overlays for the specific player's action when it's displayed, or the most logically consistent value based on surrounding explicit data points. Specifically, Airball's first call of $350 is shown at 48:00 ('$350 TO CALL'), and his second call of $15,700 is shown at 48:21 ('$15,700 TO CALL'). Francisco's calls of $200 (inferred initial to match current bet) and $3,800 are consistent with his '$3,800 TO CALL' at 48:07. Greedo's call of $3,900 is explicitly shown as '$3,900 TO CALL' at 48:02. Steve's all-in amount is taken as $19,700 based on Airball's call of '$19,700' to match Steve, despite Steve's overlay showing '$18,700' next to his name, which is a clear contradiction in the video's graphics."
+  },
+  {
+    "hand_num": 7,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "SB",
+        "stack": 18100,
+        "hole_cards": null
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "BB",
+        "stack": 18100,
+        "hole_cards": null
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "UTG",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "UTG+1",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "HJ",
+        "stack": 39000,
+        "hole_cards": [
+          "8h",
+          "7s"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "CO",
+        "stack": 27700,
+        "hole_cards": [
+          "Ad",
+          "7d"
+        ]
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "BTN",
+        "stack": 39800,
+        "hole_cards": [
+          "As",
+          "Jh"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "raises",
+          "amount": 300
+        },
+        {
+          "player": "Alex",
+          "action": "calls",
+          "amount": 300
+        },
+        {
+          "player": "Airball",
+          "action": "raises",
+          "amount": 5000
+        },
+        {
+          "player": "Steve",
+          "action": "calls",
+          "amount": 5000
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Francisco",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [
+        {
+          "player": "Alex",
+          "action": "bets",
+          "amount": 100
+        },
+        {
+          "player": "Airball",
+          "action": "raises",
+          "amount": 3000
+        },
+        {
+          "player": "Steve",
+          "action": "calls",
+          "amount": 3000
+        }
+      ],
+      "turn": [
+        {
+          "player": "Alex",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "bets",
+          "amount": 19700
+        },
+        {
+          "player": "Steve",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "2s",
+        "6d",
+        "3c"
+      ],
+      "turn": "Jd",
+      "river": null
+    },
+    "showdown": [],
+    "pot": 36550,
+    "notes": "Starting stacks for Greedo and Francisco ($18,100) are approximated from a different hand later in the video at 53:54. For this hand (at 51:00), Alex's overlay indicates a stack of $38,700 after calling $300, making his initial stack $39,000. Airball's overlay indicates a stack of $22,700 after 3-betting $5,000, making his initial stack $27,700. Steve's overlay indicates a stack of $39,500 before calling $4,700 (to match Airball's $5,000 bet), implying $300 was already in, so his initial stack was $39,800. There's an inconsistency in Alex's stack display: after calling $300 preflop, his displayed stack is $38,700; however, on the flop, when he bets $100, his remaining stack is displayed as $34,700. This implies a $4,000 loss between preflop and flop that is not accounted for in the visible action. Hole card inconsistency: Steve's player overlay at 51:00 shows A\u2665 J\u2660, but he reveals A\u2660 J\u2665 at 53:03. Airball's player overlay at 51:00 shows A\u2660 7\u2663, but he reveals A\u2666 7\u2666 at 53:03. The revealed cards are used in the JSON. Pot value inconsistencies are noted: Pot shows $6,150 at 51:00, then $10,850 at 51:36 (after Steve calls $5,000, expected $11,150). Pot shows $16,850 at 52:08 (after flop actions, expected $16,950). Airball makes an all-in bet on the turn, and both Steve and Alex fold, making Airball the winner of the $36,550 pot. The 'STEVE WINS' graphic at 52:57 is a summary for a different hand."
+  },
+  {
+    "hand_num": 8,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "BTN",
+        "stack": 15550,
+        "hole_cards": [
+          "Kh",
+          "Kd"
+        ]
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "SB",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "BB",
+        "stack": 20200,
+        "hole_cards": [
+          "9h",
+          "8d"
+        ]
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "UTG",
+        "stack": 47500,
+        "hole_cards": [
+          "Js",
+          "3d"
+        ]
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "UTG+1",
+        "stack": 38300,
+        "hole_cards": [
+          "6h",
+          "4c"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "raises",
+          "amount": 400
+        },
+        {
+          "player": "Greedo",
+          "action": "raises",
+          "amount": 2000
+        },
+        {
+          "player": "Francisco",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 1950
+        },
+        {
+          "player": "Alex",
+          "action": "calls",
+          "amount": 1600
+        }
+      ],
+      "flop": [
+        {
+          "player": "Dylan",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Alex",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Greedo",
+          "action": "bets",
+          "amount": 3000
+        },
+        {
+          "player": "Dylan",
+          "action": "calls",
+          "amount": 3000
+        },
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "turn": [
+        {
+          "player": "Dylan",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Greedo",
+          "action": "bets",
+          "amount": 8000
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "Qd",
+        "Td",
+        "7d"
+      ],
+      "turn": "4h",
+      "river": null
+    },
+    "showdown": [
+      {
+        "player": "Greedo",
+        "hole_cards": [
+          "Kh",
+          "Kd"
+        ],
+        "hand_description": "pair of Kings",
+        "result": "wins"
+      }
+    ],
+    "pot": 20200,
+    "notes": "The video segment 54:00-55:30 depicts a different hand. Hand #8 is assumed to start around 55:40.\nPlayer positions are inconsistent in overlays: Dylan is labeled 'SB' at 55:59 but is in the BB position. Otto is labeled 'BB' at 55:57 but is UTG. Player positions are inferred from typical action order for a $50/100 NL game.\nPlayer stacks: Greedo's starting stack (15550) is derived from his displayed stack (13550) after his preflop 3-bet of $2,000. Alex's hole cards (6h 4c) are shown at 55:54. Dylan's preflop call of $1,950 is confirmed by his stack change from $20,200 to $18,250.\nPot values are highly inconsistent: The calculated preflop pot based on explicit bets and blinds is $5,700, but the video overlay shows $4,600 at 55:57. Subsequent pot updates on the flop ($9,200) and turn ($20,200) are consistent with the explicit bet amounts from the previous round (e.g., Flop pot $9,200 = previous displayed pot $4,600 + Greedo bet $3,000 + Dylan call $3,000 = $10,600, which is not $9,200, but the video updates pot to $9,200 (56:14), then $9,200 + $3,000 (Dylan call) = $12,200 (56:28). Then $12,200 + $8,000 (Greedo bet) = $20,200 (56:47)). The final pot is reported as seen in the last relevant overlay ($20,200).\nGiven these inconsistencies, explicit bet/call amounts are reported based on the action display in the video. Greedo's preflop raise amount of $2,000 is interpreted as the total bet, while calls are interpreted as the additional amount contributed. The final pot and player stacks are reported as seen in the last relevant overlay, with starting stacks derived from subsequent bets where necessary for consistency."
+  },
+  {
+    "hand_num": 9,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "CO",
+        "stack": 22750,
+        "hole_cards": [
+          "Kh",
+          "Kc"
+        ]
+      },
+      {
+        "seat": 2,
+        "name": "Francisco",
+        "position": "BTN",
+        "stack": 13900,
+        "hole_cards": [
+          "Ah",
+          "4c"
+        ]
+      },
+      {
+        "seat": 3,
+        "name": "Dylan",
+        "position": "SB",
+        "stack": 15250,
+        "hole_cards": null
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "BB",
+        "stack": 47450,
+        "hole_cards": [
+          "Jd",
+          "3s"
+        ]
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "UTG",
+        "stack": 36500,
+        "hole_cards": [
+          "Ad",
+          "4d"
+        ]
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "UTG+1",
+        "stack": 24050,
+        "hole_cards": [
+          "Qs",
+          "9d"
+        ]
+      },
+      {
+        "seat": 7,
+        "name": "Steve",
+        "position": "HJ",
+        "stack": 44350,
+        "hole_cards": null
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Alex",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Steve",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Greedo",
+          "action": "calls",
+          "amount": 200
+        },
+        {
+          "player": "Francisco",
+          "action": "raises",
+          "amount": 4200
+        },
+        {
+          "player": "Dylan",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Airball",
+          "action": "calls",
+          "amount": 4200
+        },
+        {
+          "player": "Steve",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [
+        {
+          "player": "Airball",
+          "action": "bets",
+          "amount": 13900
+        },
+        {
+          "player": "Francisco",
+          "action": "all_in",
+          "amount": 9700
+        }
+      ],
+      "turn": [],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "8s",
+        "Ts",
+        "3h"
+      ],
+      "turn": "4s",
+      "river": "Js"
+    },
+    "showdown": [
+      {
+        "player": "Airball",
+        "hole_cards": [
+          "Qs",
+          "9d"
+        ],
+        "hand_description": "Queen-high straight",
+        "result": "wins"
+      },
+      {
+        "player": "Francisco",
+        "hole_cards": [
+          "Ah",
+          "4c"
+        ],
+        "hand_description": "Pair of Fours, Ace-high",
+        "result": "loses"
+      }
+    ],
+    "pot": 28900,
+    "notes": "Dylan's initial stack ($15,250) is inferred from a general overlay at 57:00, not specific to this hand. Francisco's initial stack was $13,900. After raising $4,200 preflop, his remaining stack was $9,700. When Airball bet $13,900 on the flop, Francisco went all-in for his remaining $9,700 (overlay shows 'CALL $13,900' but also 'Francisco $0 CO'). The calculated pot based on player contributions is approximately $28,750. The overlay at 59:04 explicitly shows 'POT $22,750' in the top right, but also 'AIRBALL WINS $4,650, $28,900'. The $28,900 figure is used for the pot for consistency with the prior analysis and its closer proximity to the calculated value, despite the 'POT' graphic showing $22,750."
+  },
+  {
+    "hand_num": 10,
+    "players": [
+      {
+        "seat": 1,
+        "name": "Greedo",
+        "position": "LJS",
+        "stack": 22350,
+        "hole_cards": [
+          "Js",
+          "9s"
+        ]
+      },
+      {
+        "seat": 4,
+        "name": "Otto",
+        "position": "BTN",
+        "stack": 44450,
+        "hole_cards": [
+          "9h",
+          "8h"
+        ]
+      },
+      {
+        "seat": 5,
+        "name": "Alex",
+        "position": "SB",
+        "stack": null,
+        "hole_cards": null
+      },
+      {
+        "seat": 6,
+        "name": "Airball",
+        "position": "BB",
+        "stack": 28700,
+        "hole_cards": [
+          "5s",
+          "2h"
+        ]
+      }
+    ],
+    "straddle": null,
+    "action": {
+      "preflop": [
+        {
+          "player": "Greedo",
+          "action": "calls",
+          "amount": 3000
+        },
+        {
+          "player": "Airball",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "flop": [
+        {
+          "player": "Greedo",
+          "action": "checks",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "bets",
+          "amount": 2500
+        },
+        {
+          "player": "Greedo",
+          "action": "folds",
+          "amount": 0
+        },
+        {
+          "player": "Otto",
+          "action": "folds",
+          "amount": 0
+        }
+      ],
+      "turn": [],
+      "river": []
+    },
+    "board": {
+      "flop": [
+        "Qd",
+        "Th",
+        "Ts"
+      ],
+      "turn": null,
+      "river": null
+    },
+    "showdown": [],
+    "pot": 8950,
+    "notes": "Stakes are 50/100 NL with $100 BB ante. Hand starts in the middle of preflop betting. At 60:00, the pot is $3,850. Otto (BTN) had previously raised to $3,000 (implied from overlay text). Greedo (LJS) had $400 invested, facing $2,600 to call for a total of $3,000. Airball (BB) had $200 invested (likely BB + ante), facing $2,800 to call for a total of $3,000. Alex (SB) is not shown but would have posted $50 blind. The position 'LJS' for Greedo is from the overlay and is a non-standard position name; player order inferred from visible action in the clip. Alex (SB) is assumed to have folded preflop before actions shown in the clip. Flop cards are definitively Q\u2666 T\u2665 T\u2660."
+  }
+]

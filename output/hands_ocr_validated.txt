@@ -1,0 +1,29 @@
+PokerStars Hand #621229534107:  Hold'em No Limit ($50/$100 USD) - 2026/05/19 08:04:44 ET
+Table 'Livestream M_2300-4100' 9-max Seat #2 is the button
+Seat 1: Francisco ($20575 in chips)
+Seat 2: Dylan ($16525 in chips)
+Seat 3: Airball ($44825 in chips)
+Seat 4: Tom ($9925 in chips)
+Francisco: posts the ante $25
+Dylan: posts the ante $25
+Airball: posts the ante $25
+Tom: posts the ante $25
+Airball: posts small blind $50
+Tom: posts big blind $100
+*** HOLE CARDS ***
+Francisco: calls $100
+Dylan: raises $600 to $700
+Airball: raises $3300 to $4000
+Tom: folds
+Francisco: calls $3900
+Dylan: calls $3300
+Francisco: folds
+Dylan: folds
+*** SHOW DOWN ***
+Airball collected $12200 from pot
+*** SUMMARY ***
+Total pot $12200 | Rake $0
+Seat 1: Francisco folded before Flop
+Seat 2: Dylan (button) folded before Flop
+Seat 3: Airball collected ($12200)
+Seat 4: Tom folded before Flop

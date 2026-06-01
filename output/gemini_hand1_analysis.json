@@ -1,0 +1,164 @@
+{
+  "players": [
+    {
+      "seat": 1,
+      "name": "Greedo",
+      "position": "BTN",
+      "hole_cards": [
+        "Ad",
+        "4d"
+      ],
+      "stack": 19000
+    },
+    {
+      "seat": 2,
+      "name": "Francisco",
+      "position": "SB",
+      "hole_cards": [],
+      "stack": 18950
+    },
+    {
+      "seat": 3,
+      "name": "Dylan",
+      "position": "BB",
+      "hole_cards": [
+        "Ts",
+        "5s"
+      ],
+      "stack": 18000
+    },
+    {
+      "seat": 4,
+      "name": "Otto",
+      "position": "UTG",
+      "hole_cards": [
+        "Tc",
+        "8c"
+      ],
+      "stack": 24000
+    },
+    {
+      "seat": 5,
+      "name": "Alex",
+      "position": "HJ",
+      "hole_cards": [
+        "Ah",
+        "5h"
+      ],
+      "stack": 22000
+    },
+    {
+      "seat": 6,
+      "name": "Airball",
+      "position": "CO",
+      "hole_cards": [
+        "8h",
+        "2h"
+      ],
+      "stack": 48800
+    }
+  ],
+  "straddle": null,
+  "action": {
+    "preflop": [
+      {
+        "player": "Greedo",
+        "action": "raises",
+        "amount": 450
+      },
+      {
+        "player": "Francisco",
+        "action": "folds",
+        "amount": 0
+      },
+      {
+        "player": "Dylan",
+        "action": "folds",
+        "amount": 0
+      },
+      {
+        "player": "Otto",
+        "action": "calls",
+        "amount": 450
+      },
+      {
+        "player": "Alex",
+        "action": "3-bets",
+        "amount": 3000
+      },
+      {
+        "player": "Airball",
+        "action": "folds",
+        "amount": 0
+      },
+      {
+        "player": "Greedo",
+        "action": "calls",
+        "amount": 3000
+      },
+      {
+        "player": "Otto",
+        "action": "calls",
+        "amount": 2400
+      }
+    ],
+    "flop": [
+      {
+        "player": "Otto",
+        "action": "checks",
+        "amount": 0
+      },
+      {
+        "player": "Alex",
+        "action": "bets",
+        "amount": 3000
+      },
+      {
+        "player": "Greedo",
+        "action": "folds",
+        "amount": 0
+      },
+      {
+        "player": "Otto",
+        "action": "all-in",
+        "amount": 21000
+      },
+      {
+        "player": "Alex",
+        "action": "calls",
+        "amount": 18000
+      }
+    ],
+    "turn": [],
+    "river": []
+  },
+  "board": {
+    "flop": [
+      "Kc",
+      "9s",
+      "2d"
+    ],
+    "turn": "Kh",
+    "river": "Jc"
+  },
+  "showdown": [
+    {
+      "player": "Otto",
+      "hole_cards": [
+        "Tc",
+        "8c"
+      ],
+      "result": "loses"
+    },
+    {
+      "player": "Alex",
+      "hole_cards": [
+        "Ah",
+        "5h"
+      ],
+      "result": "wins"
+    }
+  ],
+  "pot": 51450,
+  "notes": "There is an inconsistency in Otto's preflop call. Alex 3-bets to $3,000, and Greedo calls $3,000. Otto's graphic indicates $2,400 to call, implying he had already contributed $600 more than his initial $450 call, which is not explicitly stated as blinds, ante, or straddle. The pot amounts displayed on screen were used as the source of truth for total pot size after each action."
+}

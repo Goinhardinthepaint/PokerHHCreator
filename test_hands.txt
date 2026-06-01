@@ -1,0 +1,127 @@
+PokerStars Hand #600203599419: Hold'em No Limit ($50/$100 USD) - 2026/05/09 21:02:18 ET
+Table 'Livestream =TESTSTREAM' 6-max Seat #4 is the button
+Seat 1: Wesley ($62000 in chips)
+Seat 2: Greedo ($97800 in chips)
+Seat 3: Otto ($40000 in chips)
+Seat 4: Handz ($125000 in chips)
+Seat 5: Nik Airball ($80000 in chips)
+Seat 6: Julie ($55000 in chips)
+Wesley: posts the ante $500
+Greedo: posts the ante $500
+Otto: posts the ante $500
+Handz: posts the ante $500
+Nik Airball: posts the ante $500
+Julie: posts the ante $500
+Wesley: posts small blind $50
+Greedo: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Greedo [Kh 8d]
+Otto: raises $1500 to $1500
+Handz: calls $1500
+Wesley: folds
+Greedo: calls $1500
+*** FLOP *** [2h 8c 3s]
+Greedo: bets $3000
+Otto: folds
+Handz: calls $3000
+*** TURN *** [2h 8c 3s] [Kd]
+Greedo: bets $7500
+Handz: calls $7500
+*** RIVER *** [2h 8c 3s Kd] [7s]
+Greedo: bets $14550
+Handz: calls $14550
+*** SHOW DOWN ***
+Greedo: shows [Kh 8d] (two pair kings and eights)
+Handz: shows [9s 9c] (pair of nines)
+Greedo collected $55350 from pot
+*** SUMMARY ***
+Total pot $55350 | Rake $0
+Board [2h 8c 3s Kd 7s]
+Seat 1: Wesley (SB) folded before Flop
+Seat 2: Greedo (BB) showed [Kh 8d] and won ($55350) with two pair kings and eights
+Seat 3: Otto (HJ) folded on the Flop
+Seat 4: Handz (BTN) showed [9s 9c] and lost with pair of nines
+
+
+PokerStars Hand #754254044712: Hold'em No Limit ($50/$100 USD) - 2026/05/09 21:02:18 ET
+Table 'Livestream =TESTSTREAM' 6-max Seat #5 is the button
+Seat 1: Handz ($125000 in chips)
+Seat 2: Nik Airball ($80000 in chips)
+Seat 3: Julie ($55000 in chips)
+Seat 4: Wesley ($62000 in chips)
+Seat 5: Greedo ($97800 in chips)
+Seat 6: Otto ($40000 in chips)
+Handz: posts the ante $500
+Nik Airball: posts the ante $500
+Julie: posts the ante $500
+Wesley: posts the ante $500
+Greedo: posts the ante $500
+Otto: posts the ante $500
+Handz: posts small blind $50
+Nik Airball: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Julie [As Ks]
+Julie: raises $1500 to $1500
+Wesley: folds
+Greedo: folds
+Otto: raises $5000 to $5000
+Handz: folds
+Nik Airball: folds
+Julie: raises $14000 to $14000
+Otto: folds
+Uncalled bet returned to Julie
+Julie collected $6000 from pot
+*** SUMMARY ***
+Total pot $6000 | Rake $0
+Seat 1: Handz (SB) folded before Flop
+Seat 2: Nik Airball (BB) folded before Flop
+Seat 4: Wesley (MP) folded before Flop
+Seat 5: Greedo (CO) folded before Flop
+Seat 6: Otto (BTN) folded before Flop
+
+
+PokerStars Hand #457071102235: Hold'em No Limit ($50/$100 USD) - 2026/05/09 21:02:18 ET
+Table 'Livestream =TESTSTREAM' 6-max Seat #6 is the button
+Seat 1: Nik Airball ($80000 in chips)
+Seat 2: Julie ($55000 in chips)
+Seat 3: Wesley ($62000 in chips)
+Seat 4: Greedo ($97800 in chips)
+Seat 5: Otto ($40000 in chips)
+Seat 6: Handz ($125000 in chips)
+Nik Airball: posts the ante $500
+Julie: posts the ante $500
+Wesley: posts the ante $500
+Greedo: posts the ante $500
+Otto: posts the ante $500
+Handz: posts the ante $500
+Nik Airball: posts small blind $50
+Julie: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Nik Airball [Qc Jc]
+Wesley: raises $2000 to $2000
+Greedo: calls $2000
+Nik Airball: raises $8500 to $8500
+Julie: folds
+Wesley: calls $8500
+Greedo: folds
+*** FLOP *** [Jd 4h 9s]
+Nik Airball: bets $6000
+Wesley: calls $6000
+*** TURN *** [Jd 4h 9s] [2c]
+Nik Airball: checks
+Wesley: bets $12000
+*** RIVER *** [Jd 4h 9s 2c] [5d]
+Wesley: bets $28000
+Nik Airball: calls $28000
+*** SHOW DOWN ***
+Wesley: shows [Js Jh] (set of jacks)
+Nik Airball: shows [Qc Jc] (pair of jacks)
+Wesley collected $110000 from pot
+*** SUMMARY ***
+Total pot $110000 | Rake $0
+Board [Jd 4h 9s 2c 5d]
+Seat 1: Nik Airball (SB) showed [Qc Jc] and lost with pair of jacks
+Seat 2: Julie (BB) folded before Flop
+Seat 3: Wesley (UTG) showed [Js Jh] and won ($110000) with set of jacks
+Seat 4: Greedo (MP) folded before Flop
+

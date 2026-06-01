@@ -1,0 +1,22 @@
+PokerStars Hand #166001110417:  Hold'em No Limit ($50/$100 USD) - 2026/05/21 13:33:42 ET
+Table 'HCL_54m00s-57m00s p0Q7LW64ecM' 9-max Seat #1 is the button
+Seat 1: Steve ($44500 in chips)
+Seat 2: Airball ($12250 in chips)
+Airball: posts the ante $50
+Steve: posts the ante $50
+Airball: posts small blind $50
+Steve: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Steve [As 9h]
+Dealt to Airball [Ac Jd]
+Airball: raises $3400 to $3500
+Steve: folds
+Uncalled bet ($3400) returned to Airball
+*** SHOW DOWN ***
+Airball: shows [Ac Jd] ()
+Airball collected $300 from pot
+*** SUMMARY ***
+Total pot $300 | Rake $0
+Seat 1: Steve folded before Flop
+Seat 2: Airball showed [Ac Jd] and won ($300) with 
+

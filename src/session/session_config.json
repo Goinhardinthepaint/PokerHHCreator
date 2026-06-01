@@ -1,0 +1,15 @@
+{
+  "stream_url": "https://www.youtube.com/watch?v=p0Q7LW64ecM",
+  "stakes": [50, 100],
+  "bb_ante": 100,
+  "players": [
+    {"seat": 1, "name": "Greedo"},
+    {"seat": 2, "name": "Francisco"},
+    {"seat": 3, "name": "Dylan"},
+    {"seat": 4, "name": "Otto"},
+    {"seat": 5, "name": "Alex"},
+    {"seat": 6, "name": "Airball"},
+    {"seat": 7, "name": "Steve"}
+  ],
+  "starting_button_seat": 1
+}

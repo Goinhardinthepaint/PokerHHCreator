@@ -1,0 +1,48 @@
+PokerStars Hand #540000000001:  Hold'em No Limit ($50/$100 USD) - 2026/05/21 16:54:00 ET
+Table 'HCL_54m00s p0Q7LW64ecM' 9-max Seat #7 is the button
+Seat 2: Airball ($28700 in chips)
+Seat 3: Greedo ($13550 in chips)
+Seat 4: Francisco ($13000 in chips)
+Seat 5: Dylan ($20200 in chips)
+Seat 6: Otto ($44400 in chips)
+Seat 7: Steve ($44300 in chips)
+Seat 9: Alex ($38300 in chips)
+Airball: posts the ante $15
+Greedo: posts the ante $15
+Francisco: posts the ante $15
+Dylan: posts the ante $15
+Otto: posts the ante $15
+Steve: posts the ante $15
+Alex: posts the ante $15
+Dylan: posts small blind $50
+Otto: posts big blind $100
+*** HOLE CARDS ***
+Dealt to Dylan [9d 8d]
+Dealt to Alex [6c 4h]
+Dealt to Greedo [Ks Kd]
+Alex: raises $300 to $400
+Airball: folds
+Steve: folds
+Greedo: raises $1600 to $2000
+Francisco: folds
+Dylan: calls $1950
+Otto: folds
+Alex: folds
+*** FLOP *** [Qh Ts 7d]
+Dylan: checks
+Greedo: bets $3000
+Dylan: calls $3000
+*** TURN *** [Qh Ts 7d] [4c]
+Greedo: bets $8000
+Dylan: folds
+Uncalled bet ($8000) returned to Greedo
+Greedo collected $12200 from pot
+*** SUMMARY ***
+Total pot $12200 | Rake $0
+Board [Qh Ts 7d 4c]
+Seat 2: Airball folded before Flop (didn't bet)
+Seat 3: Greedo showed [Ks Kd] and won ($12200) with a pair of Kings
+Seat 5: Dylan (small blind) folded on the Turn
+Seat 6: Otto (big blind) folded before Flop
+Seat 7: Steve (button) folded before Flop (didn't bet)
+Seat 9: Alex folded before Flop

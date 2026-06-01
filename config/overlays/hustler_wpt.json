@@ -1,0 +1,78 @@
+{
+  "name": "Hustler Casino Live (WPT Global)",
+  "description": "Standard HCL overlay with WPT Global branding, 2024+",
+  "resolution": [1920, 1080],
+  "max_players": 9,
+  "notes": "Player boxes appear at bottom of screen. Each box shows: name, hole cards (2 cards side by side), stack size, position label, and action/bet amount. Pot displayed center-right. Board cards displayed center. Stakes shown near pot.",
+
+  "regions_of_interest": {
+    "board": {
+      "description": "Community cards displayed horizontally in center of table",
+      "x": 640, "y": 420, "width": 640, "height": 120,
+      "notes": "5 card positions, cards appear left to right as streets are dealt"
+    },
+    "pot": {
+      "description": "Pot amount displayed center-right area",
+      "x": 1100, "y": 380, "width": 280, "height": 60,
+      "notes": "Shows 'POT $XX,XXX' format, stakes shown below as '$XX/$XX NL'"
+    },
+    "player_boxes": {
+      "description": "Player info boxes along bottom and sides of screen",
+      "notes": "Each player box contains: name (bold text), hole cards (card images), stack amount ($XX,XXX format), position label (BTN/SB/BB/UTG/HJ/CO), current action (BET/RAISE/CALL/FOLD/CHECK), bet amount ($XX,XXX TO CALL or just amount). Boxes for active players are brighter. Player on the left side of screen has box on left, players on right have boxes on right, center players have boxes at bottom center.",
+      "typical_positions": [
+        {"seat": 1, "box_region": {"x": 50, "y": 750, "width": 320, "height": 140}},
+        {"seat": 2, "box_region": {"x": 50, "y": 550, "width": 320, "height": 140}},
+        {"seat": 3, "box_region": {"x": 200, "y": 380, "width": 320, "height": 140}},
+        {"seat": 4, "box_region": {"x": 500, "y": 750, "width": 320, "height": 140}},
+        {"seat": 5, "box_region": {"x": 800, "y": 750, "width": 320, "height": 140}},
+        {"seat": 6, "box_region": {"x": 1100, "y": 750, "width": 320, "height": 140}},
+        {"seat": 7, "box_region": {"x": 1400, "y": 550, "width": 320, "height": 140}},
+        {"seat": 8, "box_region": {"x": 1400, "y": 380, "width": 320, "height": 140}},
+        {"seat": 9, "box_region": {"x": 1200, "y": 380, "width": 320, "height": 140}}
+      ]
+    }
+  },
+
+  "card_appearance": {
+    "style": "Standard playing card icons with rank and suit",
+    "background": "Cards shown on dark background with white/colored suit symbols",
+    "size_approx": {"width": 50, "height": 70},
+    "suits": {
+      "hearts": "red",
+      "diamonds": "red", 
+      "clubs": "green/black",
+      "spades": "black/white"
+    }
+  },
+
+  "text_styles": {
+    "player_name": {
+      "font": "Bold sans-serif, white text on dark background",
+      "size_approx": "18-22px equivalent"
+    },
+    "stack_size": {
+      "font": "Regular sans-serif, white text",
+      "format": "$XX,XXX",
+      "size_approx": "16-18px equivalent"
+    },
+    "bet_amount": {
+      "font": "Regular sans-serif, white text",
+      "format": "$XX,XXX",
+      "size_approx": "14-16px equivalent"
+    },
+    "pot_amount": {
+      "font": "Bold sans-serif, white text",
+      "format": "POT $XX,XXX",
+      "size_approx": "20-24px equivalent"
+    },
+    "action_label": {
+      "font": "Bold sans-serif, colored text (green for BET, yellow for RAISE, etc)",
+      "size_approx": "14-16px equivalent"
+    },
+    "position_label": {
+      "font": "Small sans-serif label",
+      "values": ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "HJ", "CO"],
+      "size_approx": "12-14px equivalent"
+    }
+  }
+}
