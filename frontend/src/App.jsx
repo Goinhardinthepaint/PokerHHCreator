@@ -25,7 +25,8 @@ const SUITS = [
 const SUIT = Object.fromEntries(SUITS.map((s) => [s.v, s]));
 const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
 const BADGE_COLOR = {
-  BTN: "#f59e0b", "BTN/SB": "#f59e0b", SB: "#38bdf8", BB: "#a78bfa", CO: "#22c55e", HJ: "#22c55e",
+  BTN: "#f59e0b", "BTN/SB": "#f59e0b", SB: "#38bdf8", BB: "#a78bfa",
+  CO: "#22c55e", HJ: "#22c55e", LJ: "#22c55e", STR: "#7c3aed",
 };
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
@@ -906,7 +907,7 @@ export default function App() {
                 p={p}
                 empty={p.empty}
                 pos={ellipsePos(i, tableSeats.length)}
-                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : positions[p.seat]}
+                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : straddleList.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
                 isButton={Number(buttonSeat) === p.seat}
                 isActor={hasActor && eng.actorSeat === p.seat}
                 folded={enginePlayer?.folded}

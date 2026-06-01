@@ -60,8 +60,18 @@ export function utgStraddles(players, buttonSeat, bb, count) {
   return out;
 }
 
-const MIDDLE_LABELS = ["UTG", "UTG+1", "UTG+2", "MP", "MP+1", "LJ", "HJ", "CO"];
+// Standard middle positions (between BB and BTN) by table size, ordered from
+// first-to-act (UTG) to last before the button (CO). 2- and 3-handed have none.
+const MIDDLE_BY_COUNT = {
+  4: ["UTG"],
+  5: ["UTG", "CO"],
+  6: ["UTG", "HJ", "CO"],
+  7: ["UTG", "LJ", "HJ", "CO"],
+  8: ["UTG", "UTG+1", "LJ", "HJ", "CO"],
+  9: ["UTG", "UTG+1", "UTG+2", "LJ", "HJ", "CO"],
+};
 
+// Positions go clockwise from the button: BTN, SB, BB, then UTG…CO.
 export function positionLabels(players, buttonSeat) {
   const sorted = occupiedSorted(players);
   const n = sorted.length;
@@ -82,11 +92,9 @@ export function positionLabels(players, buttonSeat) {
   map[at(bi).seat] = "BTN";
   map[at(bi + 1).seat] = "SB";
   map[at(bi + 2).seat] = "BB";
-  const remaining = n - 3; // seats from UTG up to CO
-  // Fill from the back so the seat just before the button is always CO.
-  const tail = MIDDLE_LABELS.slice(Math.max(0, MIDDLE_LABELS.length - remaining));
-  for (let k = 0; k < remaining; k++) {
-    map[at(bi + 3 + k).seat] = tail[k] || "MP";
+  const mids = MIDDLE_BY_COUNT[n] || [];
+  for (let k = 0; k < n - 3; k++) {
+    map[at(bi + 3 + k).seat] = mids[k] || `UTG+${k}`; // fallback only if n > 9
   }
   return map;
 }
