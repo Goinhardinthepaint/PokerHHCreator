@@ -28,6 +28,11 @@ const BADGE_COLOR = {
   CO: "#22c55e", HJ: "#22c55e", LJ: "#22c55e", STR: "#7c3aed",
 };
 
+// Piece-rate pricing.
+const PIECE_RATE = 0.03; // per filled card / per voluntary action
+const COMPLETION_BONUS = 0.1; // per completed hand
+const BLIND_POSTS = new Set(["posts_sb", "posts_bb", "posts_ante", "posts_straddle"]);
+
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
 
 // Parse a YouTube link into a normalized url + start time (seconds).
@@ -324,6 +329,30 @@ export default function App() {
   const canComplete = inBetting && eng.actorSeat == null && (eng.handOver || eng.street === "river");
   const surv = eng ? survivors(eng) : [];
 
+  // ── Piece-rate earnings tracker ───────────────────────────────────────────
+  // Live count of billable pieces for the CURRENT hand: each filled hole/board
+  // card + each voluntary action (auto blind/ante/straddle posts don't count).
+  const handPieces = useMemo(() => {
+    const cards =
+      Object.values(holeCards).reduce((s, arr) => s + arr.filter(Boolean).length, 0) +
+      board.filter(Boolean).length +
+      board2.filter(Boolean).length;
+    const actions = eng
+      ? Object.values(eng.actionsByStreet).reduce(
+          (s, arr) => s + arr.filter((a) => !BLIND_POSTS.has(a.action)).length,
+          0
+        )
+      : 0;
+    return { cards, actions, total: cards + actions };
+  }, [holeCards, board, board2, eng]);
+
+  // Session totals from COMPLETED hands only (each stores its own piece counts).
+  const sessionStats = useMemo(() => {
+    const pieces = sessionHands.reduce((s, h) => s + (h.cards || 0) + (h.actions || 0), 0);
+    const hands = sessionHands.length;
+    return { hands, pieces, earnings: pieces * PIECE_RATE + hands * COMPLETION_BONUS };
+  }, [sessionHands]);
+
   // When every surviving player has hole cards AND the board is complete, the
   // showdown can be evaluated authoritatively — the winner is no longer a guess.
   const showdownEval = useMemo(() => {
@@ -538,9 +567,14 @@ export default function App() {
       if (!resp.ok) return setError(data.error || `Server error ${resp.status}`);
 
       const n = handNumber;
-      setSessionHands((hs) => [...hs.filter((h) => h.n !== n), { n, text: data.text }].sort((a, b) => a.n - b.n));
-      setFlash(`Hand #${n} saved`);
-      setTimeout(() => setFlash(""), 1800);
+      const { cards, actions } = handPieces;
+      setSessionHands((hs) => [...hs.filter((h) => h.n !== n), { n, text: data.text, cards, actions }].sort((a, b) => a.n - b.n));
+      // Earnings breakdown toast.
+      const cardPay = (cards * PIECE_RATE).toFixed(2);
+      const actPay = (actions * PIECE_RATE).toFixed(2);
+      const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
+      setFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`);
+      setTimeout(() => setFlash(""), 2800);
       nextHand(); // carries over stacks, rotates button, clears, increments hand #
     } catch (e) {
       setError(`Could not reach server: ${e.message}. Is server.py running on :8000?`);
@@ -821,10 +855,18 @@ export default function App() {
             })()}
           </div>
           <div style={styles.topMeta}>
-            <span style={styles.statTracker}>
-              Hands: <strong style={{ color: "#f8fafc" }}>{sessionHands.length}</strong>
-              {"  ·  "}Earnings: <strong style={{ color: "#4ade80" }}>${(sessionHands.length * 0.4).toFixed(2)}</strong>
-            </span>
+            <div style={styles.statTracker}>
+              <div>
+                Hands: <strong style={{ color: "#f8fafc" }}>{sessionStats.hands}</strong>
+                {"  ·  "}Pieces: <strong style={{ color: "#f8fafc" }}>{sessionStats.pieces}</strong>
+                {"  ·  "}Earnings: <strong style={{ color: "#4ade80", fontSize: 15 }}>${sessionStats.earnings.toFixed(2)}</strong>
+              </div>
+              {eng && handPieces.total > 0 && (
+                <div style={styles.statPreview}>
+                  This hand so far: ~${(handPieces.total * PIECE_RATE).toFixed(2)} ({handPieces.cards} cards · {handPieces.actions} actions)
+                </div>
+              )}
+            </div>
             <span>{stakes} {Number(ante) > 0 ? `· $${ante} ante` : ""}</span>
             {phase !== "setup" && (
               <>
@@ -1150,8 +1192,9 @@ const styles = {
   topMeta: { display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "#94a3b8" },
   topBtn: { padding: "6px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   sessionBtn: { padding: "6px 12px", background: "#0e7490", border: "1px solid #155e75", borderRadius: 7, color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "6px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap" },
-  flashToast: { position: "fixed", top: 64, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: "#16a34a", color: "#f0fdf4", fontWeight: 800, fontSize: 15, letterSpacing: 0.5, padding: "12px 28px", borderRadius: 10, boxShadow: "0 8px 30px rgba(34,197,94,.5)" },
+  statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap", lineHeight: 1.4 },
+  statPreview: { fontSize: 11, color: "#fbbf24", marginTop: 1 },
+  flashToast: { position: "fixed", top: 64, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: "#16a34a", color: "#f0fdf4", fontWeight: 800, fontSize: 14, letterSpacing: 0.3, padding: "12px 24px", borderRadius: 10, boxShadow: "0 8px 30px rgba(34,197,94,.5)", maxWidth: "90vw", textAlign: "center", whiteSpace: "nowrap" },
   historyOverlay: { position: "fixed", inset: 0, background: "#070b12", zIndex: 60, display: "flex", flexDirection: "column" },
   historyHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", borderBottom: "1px solid #1e293b", flexShrink: 0 },
   historyTitle: { fontSize: 16, fontWeight: 800, letterSpacing: 0.5, color: "#f8fafc" },
