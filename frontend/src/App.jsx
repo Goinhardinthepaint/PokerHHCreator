@@ -42,6 +42,14 @@ const PIECE_RATE = 0.03; // per filled card / per voluntary action
 const COMPLETION_BONUS = 0.1; // per completed hand
 const BLIND_POSTS = new Set(["posts_sb", "posts_bb", "posts_ante", "posts_straddle"]);
 
+// Side-game pricing: a flat base per counted hand + a stream-completion bonus.
+// Backend-wise a side-game hand is just a 0-piece submission, which already
+// prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
+// special server pricing is needed; these constants drive the live counter only.
+const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
+const SIDE_GAME_STREAM_BONUS = 0.05; // additional once the stream is completed
+const SIDE_GAME_TYPES = ["Squid Game", "Bounty Game", "Other"];
+
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
 
 // Parse a YouTube link into a normalized url + start time (seconds).
@@ -57,12 +65,34 @@ function parseTimestamp(s) {
   if (ss) sec += parseInt(ss[1], 10);
   return sec;
 }
+// Extract the 11-char YouTube video id from ANY common URL shape — the video id
+// is the key everything matches on (a hand's stream_id, a calendar stream's id).
+// Handles:
+//   youtube.com/watch?v=VIDEO_ID
+//   youtu.be/VIDEO_ID
+//   youtube.com/live/VIDEO_ID   ← was previously unhandled → hands didn't match
+//   youtube.com/embed/VIDEO_ID, youtube.com/shorts/VIDEO_ID
+// …with any combination of &t=, ?t=, &si=, &list=, etc. A bare id passes through.
+export function extractVideoId(url) {
+  if (!url) return "";
+  const s = String(url).trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s; // already a bare id
+  const patterns = [
+    /[?&]v=([A-Za-z0-9_-]{11})/,      // watch?v=ID (&si=, &t= etc. after = fine)
+    /youtu\.be\/([A-Za-z0-9_-]{11})/,  // youtu.be/ID
+    /\/live\/([A-Za-z0-9_-]{11})/,     // youtube.com/live/ID
+    /\/embed\/([A-Za-z0-9_-]{11})/,    // /embed/ID
+    /\/shorts\/([A-Za-z0-9_-]{11})/,   // /shorts/ID
+  ];
+  for (const re of patterns) {
+    const m = s.match(re);
+    if (m) return m[1];
+  }
+  return "";
+}
 function parseYouTube(link) {
   if (!link || !link.trim()) return { url: "", startSec: 0, id: "" };
-  const id =
-    (link.match(/[?&]v=([A-Za-z0-9_-]{11})/) ||
-      link.match(/youtu\.be\/([A-Za-z0-9_-]{11})/) ||
-      link.match(/embed\/([A-Za-z0-9_-]{11})/) || [])[1] || "";
+  const id = extractVideoId(link);
   const t = link.match(/[?&](?:t|start)=([0-9hms]+)/);
   const startSec = t ? parseTimestamp(t[1]) : 0;
   // Canonical, clickable link that keeps the timestamp so it jumps to the hand.
@@ -479,6 +509,19 @@ function HandBuilder({ me, refreshMe }) {
   const [videoDate, setVideoDate] = useState(() => pick("videoDate", TODAY_ISO)); // session's YouTube video date
   const [sessionLabel, setSessionLabel] = useState(() => pick("sessionLabel", "")); // stream name, e.g. "HCL Stream"
 
+  // ── Side game mode ─────────────────────────────────────────────────────────
+  // A simplified flow for non-standard side games (Squid Game, Bounty Game, …):
+  // no hole cards / actions / board — just count hands as positions rotate. Each
+  // counted hand is submitted as a 0-piece hand so it pays $0.10 (+$0.05 on
+  // stream completion) and counts toward the stream's handsCompleted, but it
+  // generates no PT4 text.
+  const [sideGameMode, setSideGameMode] = useState(() => pick("sideGameMode", false));
+  const [sideGameType, setSideGameType] = useState(() => pick("sideGameType", "Squid Game"));
+  const [sideGameOther, setSideGameOther] = useState(() => pick("sideGameOther", ""));
+  const [sideGameHands, setSideGameHands] = useState(() => pick("sideGameHands", [])); // [{type,gameType,timestamp,handNumber,videoId}]
+  const [endingSideGame, setEndingSideGame] = useState(false); // showing the adjust-stacks prompt
+  const [sideStackDraft, setSideStackDraft] = useState({}); // seat -> stack string while confirming
+
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [handPanelOpen, setHandPanelOpen] = useState(false); // right-side Hand Manager
@@ -622,12 +665,13 @@ function HandBuilder({ me, refreshMe }) {
           stakes, ante, buttonSeat, straddleCount, buyButton, roster,
           phase, eng, engHistory, holeCards, board, board2, rit,
           winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
+          sideGameMode, sideGameType, sideGameOther, sideGameHands,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult]);
+  }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
 
 
   // Board cards required to deal the next street
@@ -923,6 +967,10 @@ function HandBuilder({ me, refreshMe }) {
     setEvalResult(null);
     setConfigDraft("");
     setError("");
+    setSideGameMode(false);
+    setSideGameOther("");
+    setSideGameHands([]);
+    setEndingSideGame(false);
     setPhase("setup");
   }
 
@@ -968,6 +1016,94 @@ function HandBuilder({ me, refreshMe }) {
     setBuyMenuSeat(null);
     setPhase("setup");
     setHandNumber((h) => h + 1);
+  }
+
+  // ── Side game mode ─────────────────────────────────────────────────────────
+  const sideGameLabel =
+    sideGameType === "Other" ? (sideGameOther.trim() || "Side Game") : sideGameType;
+  const sideGameEarnings = sideGameHands.length * SIDE_GAME_RATE;
+
+  // Enter side game mode: drop any in-progress hand and switch to the counter UI.
+  function startSideGame() {
+    setEng(null);
+    setEngHistory([]);
+    setError("");
+    setPhase("setup");
+    setSideGameMode(true);
+  }
+
+  // Count one side-game hand: validate the link, submit a 0-piece hand (so it
+  // pays + counts toward the stream but makes no PT4 text), record it locally,
+  // rotate the button, and bump the hand number.
+  async function nextSideGameHand() {
+    setError("");
+    const link = youtubeLink.trim();
+    if (!link) return setError("Paste the timestamped YouTube link for the side game's first hand.");
+    if (!/youtube\.com|youtu\.be/i.test(link)) return setError("Enter a valid YouTube link (youtube.com, youtu.be, or /live/).");
+    const { url, startSec, id: videoId } = parseYouTube(link);
+    if (!videoId) return setError("Couldn't read a video ID from that link.");
+
+    const n = handNumber;
+    setSideGameHands((hs) => [
+      ...hs,
+      { type: "sidegame", gameType: sideGameLabel, timestamp: startSec > 0 ? fmtClock(startSec) : "", handNumber: n, videoId },
+    ]);
+
+    // 0-piece submission → $0.10 base (+$0.05 on stream completion), counts toward
+    // the stream's handsCompleted, no PT4 text.
+    try {
+      await api("/api/hands/submit", {
+        method: "POST",
+        body: {
+          stream_id: videoId,
+          youtube_url: url,
+          timestamp_seconds: startSec,
+          pt4_text: "",
+          cards_count: 0,
+          actions_count: 0,
+          hand_type: "sidegame",
+          side_game: sideGameLabel,
+        },
+      });
+      if (refreshMe) refreshMe();
+    } catch { /* offline — the local counter still advances */ }
+
+    // Positions auto-rotate: move the button to the next occupied seat.
+    const occ = named.slice().sort((a, b) => a.seat - b.seat);
+    if (occ.length) {
+      const i = occ.findIndex((p) => p.seat === Number(buttonSeat));
+      const nextSeat = i >= 0 ? occ[(i + 1) % occ.length].seat : occ[0].seat;
+      setButtonSeat(nextSeat);
+    }
+    setHandNumber((h) => h + 1);
+    setFlash(`Side game hand #${n} recorded · +$${SIDE_GAME_RATE.toFixed(2)}`);
+    setTimeout(() => setFlash(""), 1800);
+  }
+
+  // Begin ending the side game — surface the stack-adjust prompt seeded with
+  // each seated player's current stack.
+  function requestEndSideGame() {
+    const draft = {};
+    named.forEach((p) => { draft[p.seat] = String(p.stack); });
+    setSideStackDraft(draft);
+    setEndingSideGame(true);
+  }
+
+  // Confirm adjusted stacks → apply to the roster → resume normal transcription.
+  function confirmEndSideGame() {
+    setRoster((r) =>
+      r.map((p) => {
+        const v = sideStackDraft[p.seat];
+        if (v == null || v === "") return p;
+        const num = Number(v);
+        return Number.isFinite(num) ? { ...p, stack: num } : p;
+      })
+    );
+    setEndingSideGame(false);
+    setSideGameMode(false);
+    setEng(null);
+    setError("");
+    setPhase("setup");
   }
 
   // Buy-the-button: the buyer becomes the button and posts the lone live blind.
@@ -1161,9 +1297,41 @@ function HandBuilder({ me, refreshMe }) {
                   This hand so far: ~${(handPieces.total * PIECE_RATE).toFixed(2)} ({handPieces.cards} cards · {handPieces.actions} actions)
                 </div>
               )}
+              {(sideGameMode || sideGameHands.length > 0) && (
+                <div style={{ ...styles.statPreview, color: "#a78bfa" }}>
+                  🎮 Side Game: <strong style={{ color: "#c4b5fd" }}>{sideGameHands.length} hands</strong> · <strong style={{ color: "#c4b5fd" }}>${sideGameEarnings.toFixed(2)}</strong>
+                </div>
+              )}
             </div>
             <span>{stakes} {Number(ante) > 0 ? `· $${ante} ante` : ""}</span>
-            {phase !== "setup" && (
+            {/* Side Game Mode toggle + (when on) the game-type picker. */}
+            {sideGameMode && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <select
+                  style={{ ...styles.input, width: "auto" }}
+                  value={sideGameType}
+                  onChange={(e) => setSideGameType(e.target.value)}
+                >
+                  {SIDE_GAME_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {sideGameType === "Other" && (
+                  <input
+                    style={{ ...styles.input, width: 130 }}
+                    value={sideGameOther}
+                    onChange={(e) => setSideGameOther(e.target.value)}
+                    placeholder="Game name…"
+                  />
+                )}
+              </span>
+            )}
+            <button
+              style={{ ...styles.topBtn, ...(sideGameMode ? { borderColor: "#a78bfa", color: "#c4b5fd" } : {}) }}
+              title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
+              onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
+            >
+              🎮 {sideGameMode ? "Side Game ON" : "Side Game Mode"}
+            </button>
+            {!sideGameMode && phase !== "setup" && (
               <>
                 <button style={styles.topBtn} title="Restart this hand (same players & stacks)" onClick={resetHand}>↺ Reset Hand</button>
                 <button style={styles.topBtn} title="Next hand (carry over stacks, rotate button)" onClick={nextHand}>Next Hand ↻</button>
@@ -1276,12 +1444,46 @@ function HandBuilder({ me, refreshMe }) {
 
         {/* Action bar */}
         <div style={styles.actionBar}>
-          {(phase === "betting" || phase === "complete") && engHistory.length > 0 && (
+          {!sideGameMode && (phase === "betting" || phase === "complete") && engHistory.length > 0 && (
             <button style={styles.undoBtn} title="Undo last action" onClick={undo}>↶ Undo</button>
           )}
           {error && <div style={styles.errorInline}>⚠ {error}</div>}
 
-          {phase === "setup" && (
+          {/* Side game mode: count hands fast. No cards / actions / board. */}
+          {sideGameMode && !endingSideGame && (
+            <div style={styles.barCenter}>
+              <div style={styles.barHint}>
+                <strong style={{ color: "#c4b5fd" }}>{sideGameLabel}</strong> — paste the first hand's timestamped link above, then tap through hands. Positions rotate automatically; no cards or actions needed.
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button style={styles.dealBtn} onClick={nextSideGameHand}>▶ NEXT SIDE GAME HAND (#{handNumber})</button>
+                <button style={styles.topBtn} title="End the side game and adjust stacks" onClick={requestEndSideGame}>■ End Side Game</button>
+              </div>
+            </div>
+          )}
+
+          {/* Ending a side game: confirm current stacks before resuming. */}
+          {sideGameMode && endingSideGame && (
+            <div style={styles.barCenter}>
+              <div style={styles.barHint}>Side game ended. Please adjust player stacks to current values and resume normal transcription.</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", margin: "8px 0" }}>
+                {named.map((p) => (
+                  <label key={p.seat} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#cbd5e1", fontSize: 12 }}>
+                    <span style={{ minWidth: 60, textAlign: "right" }}>{p.name}</span>
+                    <input
+                      style={{ ...styles.input, width: 96 }}
+                      type="number"
+                      value={sideStackDraft[p.seat] ?? ""}
+                      onChange={(e) => setSideStackDraft((d) => ({ ...d, [p.seat]: e.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <button style={styles.completeBtn} onClick={confirmEndSideGame}>✓ Confirm Stacks &amp; Resume</button>
+            </div>
+          )}
+
+          {!sideGameMode && phase === "setup" && (
             <div style={styles.barCenter}>
               <div style={styles.barHint}>{named.length} players seated · button on Seat {buttonSeat}</div>
               <button style={styles.dealBtn} onClick={dealHand}>♠ DEAL HAND</button>

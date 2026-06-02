@@ -16,8 +16,36 @@ in a stream flagged complete — which is exactly a proportional split of
 
 import os
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
+
+
+# Extract the 11-char YouTube video id from any common URL shape (watch?v=,
+# youtu.be/, youtube.com/live/, /embed/, /shorts/) with or without timestamps /
+# si / list params. A bare id passes through. This is the key a hand matches a
+# stream on, so normalizing here keeps the calendar's handsCompleted correct
+# even when the frontend sends a full URL or a /live/ link.
+_VID_PATTERNS = [
+    re.compile(r"[?&]v=([A-Za-z0-9_-]{11})"),
+    re.compile(r"youtu\.be/([A-Za-z0-9_-]{11})"),
+    re.compile(r"/live/([A-Za-z0-9_-]{11})"),
+    re.compile(r"/embed/([A-Za-z0-9_-]{11})"),
+    re.compile(r"/shorts/([A-Za-z0-9_-]{11})"),
+]
+
+
+def extract_video_id(url):
+    if not url:
+        return ""
+    s = str(url).strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", s):
+        return s
+    for pat in _VID_PATTERNS:
+        m = pat.search(s)
+        if m:
+            return m.group(1)
+    return ""
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -172,6 +200,10 @@ def public_user(row):
 def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count):
     cards = int(cards_count or 0)
     actions = int(actions_count or 0)
+    # Normalize the stream key to the canonical 11-char video id so a hand always
+    # matches the calendar's stream (whose id is the video id) — regardless of
+    # whether the client sent a bare id, a full watch URL, or a /live/ link.
+    stream_id = extract_video_id(stream_id) or extract_video_id(youtube_url) or (stream_id or "")
     earnings = _hand_earnings(cards, actions)
     conn = get_db()
     cur = conn.execute(
