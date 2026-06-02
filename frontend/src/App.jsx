@@ -12,6 +12,11 @@ import {
   survivors,
   STREETS,
 } from "./engine.js";
+import Calendar from "./Calendar.jsx";
+
+// When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
+// tool, it's stashed here and the Hand Builder picks it up on mount.
+const PENDING_YT_KEY = "pokerTable.pendingYoutube";
 
 // ── Card constants ──────────────────────────────────────────────────────────
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
@@ -436,8 +441,8 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
   );
 }
 
-// ── Main app ────────────────────────────────────────────────────────────────
-export default function App() {
+// ── Hand Builder (the poker table workspace) ─────────────────────────────────
+function HandBuilder() {
   // Session (persists across hands) — initialised from any saved session.
   const [stakes, setStakes] = useState(() => pick("stakes", "50/100"));
   const [ante, setAnte] = useState(() => pick("ante", 100));
@@ -458,7 +463,15 @@ export default function App() {
   const [winner, setWinner] = useState(() => pick("winner", ""));
   const [winner2, setWinner2] = useState(() => pick("winner2", ""));
   const [handNumber, setHandNumber] = useState(() => pick("handNumber", 1));
-  const [youtubeLink, setYoutubeLink] = useState(() => pick("youtubeLink", "")); // per-hand timestamped link
+  const [youtubeLink, setYoutubeLink] = useState(() => {
+    // A URL handed over from the Calendar's "Open in Hand Builder" wins, and is
+    // consumed once; otherwise fall back to the saved per-hand link.
+    try {
+      const pending = localStorage.getItem(PENDING_YT_KEY);
+      if (pending) { localStorage.removeItem(PENDING_YT_KEY); return pending; }
+    } catch { /* ignore */ }
+    return pick("youtubeLink", "");
+  });
   const [videoDate, setVideoDate] = useState(() => pick("videoDate", TODAY_ISO)); // session's YouTube video date
   const [sessionLabel, setSessionLabel] = useState(() => pick("sessionLabel", "")); // stream name, e.g. "HCL Stream"
 
@@ -618,6 +631,7 @@ export default function App() {
       /* localStorage full or unavailable — ignore */
     }
   }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult]);
+
 
   // Board cards required to deal the next street
   function boardReadyFor(street) {
@@ -1420,12 +1434,12 @@ export default function App() {
 // ── Styles ──────────────────────────────────────────────────────────────────
 const FELT = "radial-gradient(ellipse at center, #1b6b43 0%, #0f4d2f 70%, #0a3a23 100%)";
 const styles = {
-  app: { display: "flex", minHeight: "100vh", background: "#070b12", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
+  app: { display: "flex", minHeight: "calc(100vh - 46px)", background: "#070b12", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
   sidebar: { background: "#0d1320", borderRight: "1px solid #1e293b", overflow: "hidden", transition: "width .18s ease", flexShrink: 0, boxSizing: "border-box" },
   sidebarInner: { display: "flex", flexDirection: "column", gap: 10 },
   sideHead: { fontSize: 11, fontWeight: 800, letterSpacing: 2, color: "#f59e0b" },
   sideHint: { fontSize: 9, fontWeight: 500, letterSpacing: 0.5, color: "#475569" },
-  sidebarToggle: { position: "fixed", top: 14, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "0 8px 8px 0", cursor: "pointer", transition: "left .18s ease" },
+  sidebarToggle: { position: "fixed", top: 60, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "0 8px 8px 0", cursor: "pointer", transition: "left .18s ease" },
   row: { display: "flex", gap: 8 },
   col: { flex: 1, display: "flex", flexDirection: "column", gap: 4 },
   label: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: "#64748b" },
@@ -1460,7 +1474,7 @@ const styles = {
 
   // ── Hand Manager panel ──
   handPanel: { background: "#0d1320", borderLeft: "1px solid #1e293b", overflow: "hidden", transition: "width .18s ease", flexShrink: 0, boxSizing: "border-box" },
-  handToggle: { position: "fixed", top: 14, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px 0 0 8px", cursor: "pointer", transition: "right .18s ease" },
+  handToggle: { position: "fixed", top: 60, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px 0 0 8px", cursor: "pointer", transition: "right .18s ease" },
   hmInner: { display: "flex", flexDirection: "column", gap: 10, height: "100%", minWidth: 320 },
   hmHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
   hmCount: { fontSize: 11, color: "#64748b", fontWeight: 600 },
@@ -1587,4 +1601,82 @@ const styles = {
   chopTag: { color: "#fbbf24", fontWeight: 800, letterSpacing: 1 },
   dlBtn: { flex: 1, padding: 12, background: "#22c55e", color: "#06210f", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 800, letterSpacing: 1, cursor: "pointer" },
   nextBtn: { flex: 1, padding: 12, background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 8, fontSize: 13, fontWeight: 700, letterSpacing: 1, cursor: "pointer" },
+};
+
+// ── Top nav: switch between Hand Builder and Calendar ────────────────────────
+function NavItem({ to, label, icon, active, navigate }) {
+  return (
+    <button
+      onClick={() => navigate(to)}
+      style={{ ...navStyles.item, ...(active ? navStyles.itemActive : {}) }}
+    >
+      <span style={{ marginRight: 6 }}>{icon}</span>{label}
+    </button>
+  );
+}
+
+function NavBar({ route, navigate }) {
+  return (
+    <nav style={navStyles.bar}>
+      <div style={navStyles.brand}>
+        <span style={navStyles.chip}>♠</span> POKER SUITE
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <NavItem to="/" label="Hand Builder" icon="🛠" active={route === "builder"} navigate={navigate} />
+        <NavItem to="/calendar" label="Calendar" icon="📅" active={route === "calendar"} navigate={navigate} />
+      </div>
+    </nav>
+  );
+}
+
+const pathToRoute = (p) => (p.startsWith("/calendar") ? "calendar" : "builder");
+
+// ── Root: history-based router (works with the SPA fallback in server.py) ─────
+export default function App() {
+  const [route, setRoute] = useState(() => {
+    try { return pathToRoute(window.location.pathname); } catch { return "builder"; }
+  });
+
+  useEffect(() => {
+    const onPop = () => setRoute(pathToRoute(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = (path) => {
+    try {
+      if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    } catch { /* ignore */ }
+    setRoute(pathToRoute(path));
+  };
+
+  // Hand a YouTube URL to the Hand Builder, then switch to it.
+  const openInBuilder = (url) => {
+    try { localStorage.setItem(PENDING_YT_KEY, url || ""); } catch { /* ignore */ }
+    navigate("/");
+  };
+
+  return (
+    <div style={navStyles.root}>
+      <NavBar route={route} navigate={navigate} />
+      <div style={navStyles.view}>
+        {route === "calendar" ? <Calendar onOpenInBuilder={openInBuilder} /> : <HandBuilder />}
+      </div>
+    </div>
+  );
+}
+
+const navStyles = {
+  root: { display: "flex", flexDirection: "column", minHeight: "100vh", background: "#070b12" },
+  view: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+  bar: {
+    position: "sticky", top: 0, zIndex: 100, height: 46, boxSizing: "border-box",
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    padding: "0 18px", background: "#0a0f1a", borderBottom: "1px solid #1e293b",
+    fontFamily: "'Inter','Segoe UI',system-ui,sans-serif",
+  },
+  brand: { display: "flex", alignItems: "center", gap: 8, fontWeight: 800, letterSpacing: 1.5, fontSize: 14, color: "#e2e8f0" },
+  chip: { display: "inline-flex", width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 13 },
+  item: { padding: "7px 16px", background: "transparent", border: "1px solid transparent", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  itemActive: { background: "#16243a", border: "1px solid #2b3a52", color: "#f8fafc" },
 };
