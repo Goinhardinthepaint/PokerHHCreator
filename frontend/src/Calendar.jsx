@@ -1,14 +1,22 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import SEED_STREAMS from "./data/hcl_streams.json";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Calendar / Stream Manager — a monthly grid of HCL streams, tracked locally.
 // Streams persist in localStorage (migrate to the server later). Each day cell
 // shows its streams with a status colour; clicking a day opens a side panel to
 // add streams, edit progress, mark complete, or jump into the Hand Builder.
+//
+// First run is seeded from the bundled HCL scrape (scripts/scrape_hcl_streams.py
+// → src/data/hcl_streams.json). Once a client has been seeded it's never re-seeded,
+// so deleting streams sticks.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "pokerStreams.v1";
 const DEFAULT_ESTIMATE = 150; // assumed hands/stream when not supplied
+
+// Bundled scrape, normalised to the full stream shape (adds addedAt).
+const seedStreams = () => SEED_STREAMS.map((s) => ({ ...s, addedAt: s.addedAt || "" }));
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -20,11 +28,14 @@ const MONTHS = [
 function loadStreams() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return seedStreams(); // never opened → seed
     const data = JSON.parse(raw);
-    return Array.isArray(data.streams) ? data.streams : [];
+    const streams = Array.isArray(data.streams) ? data.streams : [];
+    // Seed once: only if this client has never been marked seeded AND is empty.
+    if (!data.seeded && streams.length === 0) return seedStreams();
+    return streams;
   } catch {
-    return [];
+    return seedStreams();
   }
 }
 
@@ -99,9 +110,10 @@ export default function Calendar({ onOpenInBuilder }) {
   const [selectedDate, setSelectedDate] = useState(null); // "YYYY-MM-DD" or null
   const [importOpen, setImportOpen] = useState(false);
 
-  // Mirror every change to localStorage.
+  // Mirror every change to localStorage. `seeded: true` is recorded so a client
+  // that later deletes all streams isn't re-seeded from the bundle.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ streams })); } catch { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ streams, seeded: true })); } catch { /* ignore */ }
   }, [streams]);
 
   // Index streams by date for quick cell lookup.
