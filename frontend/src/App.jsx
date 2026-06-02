@@ -1,4 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { api } from "./api.js";
+import Auth from "./Auth.jsx";
+import Dashboard from "./Dashboard.jsx";
+import Admin from "./Admin.jsx";
 import {
   initHand,
   legalActions,
@@ -442,7 +446,7 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
 }
 
 // ── Hand Builder (the poker table workspace) ─────────────────────────────────
-function HandBuilder() {
+function HandBuilder({ me, refreshMe }) {
   // Session (persists across hands) — initialised from any saved session.
   const [stakes, setStakes] = useState(() => pick("stakes", "50/100"));
   const [ante, setAnte] = useState(() => pick("ante", 100));
@@ -566,13 +570,6 @@ function HandBuilder() {
       : 0;
     return { cards, actions, total: cards + actions };
   }, [holeCards, board, board2, eng]);
-
-  // Session totals from COMPLETED hands only (each stores its own piece counts).
-  const sessionStats = useMemo(() => {
-    const pieces = sessionHands.reduce((s, h) => s + (h.cards || 0) + (h.actions || 0), 0);
-    const hands = sessionHands.length;
-    return { hands, pieces, earnings: pieces * PIECE_RATE + hands * COMPLETION_BONUS };
-  }, [sessionHands]);
 
   // When every surviving player has hole cards AND the board is complete, the
   // showdown can be evaluated authoritatively — the winner is no longer a guess.
@@ -833,6 +830,24 @@ function HandBuilder() {
         ].sort((a, b) => a.n - b.n)
       );
       setHandPanelOpen(true); // surface the new card in the Hand Manager
+
+      // Persist server-side for cross-device tracking + earnings/bonuses, then
+      // refresh the header totals. Local copy is kept even if the write fails.
+      try {
+        await api("/api/hands/submit", {
+          method: "POST",
+          body: {
+            stream_id: videoId,
+            youtube_url: url,
+            timestamp_seconds: startSec,
+            pt4_text: data.text,
+            cards_count: cards,
+            actions_count: actions,
+          },
+        });
+        if (refreshMe) refreshMe();
+      } catch { /* offline / server write failed — local Hand Manager still has it */ }
+
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
@@ -1133,9 +1148,13 @@ function HandBuilder() {
           <div style={styles.topMeta}>
             <div style={styles.statTracker}>
               <div>
-                Hands: <strong style={{ color: "#f8fafc" }}>{sessionStats.hands}</strong>
-                {"  ·  "}Pieces: <strong style={{ color: "#f8fafc" }}>{sessionStats.pieces}</strong>
-                {"  ·  "}Earnings: <strong style={{ color: "#4ade80", fontSize: 15 }}>${sessionStats.earnings.toFixed(2)}</strong>
+                Hands: <strong style={{ color: "#f8fafc" }}>{me.dashboard.hands}</strong>
+                {"  ·  "}Pieces: <strong style={{ color: "#f8fafc" }}>{me.dashboard.pieces}</strong>
+              </div>
+              <div style={styles.statPreview}>
+                Base: <strong style={{ color: "#e2e8f0" }}>${me.dashboard.base.toFixed(2)}</strong>
+                {" + "}Stream Bonuses: <strong style={{ color: "#fbbf24" }}>${me.dashboard.stream_bonus.toFixed(2)}</strong>
+                {" = "}Total: <strong style={{ color: "#4ade80", fontSize: 14 }}>${me.dashboard.total.toFixed(2)}</strong>
               </div>
               {eng && handPieces.total > 0 && (
                 <div style={styles.statPreview}>
@@ -1615,32 +1634,54 @@ function NavItem({ to, label, icon, active, navigate }) {
   );
 }
 
-function NavBar({ route, navigate }) {
+function NavBar({ route, navigate, me, onLogout }) {
   return (
     <nav style={navStyles.bar}>
       <div style={navStyles.brand}>
         <span style={navStyles.chip}>♠</span> POKER SUITE
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <NavItem to="/" label="Hand Builder" icon="🛠" active={route === "builder"} navigate={navigate} />
         <NavItem to="/calendar" label="Calendar" icon="📅" active={route === "calendar"} navigate={navigate} />
+        <NavItem to="/dashboard" label="Dashboard" icon="📊" active={route === "dashboard"} navigate={navigate} />
+        {me.user.is_admin && (
+          <NavItem to="/admin" label="Admin" icon="🛡" active={route === "admin"} navigate={navigate} />
+        )}
+        <span style={navStyles.user}>{me.user.username}</span>
+        <button style={navStyles.logout} onClick={onLogout}>Log out</button>
       </div>
     </nav>
   );
 }
 
-const pathToRoute = (p) => (p.startsWith("/calendar") ? "calendar" : "builder");
+const pathToRoute = (p) => {
+  if (p.startsWith("/calendar")) return "calendar";
+  if (p.startsWith("/dashboard")) return "dashboard";
+  if (p.startsWith("/admin")) return "admin";
+  return "builder";
+};
 
-// ── Root: history-based router (works with the SPA fallback in server.py) ─────
+// ── Root: auth gating + history-based router (SPA fallback in server.py) ──────
 export default function App() {
   const [route, setRoute] = useState(() => {
     try { return pathToRoute(window.location.pathname); } catch { return "builder"; }
   });
+  const [me, setMe] = useState(null); // null = checking, false = anonymous, obj = authed
 
   useEffect(() => {
     const onPop = () => setRoute(pathToRoute(window.location.pathname));
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Initial session check.
+  useEffect(() => {
+    api("/api/me").then(setMe).catch(() => setMe(false));
+  }, []);
+
+  const refreshMe = useCallback(async () => {
+    try { const m = await api("/api/me"); setMe(m); return m; }
+    catch { setMe(false); return null; }
   }, []);
 
   const navigate = (path) => {
@@ -1656,12 +1697,28 @@ export default function App() {
     navigate("/");
   };
 
+  const logout = async () => {
+    try { await api("/api/logout", { method: "POST" }); } catch { /* ignore */ }
+    setMe(false);
+    navigate("/");
+  };
+
+  if (me === null) return <div style={navStyles.loading}>Loading…</div>;
+  if (!me) return <Auth onAuthed={(m) => { setMe(m); navigate("/"); }} />;
+
+  let view;
+  if (route === "calendar") view = <Calendar onOpenInBuilder={openInBuilder} refreshMe={refreshMe} />;
+  else if (route === "dashboard") view = <Dashboard user={me.user} dashboard={me.dashboard} />;
+  else if (route === "admin") {
+    view = me.user.is_admin
+      ? <Admin />
+      : <div style={navStyles.loading}>Admin access only.</div>;
+  } else view = <HandBuilder me={me} refreshMe={refreshMe} />;
+
   return (
     <div style={navStyles.root}>
-      <NavBar route={route} navigate={navigate} />
-      <div style={navStyles.view}>
-        {route === "calendar" ? <Calendar onOpenInBuilder={openInBuilder} /> : <HandBuilder />}
-      </div>
+      <NavBar route={route} navigate={navigate} me={me} onLogout={logout} />
+      <div style={navStyles.view}>{view}</div>
     </div>
   );
 }
@@ -1679,4 +1736,7 @@ const navStyles = {
   chip: { display: "inline-flex", width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 13 },
   item: { padding: "7px 16px", background: "transparent", border: "1px solid transparent", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   itemActive: { background: "#16243a", border: "1px solid #2b3a52", color: "#f8fafc" },
+  user: { fontSize: 12.5, fontWeight: 700, color: "#7dd3fc", marginLeft: 6, padding: "0 4px" },
+  logout: { padding: "7px 14px", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  loading: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "#64748b", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", fontSize: 14 },
 };

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { api } from "./api.js";
 import SEED_STREAMS from "./data/hcl_streams.json";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,8 +104,10 @@ function parseCSV(text) {
 }
 
 // ── Calendar page ─────────────────────────────────────────────────────────
-export default function Calendar({ onOpenInBuilder }) {
+export default function Calendar({ onOpenInBuilder, refreshMe }) {
   const [streams, setStreams] = useState(loadStreams);
+  // Server truth for per-stream { handsCompleted, isComplete }, overlaid below.
+  const [serverState, setServerState] = useState({});
   const today = useMemo(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth(), str: ymd(d.getFullYear(), d.getMonth(), d.getDate()) }; }, []);
   const [view, setView] = useState(() => ({ year: today.y, month: today.m }));
   const [selectedDate, setSelectedDate] = useState(null); // "YYYY-MM-DD" or null
@@ -116,24 +119,33 @@ export default function Calendar({ onOpenInBuilder }) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ streams, seeded: true })); } catch { /* ignore */ }
   }, [streams]);
 
+  const fetchState = () => api("/api/streams/state").then((d) => setServerState(d.states || {})).catch(() => {});
+  useEffect(() => { fetchState(); }, []);
+
+  // Overlay live server hand counts + completion onto the local catalog.
+  const merged = useMemo(() => streams.map((s) => {
+    const sv = serverState[s.id];
+    return sv ? { ...s, handsCompleted: sv.handsCompleted, isComplete: sv.isComplete } : s;
+  }), [streams, serverState]);
+
   // Index streams by date for quick cell lookup.
   const byDate = useMemo(() => {
     const m = new Map();
-    for (const s of streams) {
+    for (const s of merged) {
       if (!m.has(s.date)) m.set(s.date, []);
       m.get(s.date).push(s);
     }
     return m;
-  }, [streams]);
+  }, [merged]);
 
   // Aggregate stats across ALL streams (not just the visible month).
   const stats = useMemo(() => {
-    const total = streams.length;
-    const completed = streams.filter((s) => s.isComplete).length;
-    const handsDone = streams.reduce((a, s) => a + (s.handsCompleted || 0), 0);
-    const handsEst = streams.reduce((a, s) => a + (s.handsEstimated || 0), 0);
+    const total = merged.length;
+    const completed = merged.filter((s) => s.isComplete).length;
+    const handsDone = merged.reduce((a, s) => a + (s.handsCompleted || 0), 0);
+    const handsEst = merged.reduce((a, s) => a + (s.handsEstimated || 0), 0);
     return { total, completed, handsDone, handsEst, pct: total ? Math.round((completed / total) * 100) : 0 };
-  }, [streams]);
+  }, [merged]);
 
   const grid = useMemo(() => buildGrid(view.year, view.month, today.str), [view, today.str]);
 
@@ -155,9 +167,27 @@ export default function Calendar({ onOpenInBuilder }) {
       addedAt: nowISO(),
     };
     setStreams((arr) => [...arr, s]);
+    api("/api/streams", { method: "POST", body: s }).catch(() => {}); // mirror to server catalog
   };
   const updateStream = (id, patch) => setStreams((arr) => arr.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const removeStream = (id) => setStreams((arr) => arr.filter((s) => s.id !== id));
+
+  // Mark a stream complete: optimistic locally, authoritative on the server
+  // (which awards the $0.05/hand stream bonus to the worker(s) who built it).
+  const markComplete = async (stream, complete = true) => {
+    updateStream(stream.id, { isComplete: complete });
+    try {
+      await api("/api/streams/complete", {
+        method: "POST",
+        body: {
+          id: stream.id, complete, youtubeUrl: stream.youtubeUrl, title: stream.title,
+          date: stream.date, durationMinutes: stream.durationMinutes, handsEstimated: stream.handsEstimated,
+        },
+      });
+      fetchState();
+      if (refreshMe) refreshMe();
+    } catch { /* keep the optimistic local toggle */ }
+  };
 
   const importStreams = (rows) => {
     // De-dupe against existing (date + url) so re-imports don't pile up.
@@ -179,7 +209,10 @@ export default function Calendar({ onOpenInBuilder }) {
         addedAt: nowISO(),
       });
     }
-    if (fresh.length) setStreams((arr) => [...arr, ...fresh]);
+    if (fresh.length) {
+      setStreams((arr) => [...arr, ...fresh]);
+      api("/api/streams/import", { method: "POST", body: { rows: fresh } }).catch(() => {});
+    }
     return { added: fresh.length, skipped: rows.length - fresh.length };
   };
 
@@ -252,6 +285,7 @@ export default function Calendar({ onOpenInBuilder }) {
           onClose={() => setSelectedDate(null)}
           onAdd={addStream}
           onUpdate={updateStream}
+          onComplete={markComplete}
           onRemove={removeStream}
           onOpenInBuilder={onOpenInBuilder}
         />
@@ -295,7 +329,7 @@ function StatsBanner({ stats }) {
 }
 
 // ── Day panel (right drawer) ────────────────────────────────────────────────
-function DayPanel({ date, streams, onClose, onAdd, onUpdate, onRemove, onOpenInBuilder }) {
+function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onRemove, onOpenInBuilder }) {
   const [showAdd, setShowAdd] = useState(streams.length === 0);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -346,14 +380,8 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onRemove, onOpenInB
 
                 <div style={s.progressRow}>
                   <label style={s.fieldLabel}>Done</label>
-                  <input
-                    style={s.numInput}
-                    type="number"
-                    min={0}
-                    value={st.handsCompleted || 0}
-                    onChange={(e) => onUpdate(st.id, { handsCompleted: Math.max(0, Number(e.target.value) || 0) })}
-                  />
-                  <label style={s.fieldLabel}>of</label>
+                  <span style={s.doneCount}>{st.handsCompleted || 0}</span>
+                  <label style={s.fieldLabel}>of est.</label>
                   <input
                     style={s.numInput}
                     type="number"
@@ -366,7 +394,7 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onRemove, onOpenInB
                 <div style={s.streamActions}>
                   <button
                     style={st.isComplete ? s.completeOn : s.completeBtn}
-                    onClick={() => onUpdate(st.id, { isComplete: !st.isComplete })}
+                    onClick={() => onComplete(st, !st.isComplete)}
                   >
                     {st.isComplete ? "✓ Complete" : "Mark Complete"}
                   </button>
@@ -538,6 +566,7 @@ const s = {
   streamMetaRow: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginBottom: 8 },
   progressRow: { display: "flex", alignItems: "center", gap: 6, marginBottom: 10 },
   numInput: { width: 64, padding: "5px 7px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12, textAlign: "center", outline: "none" },
+  doneCount: { fontSize: 14, fontWeight: 800, color: "#4ade80", minWidth: 28, textAlign: "center" },
   streamActions: { display: "flex", gap: 8 },
   completeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   completeOn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16a34a", border: "1px solid #16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, cursor: "pointer" },

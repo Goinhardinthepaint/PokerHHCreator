@@ -36,3 +36,7 @@ Thumbs.db
 # scraper run logs
 scripts/scrape_run.log
 scripts/*.log
+
+# auth/accounts database (created at runtime)
+users.db
+*.db

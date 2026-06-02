@@ -16,7 +16,8 @@ import sys
 import threading
 import time
 import queue
-from flask import Flask, request, Response, send_file, jsonify, send_from_directory
+from functools import wraps
+from flask import Flask, request, Response, send_file, jsonify, send_from_directory, session
 from flask_cors import CORS
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,9 +27,50 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # inside the pipeline functions so the deployed app needs only flask/flask-cors.
 from src.export.pt4_formatter import format_hand, HandValidationError
 from src.export.hand_evaluator import evaluate_best_hand
+import auth_db
 
 app = Flask(__name__)
-CORS(app)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,  # 30 days
+)
+# supports_credentials so the session cookie rides along with fetch(credentials).
+CORS(app, supports_credentials=True)
+
+# Create tables, bootstrap the admin account, seed the stream catalog.
+auth_db.init_db()
+
+
+# ── Auth helpers ─────────────────────────────────────────────────────────────
+def current_user():
+    uid = session.get("user_id")
+    return auth_db.get_user(uid) if uid else None
+
+
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify({"error": "Login required."}), 401
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        u = current_user()
+        if not u or not u["is_admin"]:
+            return jsonify({"error": "Admin access only."}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _me_payload(uid):
+    u = auth_db.get_user(uid)
+    return {"user": auth_db.public_user(u), "dashboard": auth_db.user_dashboard(uid)}
 
 # Global state
 _event_queue = queue.Queue()
@@ -365,6 +407,139 @@ def api_evaluate():
 @app.route("/api/status", methods=["GET"])
 def api_status():
     return jsonify({"running": _running})
+
+
+# ── Accounts ─────────────────────────────────────────────────────────────────
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    d = request.json or {}
+    try:
+        u = auth_db.create_user(d.get("username"), d.get("email"), d.get("password"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    session["user_id"] = u["id"]
+    session.permanent = True
+    return jsonify(_me_payload(u["id"]))
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    d = request.json or {}
+    u = auth_db.verify_user(d.get("username"), d.get("password"))
+    if not u:
+        return jsonify({"error": "Invalid username or password."}), 401
+    session["user_id"] = u["id"]
+    session.permanent = True
+    return jsonify(_me_payload(u["id"]))
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me", methods=["GET"])
+def api_me():
+    uid = session.get("user_id")
+    if not uid or not auth_db.get_user(uid):
+        session.clear()
+        return jsonify({"error": "Not authenticated."}), 401
+    return jsonify(_me_payload(uid))
+
+
+# ── Hands ────────────────────────────────────────────────────────────────────
+@app.route("/api/hands/submit", methods=["POST"])
+@login_required
+def api_hands_submit():
+    uid = session["user_id"]
+    d = request.json or {}
+    hand_id, earnings = auth_db.insert_hand(
+        uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
+        d.get("pt4_text"), d.get("cards_count"), d.get("actions_count"),
+    )
+    return jsonify({"hand_id": hand_id, "earnings": earnings,
+                    "dashboard": auth_db.user_dashboard(uid)})
+
+
+# ── Streams (calendar) ───────────────────────────────────────────────────────
+@app.route("/api/streams/state", methods=["GET"])
+@login_required
+def api_streams_state():
+    return jsonify({"states": auth_db.stream_state()})
+
+
+@app.route("/api/streams/complete", methods=["POST"])
+@login_required
+def api_streams_complete():
+    d = request.json or {}
+    sid = d.get("id") or d.get("stream_id")
+    if not sid:
+        return jsonify({"error": "stream id required"}), 400
+    meta = {k: d.get(k) for k in ("youtubeUrl", "title", "date", "durationMinutes", "handsEstimated")}
+    shares = auth_db.set_stream_complete(sid, bool(d.get("complete", True)), meta)
+    return jsonify({"ok": True, "shares": shares,
+                    "dashboard": auth_db.user_dashboard(session["user_id"])})
+
+
+@app.route("/api/streams", methods=["POST"])
+@login_required
+def api_streams_add():
+    d = request.json or {}
+    if not d.get("id"):
+        return jsonify({"error": "id required"}), 400
+    auth_db.upsert_stream(d)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/streams/import", methods=["POST"])
+@login_required
+def api_streams_import():
+    rows = (request.json or {}).get("rows") or []
+    n = 0
+    for r in rows:
+        if r.get("id"):
+            auth_db.upsert_stream(r)
+            n += 1
+    return jsonify({"ok": True, "imported": n})
+
+
+# ── Admin ────────────────────────────────────────────────────────────────────
+@app.route("/api/admin/users", methods=["GET"])
+@admin_required
+def api_admin_users():
+    return jsonify(auth_db.admin_overview())
+
+
+@app.route("/api/admin/user/<int:uid>", methods=["GET"])
+@admin_required
+def api_admin_user(uid):
+    det = auth_db.admin_user_detail(uid)
+    if not det:
+        return jsonify({"error": "No such user."}), 404
+    return jsonify(det)
+
+
+@app.route("/api/admin/payment", methods=["POST"])
+@admin_required
+def api_admin_payment():
+    d = request.json or {}
+    uid, amount = d.get("user_id"), d.get("amount")
+    if not uid or amount is None:
+        return jsonify({"error": "user_id and amount required"}), 400
+    try:
+        auth_db.record_payment(uid, amount, d.get("date"), d.get("note"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount must be a number"}), 400
+    return jsonify(auth_db.admin_user_detail(uid))
+
+
+@app.route("/api/admin/export", methods=["GET"])
+@admin_required
+def api_admin_export():
+    text = auth_db.export_all_text()
+    return Response(text, mimetype="text/plain",
+                    headers={"Content-Disposition": "attachment; filename=hand_database.txt"})
 
 
 # ── Serve the built React frontend (single server, one port) ─────────────────
