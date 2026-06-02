@@ -68,6 +68,36 @@ function secsToHMS(s) {
   return [h, m, sec].map((x) => String(x).padStart(2, "0")).join(":");
 }
 
+// Today's date as YYYY-MM-DD, used as the default video date for a fresh session.
+const TODAY_ISO = (() => {
+  try { return new Date().toISOString().slice(0, 10); } catch { return ""; }
+})();
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Compact clock for a hand's timestamp: "33:20" (m:ss) or "1:02:03" (h:mm:ss).
+function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  const p = (x) => String(x).padStart(2, "0");
+  return h > 0 ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`;
+}
+// "2026-06-01" → "Jun 1, 2026"; falls back gracefully for blanks / bad input.
+function fmtDate(iso) {
+  if (!iso) return "No date";
+  const [y, m, d] = String(iso).split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${MONTHS[m - 1] || "?"} ${d}, ${y}`;
+}
+// Sort order for hand cards: video date, then video, then timestamp within the
+// video, then hand #. Keeps each video's hands contiguous and chronological.
+function cmpHand(a, b) {
+  return (
+    (a.videoDate || "").localeCompare(b.videoDate || "") ||
+    (a.videoId || "").localeCompare(b.videoId || "") ||
+    (a.startSec || 0) - (b.startSec || 0) ||
+    (a.n || 0) - (b.n || 0)
+  );
+}
+
 // ── Playing card ────────────────────────────────────────────────────────────
 function Card({ card, onClick, size = "md", faceDownIfEmpty }) {
   const dims = { sm: { w: 30, h: 42, f: 15 }, md: { w: 44, h: 62, f: 20 }, lg: { w: 56, h: 78, f: 26 } }[size];
@@ -229,6 +259,183 @@ function loadSession() {
 const SAVED = loadSession();
 const pick = (key, fallback) => (SAVED[key] !== undefined ? SAVED[key] : fallback);
 
+// ── Hand Manager panel ──────────────────────────────────────────────────────
+// Right-side collapsible panel: every completed hand rendered as a selectable
+// card, grouped by video and sorted date→timestamp, with range/toggle selection
+// (like a file explorer), bulk + per-card delete, and drag-to-export plus
+// Export Selected / Export All buttons. Hands live in App state (→ localStorage).
+function HandManager({ hands, onDeleteIds, onExportHands }) {
+  const [selected, setSelected] = useState(() => new Set());
+  const [anchor, setAnchor] = useState(null); // last single-clicked card (range pivot)
+  const [dragOver, setDragOver] = useState(false);
+
+  const sorted = useMemo(() => [...hands].sort(cmpHand), [hands]);
+  const ids = useMemo(() => sorted.map((h) => h.n), [sorted]);
+
+  // Effective selection — raw state intersected with the hands that still exist,
+  // so a deleted hand's id can't linger and skew the count (derived, no effect).
+  const sel = useMemo(() => {
+    const live = new Set(ids);
+    return new Set([...selected].filter((id) => live.has(id)));
+  }, [selected, ids]);
+
+  // Group consecutive (sorted) hands by their video — one header per video.
+  const groups = useMemo(() => {
+    const m = new Map();
+    for (const h of sorted) {
+      const key = h.videoId || h.videoDate || "ungrouped";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(h);
+    }
+    return [...m.values()].map((hs) => ({
+      key: hs[0].videoId || hs[0].videoDate || "ungrouped",
+      videoDate: hs[0].videoDate,
+      label: hs[0].sessionLabel,
+      hands: hs,
+    }));
+  }, [sorted]);
+
+  const allSelected = ids.length > 0 && ids.every((id) => sel.has(id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(ids));
+
+  // File-explorer selection: plain = single, Ctrl/Cmd = toggle, Shift = range.
+  function clickCard(e, id) {
+    const idx = ids.indexOf(id);
+    if (e.shiftKey && anchor != null) {
+      const a = ids.indexOf(anchor);
+      if (a >= 0 && idx >= 0) {
+        const [lo, hi] = a < idx ? [a, idx] : [idx, a];
+        setSelected(new Set(ids.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+      });
+      setAnchor(id);
+      return;
+    }
+    setSelected(new Set([id]));
+    setAnchor(id);
+  }
+
+  function deleteOne(h) {
+    if (window.confirm(`Delete hand at ${h.timestamp || "?"}?`)) onDeleteIds([h.n]);
+  }
+  function deleteSelected() {
+    const c = sel.size;
+    if (!c) return;
+    if (window.confirm(`Delete ${c} hand${c === 1 ? "" : "s"}?`)) {
+      onDeleteIds([...sel]);
+      setSelected(new Set());
+    }
+  }
+  const exportSelected = () => {
+    const hs = sorted.filter((h) => sel.has(h.n));
+    if (hs.length) onExportHands(hs);
+  };
+  const exportAll = () => sorted.length && onExportHands(sorted);
+
+  // Dropping into the export zone exports the current selection plus whichever
+  // card was dragged (covers dragging an as-yet-unselected card).
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const dragged = Number(e.dataTransfer.getData("text/plain"));
+    const set = new Set(sel);
+    if (!Number.isNaN(dragged)) set.add(dragged);
+    const hs = sorted.filter((h) => set.has(h.n));
+    if (hs.length) onExportHands(hs);
+  }
+
+  return (
+    <div style={styles.hmInner}>
+      <div style={styles.hmHeadRow}>
+        <span style={styles.sideHead}>HAND MANAGER</span>
+        <span style={styles.hmCount}>{sorted.length} hand{sorted.length === 1 ? "" : "s"}</span>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div style={styles.hmEmpty}>No hands yet. Complete a hand and it lands here.</div>
+      ) : (
+        <>
+          <div style={styles.hmToolbar}>
+            <label style={styles.hmSelAll}>
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+              <span>Select All</span>
+            </label>
+            <span style={styles.hmSelCount}>{sel.size} of {sorted.length} selected</span>
+          </div>
+
+          <div style={styles.hmBtnRow}>
+            <button style={{ ...styles.hmBtn, opacity: sel.size ? 1 : 0.45 }} disabled={!sel.size} onClick={exportSelected}>Export Selected</button>
+            <button style={styles.hmBtnGreen} onClick={exportAll}>Export All</button>
+            <button style={{ ...styles.hmBtnRed, opacity: sel.size ? 1 : 0.45 }} disabled={!sel.size} onClick={deleteSelected}>Delete Selected</button>
+          </div>
+
+          <div style={styles.hmList}>
+            {groups.map((g) => (
+              <div key={g.key}>
+                <div style={styles.hmGroupHead}>
+                  {fmtDate(g.videoDate)}{g.label ? ` — ${g.label}` : ""}
+                </div>
+                {g.hands.map((h) => {
+                  const isSel = sel.has(h.n);
+                  return (
+                    <div
+                      key={h.n}
+                      draggable
+                      onDragStart={(e) => {
+                        if (!sel.has(h.n)) { setSelected(new Set([h.n])); setAnchor(h.n); }
+                        e.dataTransfer.effectAllowed = "copy";
+                        e.dataTransfer.setData("text/plain", String(h.n));
+                      }}
+                      onClick={(e) => clickCard(e, h.n)}
+                      style={{ ...styles.hmCard, ...(isSel ? styles.hmCardSel : {}) }}
+                    >
+                      <button
+                        style={styles.hmCardX}
+                        title="Delete this hand"
+                        onClick={(e) => { e.stopPropagation(); deleteOne(h); }}
+                      >✕</button>
+                      <div style={styles.hmCardTop}>
+                        <span style={styles.hmTime}>⏱ {h.timestamp || "—"}</span>
+                        <span style={styles.hmHandNo}>#{h.n}</span>
+                      </div>
+                      <div style={styles.hmSummary}>{h.summary || "(hand)"}</div>
+                      <div style={styles.hmCardMeta}>
+                        <span>{h.playerCount != null ? `${h.playerCount} to flop` : ""}</span>
+                        <span>{h.potSize != null ? `Pot ${fmtChips(h.potSize)}` : ""}</span>
+                      </div>
+                      {h.youtubeUrl ? (
+                        <a href={h.youtubeUrl} target="_blank" rel="noreferrer" style={styles.hmLink} onClick={(e) => e.stopPropagation()}>
+                          ▶ watch ↗
+                        </a>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{ ...styles.hmDrop, ...(dragOver ? styles.hmDropActive : {}) }}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+          >
+            {dragOver ? "Release to export" : "⤓ Drop hands here to export"}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main app ────────────────────────────────────────────────────────────────
 export default function App() {
   // Session (persists across hands) — initialised from any saved session.
@@ -252,9 +459,12 @@ export default function App() {
   const [winner2, setWinner2] = useState(() => pick("winner2", ""));
   const [handNumber, setHandNumber] = useState(() => pick("handNumber", 1));
   const [youtubeLink, setYoutubeLink] = useState(() => pick("youtubeLink", "")); // per-hand timestamped link
+  const [videoDate, setVideoDate] = useState(() => pick("videoDate", TODAY_ISO)); // session's YouTube video date
+  const [sessionLabel, setSessionLabel] = useState(() => pick("sessionLabel", "")); // stream name, e.g. "HCL Stream"
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [handPanelOpen, setHandPanelOpen] = useState(false); // right-side Hand Manager
   const [editor, setEditor] = useState(null); // {kind:'hole'|'board'|'board2', seat?, idx}
   const [editingStack, setEditingStack] = useState(null); // seat
   const [stackDraft, setStackDraft] = useState("");
@@ -265,8 +475,6 @@ export default function App() {
   const [error, setError] = useState("");
   const [sessionHands, setSessionHands] = useState(() => pick("sessionHands", [])); // [{n, text}] accumulated PT4 hands
   const [configDraft, setConfigDraft] = useState(""); // save/restore session JSON
-  const [showHistory, setShowHistory] = useState(false); // session-history modal
-  const [copiedAll, setCopiedAll] = useState(false); // transient "Copied!" feedback
   const [flash, setFlash] = useState(""); // transient green "Hand #N saved" toast
 
   const named = useMemo(() => roster.filter((p) => p.name.trim()), [roster]);
@@ -403,13 +611,13 @@ export default function App() {
         JSON.stringify({
           stakes, ante, buttonSeat, straddleCount, buyButton, roster,
           phase, eng, engHistory, holeCards, board, board2, rit,
-          winner, winner2, handNumber, youtubeLink, sessionHands, preview, evalResult,
+          winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, sessionHands, preview, evalResult]);
+  }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult]);
 
   // Board cards required to deal the next street
   function boardReadyFor(street) {
@@ -554,7 +762,7 @@ export default function App() {
       const effWinners = autoEval ? autoEval.winners : surv.length === 1 ? [surv[0]] : [winner || surv[0]];
       const hand = buildHandDict(eng, { stakes, holeCards, board, board2, rit: false, winner: effWinner, winner2, winners: effWinners, positions: buyButton ? {} : positions });
       if (buyButton) hand.buy_button_seat = buyButton.seat;
-      const { url, startSec } = parseYouTube(link);
+      const { url, startSec, id: videoId } = parseYouTube(link);
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
       if (url) hand.table_name = url; // timestamped link → PT4 table name
 
@@ -568,7 +776,49 @@ export default function App() {
 
       const n = handNumber;
       const { cards, actions } = handPieces;
-      setSessionHands((hs) => [...hs.filter((h) => h.n !== n), { n, text: data.text, cards, actions }].sort((a, b) => a.n - b.n));
+
+      // ── Hand-card metadata for the Hand Manager ──────────────────────────
+      // Pot actually contested (gross committed minus any returned uncalled bet).
+      const grossPot = potTotal(eng);
+      const uncalled = eng.uncalled?.amount || 0;
+      const potSize = grossPot - uncalled;
+      // Where the hand ended: a 2+ way survivor pool means it was shown down,
+      // otherwise it ended on whatever street the last fold happened.
+      const endStreet = surv.length >= 2 ? "showdown" : eng.street;
+      const summary =
+        effWinners.length > 1
+          ? `${effWinners.join(" & ")} split ${fmtChips(potSize)} (${endStreet})`
+          : `${effWinner} wins ${fmtChips(potSize)} (${endStreet})`;
+      // Players who saw the flop: everyone not folded during preflop, but only if
+      // the hand actually reached the flop (else nobody saw it).
+      const foldedPreflop = new Set(
+        (eng.actionsByStreet.preflop || []).filter((a) => a.action === "folds").map((a) => a.player)
+      );
+      const reachedFlop = STREETS.indexOf(eng.street) >= 1;
+      const playerCount = reachedFlop ? eng.players.filter((p) => !foldedPreflop.has(p.name)).length : 0;
+
+      setSessionHands((hs) =>
+        [
+          ...hs.filter((h) => h.n !== n),
+          {
+            n,
+            text: data.text, // kept for backward compatibility
+            pt4Text: data.text,
+            cards,
+            actions,
+            youtubeUrl: url,
+            videoId,
+            timestamp: startSec > 0 ? fmtClock(startSec) : "",
+            startSec,
+            videoDate,
+            sessionLabel,
+            summary,
+            potSize,
+            playerCount,
+          },
+        ].sort((a, b) => a.n - b.n)
+      );
+      setHandPanelOpen(true); // surface the new card in the Hand Manager
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
@@ -637,6 +887,8 @@ export default function App() {
     setWinner2("");
     setHandNumber(1);
     setYoutubeLink("");
+    setVideoDate(TODAY_ISO);
+    setSessionLabel("");
     setSessionHands([]);
     setPreview("");
     setEvalResult(null);
@@ -697,26 +949,25 @@ export default function App() {
     setBuyMenuSeat(null);
   }
 
-  // All session hands as one PT4 text block (each hand separated by 2 blank lines).
-  const sessionText = sessionHands.map((h) => h.text.trimEnd()).join("\n\n\n") + (sessionHands.length ? "\n" : "");
-
-  function downloadSession() {
-    if (!sessionHands.length) return;
-    const blob = new Blob([sessionText], { type: "text/plain" });
+  // Export a set of hands as one PT4 .txt: sorted by date→timestamp, each hand's
+  // text concatenated with two blank lines between (matches the session format).
+  function downloadHands(hands) {
+    if (!hands.length) return;
+    const ordered = [...hands].sort(cmpHand);
+    const text = ordered.map((h) => (h.pt4Text || h.text || "").trimEnd()).join("\n\n\n") + "\n";
+    const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `session_${sessionHands.length}hands.txt`;
+    a.download = `hands_${ordered.length}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function copyAllHands() {
-    if (!sessionHands.length || !navigator.clipboard) return;
-    navigator.clipboard.writeText(sessionText).then(
-      () => { setCopiedAll(true); setTimeout(() => setCopiedAll(false), 1500); },
-      () => {}
-    );
+  // Remove hands by number; the persistence effect mirrors the change to storage.
+  function deleteHandIds(idsArr) {
+    const drop = new Set(idsArr);
+    setSessionHands((hs) => hs.filter((h) => !drop.has(h.n)));
   }
 
   // ── Layout positions ──────────────────────────────────────────────────────
@@ -767,6 +1018,17 @@ export default function App() {
                 <select style={styles.input} value={buttonSeat} onChange={(e) => setButtonSeat(Number(e.target.value))} disabled={locked}>
                   {seatOptions.map((s) => (<option key={s} value={s}>Seat {s}</option>))}
                 </select>
+              </div>
+            </div>
+
+            <div style={styles.row}>
+              <div style={styles.col}>
+                <label style={styles.label}>Video Date</label>
+                <input style={styles.input} type="date" value={videoDate} onChange={(e) => setVideoDate(e.target.value)} />
+              </div>
+              <div style={styles.col}>
+                <label style={styles.label}>Stream Name</label>
+                <input style={styles.input} value={sessionLabel} placeholder="HCL Stream" onChange={(e) => setSessionLabel(e.target.value)} />
               </div>
             </div>
 
@@ -875,8 +1137,8 @@ export default function App() {
               </>
             )}
             {sessionHands.length > 0 && (
-              <button style={styles.sessionBtn} title="View, copy or download every hand this session" onClick={() => setShowHistory(true)}>
-                📋 View All Hands ({sessionHands.length})
+              <button style={styles.sessionBtn} title="Open the Hand Manager" onClick={() => setHandPanelOpen((o) => !o)}>
+                🗂 Hand Manager ({sessionHands.length})
               </button>
             )}
             <span style={styles.handTag}>Hand #{handNumber}</span>
@@ -1089,6 +1351,20 @@ export default function App() {
         </div>
       </main>
 
+      {/* Hand Manager — right-side collapsible panel */}
+      <aside style={{ ...styles.handPanel, width: handPanelOpen ? 348 : 0, padding: handPanelOpen ? "18px 14px" : 0 }}>
+        {handPanelOpen && (
+          <HandManager hands={sessionHands} onDeleteIds={deleteHandIds} onExportHands={downloadHands} />
+        )}
+      </aside>
+      <button
+        style={{ ...styles.handToggle, right: handPanelOpen ? 348 : 0 }}
+        title={handPanelOpen ? "Hide Hand Manager" : "Show Hand Manager"}
+        onClick={() => setHandPanelOpen((o) => !o)}
+      >
+        {handPanelOpen ? "›" : "‹"}
+      </button>
+
       {/* Card picker */}
       {editor && (
         <CardPicker
@@ -1137,21 +1413,6 @@ export default function App() {
 
       {/* Transient "Hand #N saved" confirmation */}
       {flash && <div style={styles.flashToast}>✓ {flash}</div>}
-
-      {/* Session history — full-screen view of every hand this session */}
-      {showHistory && (
-        <div style={styles.historyOverlay}>
-          <div style={styles.historyHead}>
-            <span style={styles.historyTitle}>Session History — {sessionHands.length} hand{sessionHands.length === 1 ? "" : "s"}</span>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button style={styles.histBtn} disabled={!sessionHands.length} onClick={copyAllHands}>{copiedAll ? "✓ Copied!" : "⧉ Copy All"}</button>
-              <button style={{ ...styles.histBtn, background: "#22c55e", color: "#06210f", borderColor: "#22c55e" }} disabled={!sessionHands.length} onClick={downloadSession}>↓ Download All</button>
-              <button style={styles.histBtn} onClick={() => setShowHistory(false)}>✕ Close</button>
-            </div>
-          </div>
-          <pre style={styles.historyText}>{sessionText || "No hands generated yet — generate a hand to start the session."}</pre>
-        </div>
-      )}
     </div>
   );
 }
@@ -1195,12 +1456,35 @@ const styles = {
   statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap", lineHeight: 1.4 },
   statPreview: { fontSize: 11, color: "#fbbf24", marginTop: 1 },
   flashToast: { position: "fixed", top: 64, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: "#16a34a", color: "#f0fdf4", fontWeight: 800, fontSize: 14, letterSpacing: 0.3, padding: "12px 24px", borderRadius: 10, boxShadow: "0 8px 30px rgba(34,197,94,.5)", maxWidth: "90vw", textAlign: "center", whiteSpace: "nowrap" },
-  historyOverlay: { position: "fixed", inset: 0, background: "#070b12", zIndex: 60, display: "flex", flexDirection: "column" },
-  historyHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 22px", borderBottom: "1px solid #1e293b", flexShrink: 0 },
-  historyTitle: { fontSize: 16, fontWeight: 800, letterSpacing: 0.5, color: "#f8fafc" },
-  histBtn: { padding: "9px 16px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  historyText: { flex: 1, margin: 0, padding: "18px 24px", overflowY: "auto", background: "#06090f", color: "#a5d6a7", fontSize: 12.5, lineHeight: 1.55, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" },
   handTag: { background: "#f59e0b22", color: "#f59e0b", padding: "4px 10px", borderRadius: 20, fontWeight: 700, fontSize: 12 },
+
+  // ── Hand Manager panel ──
+  handPanel: { background: "#0d1320", borderLeft: "1px solid #1e293b", overflow: "hidden", transition: "width .18s ease", flexShrink: 0, boxSizing: "border-box" },
+  handToggle: { position: "fixed", top: 14, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px 0 0 8px", cursor: "pointer", transition: "right .18s ease" },
+  hmInner: { display: "flex", flexDirection: "column", gap: 10, height: "100%", minWidth: 320 },
+  hmHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+  hmCount: { fontSize: 11, color: "#64748b", fontWeight: 600 },
+  hmEmpty: { fontSize: 12, color: "#64748b", lineHeight: 1.5, marginTop: 6 },
+  hmToolbar: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  hmSelAll: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#cbd5e1", cursor: "pointer", fontWeight: 600 },
+  hmSelCount: { fontSize: 11, color: "#7dd3fc", fontWeight: 700 },
+  hmBtnRow: { display: "flex", flexWrap: "wrap", gap: 6 },
+  hmBtn: { flex: "1 1 46%", padding: "7px 8px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#e2e8f0", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  hmBtnGreen: { flex: "1 1 46%", padding: "7px 8px", background: "#16a34a", border: "1px solid #16a34a", borderRadius: 7, color: "#06210f", fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  hmBtnRed: { flex: "1 1 100%", padding: "7px 8px", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 7, color: "#fca5a5", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  hmList: { flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, margin: "0 -2px", padding: "0 2px" },
+  hmGroupHead: { position: "sticky", top: 0, background: "#0d1320", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", padding: "6px 0 4px", zIndex: 1 },
+  hmCard: { position: "relative", background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px 7px", marginBottom: 6, cursor: "pointer", userSelect: "none" },
+  hmCardSel: { borderColor: "#3b82f6", boxShadow: "0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.35)", background: "#10203a" },
+  hmCardX: { position: "absolute", top: 5, right: 5, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", fontSize: 10, cursor: "pointer" },
+  hmCardTop: { display: "flex", alignItems: "center", gap: 8, marginBottom: 3, paddingRight: 18 },
+  hmTime: { fontSize: 12, fontWeight: 800, color: "#fde68a" },
+  hmHandNo: { fontSize: 10, color: "#64748b", fontWeight: 700 },
+  hmSummary: { fontSize: 12.5, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3, marginBottom: 4 },
+  hmCardMeta: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94a3b8" },
+  hmLink: { display: "inline-block", marginTop: 5, fontSize: 10.5, color: "#7dd3fc", fontWeight: 600, textDecoration: "none" },
+  hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "2px dashed #2b3a52", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", background: "rgba(10,15,26,.4)", transition: "all .12s" },
+  hmDropActive: { borderColor: "#22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
 
   tableWrap: { position: "relative", flex: 1, margin: "12px 16px 6px", minHeight: 420 },
   rail: {
