@@ -55,7 +55,9 @@ def _preprocess_hand(hand: dict) -> dict:
     game = hand.get("game", {})
     stakes = game.get("stakes", "50/100")
     try:
-        sb, bb = (int(x) for x in stakes.split("/"))
+        # Stakes may be "sb/bb" or triple-blind "sb/bb/mandatory_straddle".
+        _p = stakes.split("/")
+        sb, bb = int(_p[0]), int(_p[1])
     except Exception:
         sb, bb = 50, 100
 
@@ -348,7 +350,10 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
 
     game = hand.get("game", {})
     stakes = game.get("stakes", "50/100")
-    sb_amount, bb_amount = [int(x) for x in stakes.split("/")]
+    # Stakes may be "sb/bb" or triple-blind "sb/bb/mandatory_straddle" — take the
+    # first two; the mandatory straddle is rendered from the action list's posts.
+    _p = stakes.split("/")
+    sb_amount, bb_amount = int(_p[0]), int(_p[1])
 
     timestamp_str = hand.get("timestamp_start", "00:00:00")
     hand_id = generate_hand_id(stream_url, timestamp_str, hand_index)

@@ -70,9 +70,10 @@ class PokerStateMachine:
 
     def __init__(self, stakes: str = "50/100", auto_advance: bool = False):
         self.stakes = stakes
-        sb_str, bb_str = stakes.split("/")
-        self.sb_amount = int(sb_str)
-        self.bb_amount = int(bb_str)
+        # "sb/bb" or triple-blind "sb/bb/mandatory_straddle" — take the first two.
+        _p = stakes.split("/")
+        self.sb_amount = int(_p[0])
+        self.bb_amount = int(_p[1])
 
         self._players: list[Player] = []   # sorted by seat number
         self.button_seat: int = 1

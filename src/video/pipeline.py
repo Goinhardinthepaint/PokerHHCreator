@@ -413,7 +413,9 @@ def _hand_state_to_dict(
             stakes_votes.append(f"{m.group(1)}/{m.group(2)}")
     stakes = Counter(stakes_votes).most_common(1)[0][0] if stakes_votes else "50/100"
     try:
-        sb, bb = (int(x) for x in stakes.split("/"))
+        # "sb/bb" or triple-blind "sb/bb/mandatory_straddle" — take the first two.
+        _p = stakes.split("/")
+        sb, bb = int(_p[0]), int(_p[1])
     except Exception:
         sb, bb = 50, 100
 

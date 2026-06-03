@@ -125,7 +125,9 @@ def run_suite(hands: list[dict], label: str) -> None:
         action = h.get("action", {})
         game   = h.get("game", {})
         try:
-            _sb, _bb = (int(x) for x in game.get("stakes", "50/100").split("/"))
+            # "sb/bb" or triple-blind "sb/bb/mandatory_straddle" — take first two.
+            _p = game.get("stakes", "50/100").split("/")
+            _sb, _bb = int(_p[0]), int(_p[1])
         except Exception:
             _sb, _bb = 50, 100
         for street_name in _STREETS:
