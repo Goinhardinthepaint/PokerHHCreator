@@ -325,50 +325,69 @@ def _full_board(run: dict) -> list:
     return [c for c in cards if c]
 
 
-@app.route("/api/format", methods=["POST"])
-def api_format():
-    """Format a single manually-entered hand into PT4 text.
-
-    Body: { "hand": <hand dict for format_hand>, "stream_url": str,
-            "hand_index": int, "start_sec": int, "end_sec": int }
-    stream_url + start_sec/end_sec feed the table name and hand id (e.g. a
-    timestamped YouTube link). Auto-fills showdown hand descriptions.
-    """
-    data = request.json or {}
-    hand = data.get("hand") or {}
-    stream_url = data.get("stream_url", "")
-    hand_index = data.get("hand_index", 0)
-    start_sec = int(data.get("start_sec") or 0)
-    end_sec = int(data.get("end_sec") or 0)
-
-    if not hand.get("players"):
-        return jsonify({"error": "Hand has no players"}), 400
-
-    # ── Auto-fill hand descriptions for showdown entries ─────────────────────
+def _autofill_showdown(hand):
+    """Fill in showdown hand_descriptions from hole cards + the run's board."""
     board = hand.get("board") or {}
+    runs = board.get("runs")
+    if runs:
+        shared = list(board.get("flop") or []) + ([board["turn"]] if board.get("turn") else [])
+        full = []
+        for r in runs:
+            cum = list(shared)
+            if r.get("flop"):
+                cum = list(r["flop"])
+            if r.get("turn"):
+                cum = cum + [r["turn"]]
+            if r.get("river"):
+                cum = cum + [r["river"]]
+            full.append(cum)
+        for sd in hand.get("showdown") or []:
+            cards = sd.get("hole_cards") or []
+            if cards and not sd.get("hand_description"):
+                idx = (sd.get("run") or 1) - 1
+                b = full[idx] if 0 <= idx < len(full) else (full[0] if full else [])
+                _s, desc = evaluate_best_hand(cards, b)
+                if desc and "insufficient" not in desc:
+                    sd["hand_description"] = desc
+        return
     is_rit = bool(board.get("first_run") and board.get("second_run"))
     if is_rit:
-        board_run1 = _full_board(board["first_run"])
-        board_run2 = _full_board(board["second_run"])
+        b1, b2 = _full_board(board["first_run"]), _full_board(board["second_run"])
     else:
-        board_run1 = _full_board(board)
-        board_run2 = board_run1
-
+        b1 = b2 = _full_board(board)
     for sd in hand.get("showdown") or []:
         cards = sd.get("hole_cards") or []
         if cards and not sd.get("hand_description"):
-            b = board_run2 if sd.get("run") == 2 else board_run1
-            _score, desc = evaluate_best_hand(cards, b)
+            b = b2 if sd.get("run") == 2 else b1
+            _s, desc = evaluate_best_hand(cards, b)
             if desc and "insufficient" not in desc:
                 sd["hand_description"] = desc
 
-    try:
-        text = format_hand(hand, stream_url, hand_index, start_sec, end_sec)
-    except HandValidationError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": f"{type(e).__name__}: {e}"}), 400
 
+def _format_hand_or_error(data):
+    """Format a hand dict into PT4 text, or return (None, (jsonify, status))."""
+    hand = data.get("hand") or {}
+    if not hand.get("players"):
+        return None, (jsonify({"error": "Hand has no players"}), 400)
+    _autofill_showdown(hand)
+    try:
+        text = format_hand(hand, data.get("stream_url", ""), data.get("hand_index", 0),
+                           int(data.get("start_sec") or 0), int(data.get("end_sec") or 0))
+    except HandValidationError as e:
+        return None, (jsonify({"error": str(e)}), 400)
+    except Exception as e:
+        return None, (jsonify({"error": f"{type(e).__name__}: {e}"}), 400)
+    return text, None
+
+
+@app.route("/api/format", methods=["POST"])
+@admin_required
+def api_format():
+    """Format a single hand into PT4 text. Admin-only — workers never receive raw
+    PT4 (their hands are formatted server-side inside /api/hands/submit)."""
+    text, err = _format_hand_or_error(request.json or {})
+    if err:
+        return err
     return jsonify({"text": text})
 
 
@@ -470,18 +489,29 @@ def api_me():
 def api_hands_submit():
     uid = session["user_id"]
     d = request.json or {}
+    # The PT4 text is generated HERE (server-side) so a worker's browser never
+    # receives the raw hand history. Accepts a hand dict (preferred) and formats
+    # it; falls back to a pre-supplied pt4_text for back-compat.
+    if d.get("hand") is not None:
+        text, err = _format_hand_or_error(d)
+        if err:
+            return err
+    else:
+        text = d.get("pt4_text") or ""
     next_state = d.get("next_state")
     hand_id, earnings = auth_db.insert_hand(
         uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
-        d.get("pt4_text"), d.get("cards_count"), d.get("actions_count"),
+        text, d.get("cards_count"), d.get("actions_count"),
         next_state=next_state,
     )
     # Also snapshot the stream's latest state so the calendar's Resume works.
     sid = d.get("stream_id") or d.get("youtube_url")
     if next_state and sid:
         auth_db.set_resume_state(sid, next_state)
+    u = current_user()
     return jsonify({"hand_id": hand_id, "earnings": earnings,
-                    "dashboard": auth_db.user_dashboard(uid)})
+                    "dashboard": auth_db.user_dashboard(uid),
+                    "pt4_text": text if (u and u["is_admin"]) else None})
 
 
 @app.route("/api/hands", methods=["GET"])
@@ -490,6 +520,11 @@ def api_hands_list():
     uid = session["user_id"]
     stream_id = request.args.get("stream_id")
     hands = auth_db.user_hands(uid, stream_id)
+    # Only admins may see the raw PT4 text — strip it for workers.
+    u = current_user()
+    if not (u and u["is_admin"]):
+        for h in hands:
+            h.pop("pt4_text", None)
     payload = {"hands": hands}
     if stream_id:
         payload["stream"] = auth_db.stream_meta(stream_id)
@@ -636,9 +671,15 @@ def api_months():
 @app.route("/api/admin/export", methods=["GET"])
 @admin_required
 def api_admin_export():
-    text = auth_db.export_all_text()
+    stream_id = request.args.get("stream_id")
+    if stream_id:
+        text = auth_db.export_stream_text(stream_id)
+        fname = f"hands_{auth_db.extract_video_id(stream_id) or 'stream'}.txt"
+    else:
+        text = auth_db.export_all_text()
+        fname = "hand_database.txt"
     return Response(text, mimetype="text/plain",
-                    headers={"Content-Disposition": "attachment; filename=hand_database.txt"})
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 # ── Serve the built React frontend (single server, one port) ─────────────────

@@ -323,6 +323,7 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
           onResume={resumeStream}
           onRemove={removeStream}
           onOpenInBuilder={onOpenInBuilder}
+          isAdmin={!!(me && me.user && me.user.is_admin)}
         />
       )}
 
@@ -364,7 +365,7 @@ function StatsBanner({ stats }) {
 }
 
 // ── Day panel (right drawer) ────────────────────────────────────────────────
-function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResume, onRemove, onOpenInBuilder }) {
+function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResume, onRemove, onOpenInBuilder, isAdmin }) {
   const [showAdd, setShowAdd] = useState(streams.length === 0);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -448,6 +449,15 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResum
                 >
                   Open in Hand Builder ↗
                 </button>
+                {isAdmin && (
+                  <a
+                    style={s.downloadBtn}
+                    href={`/api/admin/export?stream_id=${encodeURIComponent(st.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Download all hands for this stream as one .txt"
+                  >⬇ Download Stream</a>
+                )}
               </div>
             );
           })}
@@ -617,6 +627,7 @@ const s = {
   completeOn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16a34a", border: "1px solid #16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, cursor: "pointer" },
   openBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#0e7490", border: "1px solid #155e75", color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   resumeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 12, fontWeight: 800, cursor: "pointer" },
+  downloadBtn: { display: "block", textAlign: "center", marginTop: 6, padding: "8px", borderRadius: 8, background: "#16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, textDecoration: "none" },
 
   addForm: { background: "#0e1626", border: "1px dashed #334155", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
   addFormTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase" },

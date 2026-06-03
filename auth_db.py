@@ -789,6 +789,19 @@ def record_payment(user_id, amount, date, note):
     conn.close()
 
 
+def export_stream_text(stream_id):
+    """All hands for one stream (any worker), PT4 text concatenated in timestamp
+    order with two blank lines between — for the admin calendar's per-stream export."""
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT pt4_text FROM hands WHERE stream_id = ? AND COALESCE(type,'hand') = 'hand' "
+        "ORDER BY timestamp_seconds, id", (sid,)
+    ).fetchall()
+    conn.close()
+    return "\n\n\n".join((r["pt4_text"] or "").strip() for r in rows if r["pt4_text"]) + "\n"
+
+
 def export_all_text():
     """The entire database as one human-readable .txt (hands grouped by user)."""
     conn = get_db()

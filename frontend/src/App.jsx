@@ -373,7 +373,7 @@ function parsePt4Summary(pt4) {
 // card, grouped by video and sorted date→timestamp, with range/toggle selection
 // (like a file explorer), bulk + per-card delete, and drag-to-export plus
 // Export Selected / Export All buttons. Hands live in App state (→ localStorage).
-function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onRestore, onDeleteLocal, onDeleteServer, onExportHands }) {
+function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onRestore, onDeleteLocal, onDeleteServer, onExportHands, isAdmin }) {
   const [selected, setSelected] = useState(() => new Set());
   const [anchor, setAnchor] = useState(null); // last single-clicked card (range pivot)
   const [dragOver, setDragOver] = useState(false);
@@ -535,9 +535,9 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
           </div>
 
           <div style={styles.hmBtnRow}>
-            <button style={{ ...styles.hmBtn, opacity: sel.size ? 1 : 0.45 }} disabled={!sel.size} onClick={exportSelected}>Export Selected</button>
-            <button style={styles.hmBtnGreen} onClick={exportAll}>Export All</button>
-            <button style={{ ...styles.hmBtnRed, opacity: sel.size ? 1 : 0.45 }} disabled={!sel.size} onClick={deleteSelected}>Delete Selected</button>
+            {isAdmin && <button style={{ ...styles.hmBtn, opacity: sel.size ? 1 : 0.45 }} disabled={!sel.size} onClick={exportSelected}>Export Selected</button>}
+            {isAdmin && <button style={styles.hmBtnGreen} onClick={exportAll}>Export All</button>}
+            <button style={{ ...styles.hmBtnRed, opacity: sel.size ? 1 : 0.45, flex: isAdmin ? undefined : 1 }} disabled={!sel.size} onClick={deleteSelected}>Delete Selected</button>
           </div>
 
           <div style={styles.hmList}>
@@ -597,14 +597,16 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
             ))}
           </div>
 
-          <div
-            style={{ ...styles.hmDrop, ...(dragOver ? styles.hmDropActive : {}) }}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-          >
-            {dragOver ? "Release to export" : "⤓ Drop hands here to export"}
-          </div>
+          {isAdmin && (
+            <div
+              style={{ ...styles.hmDrop, ...(dragOver ? styles.hmDropActive : {}) }}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+            >
+              {dragOver ? "Release to export" : "⤓ Drop hands here to export"}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1102,18 +1104,10 @@ function HandBuilder({ me, refreshMe }) {
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
       if (url) hand.table_name = url; // timestamped link → PT4 table name
 
-      const resp = await fetch("/api/format", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hand, hand_index: handNumber - 1, stream_url: url, start_sec: startSec, end_sec: startSec }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) return setError(data.error || `Server error ${resp.status}`);
-
       const n = handNumber;
       const { cards, actions } = handPieces;
 
-      // ── Hand-card metadata for the Hand Manager ──────────────────────────
+      // ── Hand-card metadata for the Hand Manager (computed locally, no PT4) ──
       // Pot actually contested (gross committed minus any returned uncalled bet).
       const grossPot = potTotal(eng);
       const uncalled = eng.uncalled?.amount || 0;
@@ -1133,49 +1127,35 @@ function HandBuilder({ me, refreshMe }) {
       const reachedFlop = STREETS.indexOf(eng.street) >= 1;
       const playerCount = reachedFlop ? eng.players.filter((p) => !foldedPreflop.has(p.name)).length : 0;
 
+      // Submit to the server, which FORMATS the PT4 server-side and stores it.
+      // Only admins get the text back — workers never receive raw PT4. next_state
+      // snapshots the table for the NEXT hand so the stream can be resumed.
+      let resp;
+      try {
+        resp = await api("/api/hands/submit", {
+          method: "POST",
+          body: {
+            hand, hand_index: n - 1, stream_url: url, start_sec: startSec, end_sec: startSec,
+            stream_id: videoId, youtube_url: url, timestamp_seconds: startSec,
+            cards_count: cards, actions_count: actions, next_state: computeNextHandState(),
+          },
+        });
+      } catch (ex) {
+        return setError(ex.message || "Could not save the hand.");
+      }
+      const pt4 = resp.pt4_text || ""; // present for admins only
+
       setSessionHands((hs) =>
         [
           ...hs.filter((h) => h.n !== n),
-          {
-            n,
-            text: data.text, // kept for backward compatibility
-            pt4Text: data.text,
-            cards,
-            actions,
-            youtubeUrl: url,
-            videoId,
-            timestamp: startSec > 0 ? fmtClock(startSec) : "",
-            startSec,
-            videoDate,
-            sessionLabel,
-            summary,
-            potSize,
-            playerCount,
-          },
+          { n, text: pt4, pt4Text: pt4, cards, actions, youtubeUrl: url, videoId,
+            timestamp: startSec > 0 ? fmtClock(startSec) : "", startSec, videoDate,
+            sessionLabel, summary, potSize, playerCount },
         ].sort((a, b) => a.n - b.n)
       );
       setHandPanelOpen(true); // surface the new card in the Hand Manager
-
-      // Persist server-side for cross-device tracking + earnings/bonuses, then
-      // refresh the header totals + Hand Manager. Local copy is kept even if the
-      // write fails. `next_state` snapshots the table for the NEXT hand so this
-      // stream can be resumed by anyone.
-      try {
-        await api("/api/hands/submit", {
-          method: "POST",
-          body: {
-            stream_id: videoId,
-            youtube_url: url,
-            timestamp_seconds: startSec,
-            pt4_text: data.text,
-            cards_count: cards,
-            actions_count: actions,
-            next_state: computeNextHandState(),
-          },
-        });
-        if (refreshMe) refreshMe();
-        fetchHands();
-      } catch { /* offline / server write failed — local Hand Manager still has it */ }
+      if (refreshMe) refreshMe();
+      fetchHands();
 
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
@@ -2070,6 +2050,7 @@ function HandBuilder({ me, refreshMe }) {
             onDeleteLocal={deleteLocalHand}
             onDeleteServer={deleteServerHand}
             onExportHands={downloadHands}
+            isAdmin={!!(me.user && me.user.is_admin)}
           />
         )}
       </aside>
