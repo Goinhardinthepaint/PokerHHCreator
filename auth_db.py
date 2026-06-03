@@ -1,8 +1,10 @@
 """
 SQLite-backed accounts, hand histories, streams and payments for the hand builder.
 
-Single file `users.db` next to this module. Stdlib + werkzeug only (werkzeug ships
-with Flask), so the deployed app needs no extra dependencies.
+A single SQLite file (DB_PATH) holds EVERYTHING persistent — accounts, hands +
+PT4 text, streams + completion, payments, month assignments, per-stream default
+lineups, tutorial/error state. It lives on the Railway volume (or the project
+dir locally). Stdlib + werkzeug only, so the deployed app needs no extra deps.
 
 Earnings model (mirrors the frontend piece-rate):
   - PIECE_RATE per filled card / per voluntary action
@@ -52,15 +54,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEED_JSON = os.path.join(HERE, "scripts", "hcl_streams.json")
 
-# Persist the database on Railway's mounted volume (its container filesystem is
-# ephemeral — without this, users.db is wiped on every deploy and accounts
-# vanish). Locally there's no volume var, so it stays in the project root.
-_DATA_DIR = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or HERE
+# ALL persistent data (accounts, hands+PT4, streams, payments, month
+# assignments, defaults, tutorial/error state) lives in this one SQLite file.
+# Railway's container filesystem is ephemeral, so it MUST sit on the mounted
+# volume or it's wiped on every deploy. Prefer the volume env var, then a /data
+# mount, then the project dir for local dev.
+DATA_DIR = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or ("/data" if os.path.isdir("/data") else HERE)
 try:
-    os.makedirs(_DATA_DIR, exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
 except OSError:
-    _DATA_DIR = HERE
-DB_PATH = os.path.join(_DATA_DIR, "users.db")
+    DATA_DIR = HERE
+DB_PATH = os.path.join(DATA_DIR, "users.db")
 
 PIECE_RATE = 0.03
 COMPLETION_BONUS = 0.10
@@ -204,7 +208,8 @@ def init_db():
     # Report what was loaded — confirms the DB persisted across restarts/deploys.
     n_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     n_hands = c.execute("SELECT COUNT(*) FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()[0]
-    print(f"Database loaded: {n_users} users, {n_hands} hands  [{DB_PATH}]", flush=True)
+    n_streams = c.execute("SELECT COUNT(*) FROM streams").fetchone()[0]
+    print(f"Database at {DB_PATH} — {n_users} users, {n_hands} hands, {n_streams} streams", flush=True)
     conn.close()
 
 
