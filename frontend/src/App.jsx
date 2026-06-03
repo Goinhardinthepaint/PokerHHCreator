@@ -3,6 +3,26 @@ import { api } from "./api.js";
 import Auth from "./Auth.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Admin from "./Admin.jsx";
+import TutorialOverlay from "./TutorialOverlay.jsx";
+
+// Onboarding tour — each step points at an element tagged with data-tour.
+const TUTORIAL_STEPS = [
+  { selector: '[data-tour="youtube"]', title: "YouTube link", description: "Paste the timestamped YouTube link for each hand here. The link MUST have a timestamp (?t=seconds)." },
+  { selector: '[data-tour="stakes"]', title: "Stakes & BB ante", description: "Set the game stakes and BB ante. These carry over between hands." },
+  { selector: '[data-tour="button"]', title: "Button seat", description: "Set which seat has the dealer button. It auto-rotates after each hand." },
+  { selector: '[data-tour="roster"]', title: "Roster", description: "Enter player names, seat numbers, and starting stacks. Leave seats blank for empty seats." },
+  { selector: '[data-tour="setdefault"]', title: "Default lineup", description: "Save the current lineup as the default. Use 'Restore Default' when a player returns to the table." },
+  { selector: '[data-tour="straddle"]', title: "UTG straddle", description: "Check this for games with a mandatory UTG straddle (triple blind like 10/20/40)." },
+  { selector: '[data-tour="deal"]', title: "Deal a hand", description: "Click to start entering a new hand. This locks in the roster and deals cards." },
+  { selector: '[data-tour="seat"]', title: "Hole cards", description: "Click the card slots on each seat to set that player's hole cards. Read them from the stream overlay." },
+  { selector: '[data-tour="board"]', title: "Community cards", description: "Click each card slot in the center to set the flop, turn, and river." },
+  { selector: '[data-tour="actionbar"]', title: "Action bar", description: "Enter each player's action in order — the tool tracks whose turn it is. Fold, Check, Call, Bet, Raise, or All-in." },
+  { selector: '[data-tour="completehand"]', title: "Complete the hand", description: "When the hand is over, click Complete Hand. The tool auto-generates the hand history and saves it." },
+  { selector: '[data-tour="handmanager"]', title: "Hand Manager", description: "All completed hands appear here. Click a hand to restore the game to that point, and Export to download histories." },
+  { selector: '[data-tour="earnings"]', title: "Earnings tracker", description: "Track your earnings in real time. You earn per card, per action, plus a completion bonus." },
+  { selector: '[data-tour="nav-calendar"]', title: "Calendar", description: "View all streams organized by date — see which need transcription and your monthly progress." },
+  { selector: '[data-tour="nav-dashboard"]', title: "Dashboard", description: "View your total earnings, hands completed, and bonus status." },
+];
 import {
   initHand,
   legalActions,
@@ -214,12 +234,12 @@ function CardPicker({ used, onPick, onClose, title }) {
 }
 
 // ── Player seat ─────────────────────────────────────────────────────────────
-function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit }) {
+function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
   const posStyle = { ...styles.seat, left: `${pos.left}%`, top: `${pos.top}%` };
 
   if (empty) {
     return (
-      <div style={posStyle}>
+      <div style={posStyle} data-tour={dataTour}>
         <div style={styles.emptySeat}>
           <div style={styles.emptySeatNum}>SEAT {p.seat}</div>
           {sitting ? (
@@ -241,7 +261,7 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
   }
 
   return (
-    <div style={{ ...posStyle, opacity: folded ? 0.4 : 1, filter: folded ? "grayscale(0.7)" : "none" }}>
+    <div style={{ ...posStyle, opacity: folded ? 0.4 : 1, filter: folded ? "grayscale(0.7)" : "none" }} data-tour={dataTour}>
       {/* bet chip toward center */}
       {committed > 0 && (
         <div style={styles.betChip}>{fmtChips(committed)}</div>
@@ -1464,7 +1484,7 @@ function HandBuilder({ me, refreshMe }) {
         {sidebarOpen && (
           <div style={styles.sidebarInner}>
             <div style={styles.sideHead}>SESSION</div>
-            <div style={styles.row}>
+            <div style={styles.row} data-tour="stakes">
               <div style={styles.col}>
                 <label style={styles.label}>Stakes</label>
                 <input style={styles.input} value={stakes} onChange={(e) => setStakes(e.target.value)} disabled={locked} />
@@ -1475,7 +1495,7 @@ function HandBuilder({ me, refreshMe }) {
               </div>
             </div>
 
-            <label style={{ ...styles.checkRow, marginTop: 2 }}>
+            <label style={{ ...styles.checkRow, marginTop: 2 }} data-tour="straddle">
               <input type="checkbox" checked={tripleBlind} disabled={locked} onChange={(e) => setTripleBlind(e.target.checked)} />
               <span>Triple blind <span style={styles.sideHint}>· SB/BB/STR, e.g. 10/20/40</span></span>
             </label>
@@ -1483,7 +1503,7 @@ function HandBuilder({ me, refreshMe }) {
               <div style={styles.straddlePreview}>Mandatory UTG straddle: ${mandatoryStraddle} (auto-posted)</div>
             )}
 
-            <div style={styles.row}>
+            <div style={styles.row} data-tour="button">
               <div style={styles.col}>
                 <label style={styles.label}>Button Seat</label>
                 <select style={styles.input} value={buttonSeat} onChange={(e) => setButtonSeat(Number(e.target.value))} disabled={locked}>
@@ -1538,7 +1558,7 @@ function HandBuilder({ me, refreshMe }) {
               </div>
             )}
 
-            <div style={{ ...styles.sideHead, marginTop: 16 }}>ROSTER <span style={styles.sideHint}>· blank name = empty seat</span></div>
+            <div style={{ ...styles.sideHead, marginTop: 16 }} data-tour="roster">ROSTER <span style={styles.sideHint}>· blank name = empty seat</span></div>
             {[...roster].sort((a, b) => a.seat - b.seat).map((p) => (
               <div key={p.seat} style={styles.rosterRow}>
                 <span style={styles.seatTag}>{p.seat}</span>
@@ -1561,6 +1581,7 @@ function HandBuilder({ me, refreshMe }) {
                 disabled={!currentStreamId}
                 title={currentStreamId ? "Save current names + seats as this stream's default" : "Paste a YouTube link first to identify the stream"}
                 onClick={setAsDefaultLineup}
+                data-tour="setdefault"
               >★ Set as Default</button>
               <button
                 style={{ ...styles.addBtn, flex: 1, marginTop: 0, opacity: currentDefault ? 1 : 0.4 }}
@@ -1601,7 +1622,7 @@ function HandBuilder({ me, refreshMe }) {
       <main style={styles.main}>
         <div style={styles.topBar}>
           <div style={styles.logo}><span style={styles.chip}>♠</span> POKER TABLE</div>
-          <div style={styles.ytWrap}>
+          <div style={styles.ytWrap} data-tour="youtube">
             <span style={styles.ytIcon}>📺</span>
             <input
               style={styles.ytInput}
@@ -1620,7 +1641,7 @@ function HandBuilder({ me, refreshMe }) {
             })()}
           </div>
           <div style={styles.topMeta}>
-            <div style={styles.statTracker}>
+            <div style={styles.statTracker} data-tour="earnings">
               <div>
                 Hands: <strong style={{ color: "#f8fafc" }}>{me.dashboard.hands}</strong>
                 {"  ·  "}Pieces: <strong style={{ color: "#f8fafc" }}>{me.dashboard.pieces}</strong>
@@ -1698,7 +1719,7 @@ function HandBuilder({ me, refreshMe }) {
               </div>
 
               {/* Community cards (one row per run when running it 2–4 times) */}
-              <div style={styles.boardArea}>
+              <div style={styles.boardArea} data-tour="board">
                 {numRuns >= 2 && <div style={styles.runLabel}>RUN 1</div>}
                 <div style={styles.boardRow}>
                   {[0, 1, 2, 3, 4].map((i) => (
@@ -1738,6 +1759,7 @@ function HandBuilder({ me, refreshMe }) {
                 key={p.seat}
                 p={p}
                 empty={p.empty}
+                dataTour={i === 0 ? "seat" : undefined}
                 pos={ellipsePos(i, tableSeats.length)}
                 badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : activeStraddles.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
                 isButton={Number(buttonSeat) === p.seat}
@@ -1781,7 +1803,7 @@ function HandBuilder({ me, refreshMe }) {
         </div>
 
         {/* Action bar */}
-        <div style={styles.actionBar}>
+        <div style={styles.actionBar} data-tour="actionbar">
           {!sideGameMode && (phase === "betting" || phase === "complete") && engHistory.length > 0 && (
             <button style={styles.undoBtn} title="Undo last action" onClick={undo}>↶ Undo</button>
           )}
@@ -1824,7 +1846,7 @@ function HandBuilder({ me, refreshMe }) {
           {!sideGameMode && phase === "setup" && (
             <div style={styles.barCenter}>
               <div style={styles.barHint}>{named.length} players seated · button on Seat {buttonSeat}</div>
-              <button style={styles.dealBtn} onClick={dealHand}>♠ DEAL HAND</button>
+              <button style={styles.dealBtn} onClick={dealHand} data-tour="deal">♠ DEAL HAND</button>
             </div>
           )}
 
@@ -1953,7 +1975,7 @@ function HandBuilder({ me, refreshMe }) {
               <div style={styles.barHint}>
                 {eng.handOver ? `${surv[0]} wins uncontested.` : `Showdown — ${surv.join(", ")}`}
               </div>
-              <button style={styles.completeBtn} onClick={completeHand}>✓ COMPLETE HAND</button>
+              <button style={styles.completeBtn} onClick={completeHand} data-tour="completehand">✓ COMPLETE HAND</button>
             </div>
           )}
         </div>
@@ -1981,6 +2003,7 @@ function HandBuilder({ me, refreshMe }) {
         style={{ ...styles.handToggle, right: handPanelOpen ? 348 : 0 }}
         title={handPanelOpen ? "Hide Hand Manager" : "Show Hand Manager"}
         onClick={() => setHandPanelOpen((o) => !o)}
+        data-tour="handmanager"
       >
         {handPanelOpen ? "›" : "‹"}
       </button>
@@ -2232,9 +2255,10 @@ const styles = {
 };
 
 // ── Top nav: switch between Hand Builder and Calendar ────────────────────────
-function NavItem({ to, label, icon, active, navigate }) {
+function NavItem({ to, label, icon, active, navigate, tour }) {
   return (
     <button
+      data-tour={tour}
       onClick={() => navigate(to)}
       style={{ ...navStyles.item, ...(active ? navStyles.itemActive : {}) }}
     >
@@ -2243,7 +2267,7 @@ function NavItem({ to, label, icon, active, navigate }) {
   );
 }
 
-function NavBar({ route, navigate, me, onLogout }) {
+function NavBar({ route, navigate, me, onLogout, onRedoTutorial }) {
   return (
     <nav style={navStyles.bar}>
       <div style={navStyles.brand}>
@@ -2251,12 +2275,13 @@ function NavBar({ route, navigate, me, onLogout }) {
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <NavItem to="/" label="Hand Builder" icon="🛠" active={route === "builder"} navigate={navigate} />
-        <NavItem to="/calendar" label="Calendar" icon="📅" active={route === "calendar"} navigate={navigate} />
-        <NavItem to="/dashboard" label="Dashboard" icon="📊" active={route === "dashboard"} navigate={navigate} />
+        <NavItem to="/calendar" label="Calendar" icon="📅" active={route === "calendar"} navigate={navigate} tour="nav-calendar" />
+        <NavItem to="/dashboard" label="Dashboard" icon="📊" active={route === "dashboard"} navigate={navigate} tour="nav-dashboard" />
         {me.user.is_admin && (
           <NavItem to="/admin" label="Admin" icon="🛡" active={route === "admin"} navigate={navigate} />
         )}
         <span style={navStyles.user}>{me.user.username}</span>
+        <button style={navStyles.help} title="Redo the tutorial" onClick={onRedoTutorial}>?</button>
         <button style={navStyles.logout} onClick={onLogout}>Log out</button>
       </div>
     </nav>
@@ -2318,6 +2343,22 @@ export default function App() {
     navigate("/");
   };
 
+  // Onboarding tour: auto-runs on the Hand Builder until the user's record says
+  // tutorial_completed. Derived (no effect) so it can't re-trigger itself.
+  const [tutorialDismissed, setTutorialDismissed] = useState(false);
+  const showTutorial = !!(me && me.user && !me.user.tutorial_completed && !tutorialDismissed && route === "builder");
+  const finishTutorial = async () => {
+    setTutorialDismissed(true);
+    try { await api("/api/tutorial-complete", { method: "POST", body: { completed: true } }); } catch { /* ignore */ }
+    refreshMe();
+  };
+  const redoTutorial = async () => {
+    try { await api("/api/tutorial-complete", { method: "POST", body: { completed: false } }); } catch { /* ignore */ }
+    await refreshMe();
+    setTutorialDismissed(false);
+    navigate("/");
+  };
+
   if (me === null) return <div style={navStyles.loading}>Loading…</div>;
   if (!me) return <Auth onAuthed={(m) => { setMe(m); navigate("/"); }} />;
 
@@ -2332,8 +2373,9 @@ export default function App() {
 
   return (
     <div style={navStyles.root}>
-      <NavBar route={route} navigate={navigate} me={me} onLogout={logout} />
+      <NavBar route={route} navigate={navigate} me={me} onLogout={logout} onRedoTutorial={redoTutorial} />
       <div style={navStyles.view}>{view}</div>
+      {showTutorial && <TutorialOverlay steps={TUTORIAL_STEPS} onFinish={finishTutorial} />}
     </div>
   );
 }
@@ -2352,6 +2394,7 @@ const navStyles = {
   item: { padding: "7px 16px", background: "transparent", border: "1px solid transparent", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   itemActive: { background: "#16243a", border: "1px solid #2b3a52", color: "#f8fafc" },
   user: { fontSize: 12.5, fontWeight: 700, color: "#7dd3fc", marginLeft: 6, padding: "0 4px" },
+  help: { width: 28, height: 28, borderRadius: "50%", background: "#16243a", border: "1px solid #2b3a52", color: "#7dd3fc", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
   logout: { padding: "7px 14px", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   loading: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "#64748b", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", fontSize: 14 },
 };

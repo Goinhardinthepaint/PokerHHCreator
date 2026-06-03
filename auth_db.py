@@ -151,6 +151,11 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN error_count INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    # Whether the worker has finished (or skipped) the onboarding tutorial.
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN tutorial_completed INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
@@ -221,8 +226,17 @@ def get_user(user_id):
 
 
 def public_user(row):
+    keys = row.keys()
     return {"id": row["id"], "username": row["username"], "email": row["email"],
-            "is_admin": bool(row["is_admin"])}
+            "is_admin": bool(row["is_admin"]),
+            "tutorial_completed": bool(row["tutorial_completed"]) if "tutorial_completed" in keys else False}
+
+
+def set_tutorial_complete(user_id, completed=True):
+    conn = get_db()
+    conn.execute("UPDATE users SET tutorial_completed = ? WHERE id = ?", (1 if completed else 0, user_id))
+    conn.commit()
+    conn.close()
 
 
 # ── Hands ────────────────────────────────────────────────────────────────────

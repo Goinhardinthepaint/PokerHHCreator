@@ -439,6 +439,14 @@ def api_logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/tutorial-complete", methods=["POST"])
+@login_required
+def api_tutorial_complete():
+    completed = (request.json or {}).get("completed", True)
+    auth_db.set_tutorial_complete(session["user_id"], bool(completed))
+    return jsonify(_me_payload(session["user_id"]))
+
+
 @app.route("/api/me", methods=["GET"])
 def api_me():
     uid = session.get("user_id")
