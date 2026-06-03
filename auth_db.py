@@ -128,6 +128,12 @@ def init_db():
             c.execute(f"ALTER TABLE streams ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass  # column already exists
+    # Per-hand post-hand snapshot (roster/stacks/button for the NEXT hand) so the
+    # Hand Manager can restore the table to immediately after any hand.
+    try:
+        c.execute("ALTER TABLE hands ADD COLUMN next_state TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
@@ -203,7 +209,7 @@ def public_user(row):
 
 
 # ── Hands ────────────────────────────────────────────────────────────────────
-def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count):
+def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count, next_state=None):
     cards = int(cards_count or 0)
     actions = int(actions_count or 0)
     # Normalize the stream key to the canonical 11-char video id so a hand always
@@ -214,9 +220,9 @@ def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, ca
     conn = get_db()
     cur = conn.execute(
         "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, "
-        "cards_count, actions_count, earnings, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        "cards_count, actions_count, earnings, next_state, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (user_id, stream_id, youtube_url, int(timestamp_seconds or 0), pt4_text or "",
-         cards, actions, earnings, now_iso()),
+         cards, actions, earnings, json.dumps(next_state) if next_state else None, now_iso()),
     )
     # Upsert a minimal stream row so the hand always ties to a known stream.
     if stream_id:
@@ -230,26 +236,34 @@ def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, ca
     return hand_id, earnings
 
 
+def _hand_row(r):
+    d = dict(r)
+    raw = d.pop("next_state", None)
+    try:
+        d["next_state"] = json.loads(raw) if raw else None
+    except (ValueError, TypeError):
+        d["next_state"] = None
+    return d
+
+
 def user_hands(user_id, stream_id=None):
     """All of a user's hands (optionally one stream), ordered by timestamp."""
+    cols = ("id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
+            "actions_count, earnings, next_state, created_at")
     conn = get_db()
     if stream_id:
         sid = extract_video_id(stream_id) or stream_id
         rows = conn.execute(
-            "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
-            "actions_count, earnings, created_at FROM hands WHERE user_id = ? AND stream_id = ? "
-            "ORDER BY timestamp_seconds, id",
+            f"SELECT {cols} FROM hands WHERE user_id = ? AND stream_id = ? ORDER BY timestamp_seconds, id",
             (user_id, sid),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
-            "actions_count, earnings, created_at FROM hands WHERE user_id = ? "
-            "ORDER BY timestamp_seconds, id",
+            f"SELECT {cols} FROM hands WHERE user_id = ? ORDER BY timestamp_seconds, id",
             (user_id,),
         ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_hand_row(r) for r in rows]
 
 
 def get_hand(hand_id, user_id):

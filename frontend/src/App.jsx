@@ -349,11 +349,10 @@ function parsePt4Summary(pt4) {
 // card, grouped by video and sorted date→timestamp, with range/toggle selection
 // (like a file explorer), bulk + per-card delete, and drag-to-export plus
 // Export Selected / Export All buttons. Hands live in App state (→ localStorage).
-function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onDeleteLocal, onDeleteServer, onExportHands }) {
+function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onRestore, onDeleteLocal, onDeleteServer, onExportHands }) {
   const [selected, setSelected] = useState(() => new Set());
   const [anchor, setAnchor] = useState(null); // last single-clicked card (range pivot)
   const [dragOver, setDragOver] = useState(false);
-  const [detail, setDetail] = useState(null); // open hand-detail card
 
   // Merge server hands (completed, authoritative) with localStorage hands
   // (unsaved/in-progress). A local hand that matches a server hand by
@@ -366,6 +365,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
       videoId: h.stream_id, videoDate: stream?.date, sessionLabel: stream?.title,
       summary: parsePt4Summary(h.pt4_text), potSize: parsePt4Pot(h.pt4_text),
       winner: parsePt4Winner(h.pt4_text), players: parsePt4Players(h.pt4_text),
+      nextState: h.next_state || null,
     }));
     const haveServer = new Set(sv.map((c) => `${c.videoId}|${c.startSec}`));
     let loc = localHands || [];
@@ -435,7 +435,6 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
     if (!window.confirm(`Delete hand at ${card.timestamp || "?"}?`)) return;
     await deleteCard(card);
     setSelected((prev) => { const n = new Set(prev); n.delete(card.key); return n; });
-    setDetail(null);
   }
   async function deleteSelected() {
     const cards = sorted.filter((h) => sel.has(h.key));
@@ -484,7 +483,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                 key={c.key}
                 title={`${c.timestamp} — ${c.summary || ""}`}
                 style={{ ...styles.hmMarker, left: `${Math.min(99.5, (c.startSec / span) * 100)}%`, background: c.source === "server" ? "#4ade80" : "#fbbf24" }}
-                onClick={() => setDetail(c)}
+                onClick={() => onRestore(c)}
               />
             ))}
           </div>
@@ -534,8 +533,9 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                         e.dataTransfer.effectAllowed = "copy";
                         e.dataTransfer.setData("text/plain", c.key);
                       }}
-                      onClick={(e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) selectCard(e, c.key); else setDetail(c); }}
+                      onClick={(e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) selectCard(e, c.key); else onRestore(c); }}
                       style={{ ...styles.hmCard, ...(isSel ? styles.hmCardSel : {}) }}
+                      title="Click to restore the table to after this hand"
                     >
                       <div style={styles.hmCardTop}>
                         <input
@@ -547,6 +547,16 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                           style={{ marginRight: 2 }}
                         />
                         <span style={styles.hmTime}>⏱ {c.timestamp || "—"}</span>
+                        {c.youtubeUrl && (
+                          <a
+                            href={c.youtubeUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open YouTube at this timestamp"
+                            style={styles.hmYtIcon}
+                            onClick={(e) => e.stopPropagation()}
+                          >↗</a>
+                        )}
                         {c.source === "local" && <span style={styles.hmUnsaved}>unsaved</span>}
                         <span style={{ flex: 1 }} />
                         <button style={styles.hmCardX} title="Delete this hand" onClick={(e) => { e.stopPropagation(); deleteOne(c); }}>✕</button>
@@ -572,26 +582,6 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
             {dragOver ? "Release to export" : "⤓ Drop hands here to export"}
           </div>
         </>
-      )}
-
-      {/* Hand detail */}
-      {detail && (
-        <div style={styles.hmDetailOverlay} onClick={() => setDetail(null)}>
-          <div style={styles.hmDetailBox} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.hmDetailHead}>
-              <span>Hand @ {detail.timestamp || "—"} {detail.source === "local" ? "(unsaved)" : ""}</span>
-              <button style={styles.closeMini} onClick={() => setDetail(null)}>✕</button>
-            </div>
-            {detail.summary && <div style={styles.hmDetailSummary}>{detail.summary}</div>}
-            {detail.winner && <div style={styles.hmDetailRow}>Winner: <strong style={{ color: "#4ade80" }}>{detail.winner}</strong></div>}
-            {detail.players?.length ? <div style={styles.hmDetailRow}>Players: {detail.players.join(", ")}</div> : null}
-            {detail.youtubeUrl && (
-              <a href={detail.youtubeUrl} target="_blank" rel="noreferrer" style={styles.hmLink}>▶ open at timestamp ↗</a>
-            )}
-            <pre style={styles.hmDetailPre}>{detail.pt4Text || "(no PT4 text)"}</pre>
-            <button style={{ ...styles.hmBtnRed, width: "100%" }} onClick={() => deleteOne(detail)}>Delete hand</button>
-          </div>
-        </div>
       )}
     </div>
   );
@@ -1244,6 +1234,35 @@ function HandBuilder({ me, refreshMe }) {
       buttonSeat: nextSeat,
       handNumber: handNumber + 1,
     };
+  }
+
+  // Restore the table to immediately AFTER a clicked hand: load its post-hand
+  // snapshot (names/seats/stacks + rotated button + next hand #), set the
+  // YouTube link to that hand's timestamp, and clear any in-progress hand so the
+  // worker can deal the next one straight away.
+  function restoreAfterHand(card) {
+    const snap = card && card.nextState;
+    if (!snap || !Array.isArray(snap.roster) || !snap.roster.length) {
+      // No snapshot (older / unsaved hand) — fall back to opening the video.
+      if (card && card.youtubeUrl) window.open(card.youtubeUrl, "_blank", "noopener");
+      return;
+    }
+    setRoster(snap.roster.map((p) => ({ seat: p.seat, name: p.name || "", stack: p.stack || 0 })));
+    if (snap.buttonSeat != null) setButtonSeat(snap.buttonSeat);
+    if (snap.handNumber != null) setHandNumber(snap.handNumber);
+    // YouTube link at this hand's timestamp (the stored url already carries ?t=).
+    let link = card.youtubeUrl || "";
+    if (card.startSec > 0 && !/[?&]t=/.test(link)) link += (link.includes("?") ? "&" : "?") + "t=" + card.startSec;
+    setYoutubeLink(link);
+    // Clear the in-progress hand → ready for the next one.
+    setEng(null); setEngHistory([]); setHoleCards({});
+    setBoard(["", "", "", "", ""]);
+    setNumRuns(1); setRunsChosen(false); setExtraBoards([]); setRunWinners([]);
+    setWinner(""); setPreview(""); setError(""); setBuyButton(null); setBuyMenuSeat(null);
+    setPhase("setup");
+    const nextN = snap.handNumber != null ? snap.handNumber : (card.n || 0) + 1;
+    setFlash(`Restored to after Hand #${nextN - 1} — ready for Hand #${nextN}`);
+    setTimeout(() => setFlash(""), 3200);
   }
 
   function nextHand() {
@@ -1951,6 +1970,7 @@ function HandBuilder({ me, refreshMe }) {
             streamId={currentStreamId}
             streamUrl={streamUrl}
             onResumeFrom={(u) => setYoutubeLink(u)}
+            onRestore={restoreAfterHand}
             onDeleteLocal={deleteLocalHand}
             onDeleteServer={deleteServerHand}
             onExportHands={downloadHands}
@@ -2087,6 +2107,7 @@ const styles = {
   hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "2px dashed #2b3a52", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", background: "rgba(10,15,26,.4)", transition: "all .12s" },
   hmDropActive: { borderColor: "#22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
   hmUnsaved: { fontSize: 8.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 6, padding: "1px 5px", marginLeft: 6 },
+  hmYtIcon: { marginLeft: 6, fontSize: 12, fontWeight: 800, color: "#7dd3fc", textDecoration: "none", cursor: "pointer" },
   // Timeline
   hmTimelineWrap: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px", marginBottom: 8, flexShrink: 0 },
   hmTimelineHead: { display: "flex", justifyContent: "space-between", fontSize: 9.5, fontWeight: 800, letterSpacing: 1, color: "#64748b", marginBottom: 6 },

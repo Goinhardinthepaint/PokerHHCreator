@@ -454,12 +454,13 @@ def api_me():
 def api_hands_submit():
     uid = session["user_id"]
     d = request.json or {}
+    next_state = d.get("next_state")
     hand_id, earnings = auth_db.insert_hand(
         uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
         d.get("pt4_text"), d.get("cards_count"), d.get("actions_count"),
+        next_state=next_state,
     )
-    # Snapshot the state for the NEXT hand so anyone can resume this stream.
-    next_state = d.get("next_state")
+    # Also snapshot the stream's latest state so the calendar's Resume works.
     sid = d.get("stream_id") or d.get("youtube_url")
     if next_state and sid:
         auth_db.set_resume_state(sid, next_state)
