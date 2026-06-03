@@ -622,6 +622,8 @@ function HandBuilder({ me, refreshMe }) {
   const [buttonSeat, setButtonSeat] = useState(() => (pendingResume?.buttonSeat != null ? pendingResume.buttonSeat : pick("buttonSeat", DEFAULT_BUTTON_SEAT)));
   const [straddleCount, setStraddleCount] = useState(() => pick("straddleCount", 0)); // # of UTG-style straddles
   const [tripleBlind, setTripleBlind] = useState(() => pick("tripleBlind", false)); // SB/BB/mandatory-STR game
+  const [anteGame, setAnteGame] = useState(() => pick("anteGame", false)); // ante-game: blinds + cascading straddles, BTN double
+  const [anteAmount, setAnteAmount] = useState(() => pick("anteAmount", 25));
   const [buyButton, setBuyButton] = useState(() => pick("buyButton", null)); // {seat, type:'btn'|'str'}
   const [buyMenuSeat, setBuyMenuSeat] = useState(null); // seat whose buy-the-button menu is open
   const [roster, setRoster] = useState(() => (pendingResume?.roster?.length ? pendingResume.roster : pick("roster", DEFAULT_ROSTER)));
@@ -752,10 +754,14 @@ function HandBuilder({ me, refreshMe }) {
   // and stacks can still be changed after dealing or resetting a hand.
   const locked = phase === "betting" || phase === "complete";
   const positions = useMemo(() => positionLabels(named, buttonSeat), [named, buttonSeat]);
+  const anteX = useMemo(() => Number(anteAmount) || 25, [anteAmount]);
   const { sb, bb } = useMemo(() => {
+    if (anteGame) return { sb: anteX, bb: anteX }; // both blinds = the ante amount
     const [s, b] = stakes.split("/").map(Number);
     return { sb: s || 50, bb: b || 100 };
-  }, [stakes]);
+  }, [stakes, anteGame, anteX]);
+  // Stakes string used for the PT4 header: ante game is "$X/$X".
+  const ptStakes = anteGame ? `${anteX}/${anteX}` : stakes;
   // Triple-blind mandatory UTG straddle = the 3rd stakes value (e.g. 10/20/40 → $40),
   // falling back to 2× BB if omitted.
   const mandatoryStraddle = useMemo(() => Number(stakes.split("/")[2]) || 2 * bb, [stakes, bb]);
@@ -764,15 +770,30 @@ function HandBuilder({ me, refreshMe }) {
     () => utgStraddles(named, buttonSeat, bb, straddleCount),
     [named, buttonSeat, bb, straddleCount]
   );
-  // The straddles actually posted this hand. In triple-blind games the UTG
-  // straddle is mandatory (3rd stakes value); ticking the voluntary straddle adds
-  // a UTG+1 double straddle at 2× the mandatory (e.g. 10/20/40 → 40 then 80).
+  // Ante-game straddles: every occupied seat between BB and BTN (clockwise) posts
+  // $X, and the BTN posts $2X — action ends on the BTN (the biggest straddler).
+  const anteStraddles = useMemo(() => {
+    if (!anteGame) return null;
+    const sorted = [...named].sort((a, b) => a.seat - b.seat);
+    const n = sorted.length;
+    if (n < 3) return [];
+    const bi = sorted.findIndex((p) => p.seat === Number(buttonSeat));
+    if (bi < 0) return [];
+    const ring = Array.from({ length: n }, (_, k) => sorted[(bi + k) % n]); // [btn, sb, bb, mid…]
+    const middles = ring.slice(3); // UTG … CO
+    return [
+      ...middles.map((p) => ({ seat: p.seat, amount: anteX })),
+      { seat: ring[0].seat, amount: 2 * anteX }, // BTN posts the double
+    ];
+  }, [anteGame, named, buttonSeat, anteX]);
+  // The straddles actually posted this hand.
   const activeStraddles = useMemo(() => {
+    if (anteGame) return anteStraddles || [];
     if (!tripleBlind) return straddleList;
     const count = straddleCount > 0 ? 2 : 1;
     const seats = utgStraddles(named, buttonSeat, bb, count); // reuse seat selection
     return seats.map((st, i) => ({ seat: st.seat, amount: i === 0 ? mandatoryStraddle : 2 * mandatoryStraddle }));
-  }, [tripleBlind, straddleCount, straddleList, named, buttonSeat, bb, mandatoryStraddle]);
+  }, [anteGame, anteStraddles, tripleBlind, straddleCount, straddleList, named, buttonSeat, bb, mandatoryStraddle]);
 
   // Every roster row is a physical seat at the table; a blank name = an empty
   // seat that still occupies its spot. Returns all seats sorted by seat number,
@@ -908,7 +929,7 @@ function HandBuilder({ me, refreshMe }) {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster,
+          stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands,
@@ -917,7 +938,7 @@ function HandBuilder({ me, refreshMe }) {
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
 
 
   // Board cards required to deal the next street
@@ -976,7 +997,7 @@ function HandBuilder({ me, refreshMe }) {
   // hand-specific entry (cards, board, winner, preview). Keeps the YouTube link.
   function freshDeal() {
     setEng(
-      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
+      initHand({ players: named, buttonSeat, sb, bb, ante: anteGame ? 0 : Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
     );
     setEngHistory([]);
     setHoleCards({});
@@ -1030,7 +1051,7 @@ function HandBuilder({ me, refreshMe }) {
       return;
     }
     setEng(
-      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
+      initHand({ players: named, buttonSeat, sb, bb, ante: anteGame ? 0 : Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
     );
     setEngHistory([]);
     setPhase("betting");
@@ -1074,8 +1095,8 @@ function HandBuilder({ me, refreshMe }) {
       const effWinner = autoEval ? autoEval.winner : winner || surv[0];
       const effWinners = autoEval ? autoEval.winners : surv.length === 1 ? [surv[0]] : [winner || surv[0]];
       const hand = numRuns >= 2
-        ? buildHandDict(eng, { stakes, holeCards, board, runBoards: runBoardsAll, runWinners, numRuns, allInStreetIdx, positions: buyButton ? {} : positions })
-        : buildHandDict(eng, { stakes, holeCards, board, winner: effWinner, winners: effWinners, positions: buyButton ? {} : positions });
+        ? buildHandDict(eng, { stakes: ptStakes, holeCards, board, runBoards: runBoardsAll, runWinners, numRuns, allInStreetIdx, positions: buyButton ? {} : positions })
+        : buildHandDict(eng, { stakes: ptStakes, holeCards, board, winner: effWinner, winners: effWinners, positions: buyButton ? {} : positions });
       if (buyButton) hand.buy_button_seat = buyButton.seat;
       const { url, startSec, id: videoId } = parseYouTube(link);
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
@@ -1178,6 +1199,8 @@ function HandBuilder({ me, refreshMe }) {
         buttonSeat: Number(buttonSeat),
         straddleCount,
         tripleBlind,
+        anteGame,
+        anteAmount,
         handNumber,
         roster,
       },
@@ -1195,6 +1218,8 @@ function HandBuilder({ me, refreshMe }) {
       if (c.ante != null) setAnte(c.ante);
       if (c.straddleCount != null) setStraddleCount(c.straddleCount);
       if (c.tripleBlind != null) setTripleBlind(c.tripleBlind);
+      if (c.anteGame != null) setAnteGame(c.anteGame);
+      if (c.anteAmount != null) setAnteAmount(c.anteAmount);
       if (Array.isArray(c.roster)) setRoster(c.roster);
       if (c.buttonSeat != null) setButtonSeat(Number(c.buttonSeat));
       if (c.handNumber != null) setHandNumber(c.handNumber);
@@ -1215,6 +1240,8 @@ function HandBuilder({ me, refreshMe }) {
     setButtonSeat(DEFAULT_BUTTON_SEAT);
     setStraddleCount(0);
     setTripleBlind(false);
+    setAnteGame(false);
+    setAnteAmount(25);
     setBuyButton(null);
     setRoster(DEFAULT_ROSTER);
     setEng(null);
@@ -1498,22 +1525,45 @@ function HandBuilder({ me, refreshMe }) {
         {sidebarOpen && (
           <div style={styles.sidebarInner}>
             <div style={styles.sideHead}>SESSION</div>
-            <div style={styles.row} data-tour="stakes">
-              <div style={styles.col}>
-                <label style={styles.label}>Stakes</label>
-                <input style={styles.input} value={stakes} onChange={(e) => setStakes(e.target.value)} disabled={locked} />
+            {anteGame ? (
+              <div style={styles.row} data-tour="stakes">
+                <div style={styles.col}>
+                  <label style={styles.label}>Ante Amount</label>
+                  <input style={styles.input} type="number" value={anteAmount} onChange={(e) => setAnteAmount(e.target.value)} disabled={locked} />
+                </div>
               </div>
-              <div style={styles.col}>
-                <label style={styles.label}>BB Ante</label>
-                <input style={styles.input} type="number" value={ante} onChange={(e) => setAnte(e.target.value)} disabled={locked} />
+            ) : (
+              <div style={styles.row} data-tour="stakes">
+                <div style={styles.col}>
+                  <label style={styles.label}>Stakes</label>
+                  <input style={styles.input} value={stakes} onChange={(e) => setStakes(e.target.value)} disabled={locked} />
+                </div>
+                <div style={styles.col}>
+                  <label style={styles.label}>BB Ante</label>
+                  <input style={styles.input} type="number" value={ante} onChange={(e) => setAnte(e.target.value)} disabled={locked} />
+                </div>
               </div>
-            </div>
+            )}
 
             <label style={{ ...styles.checkRow, marginTop: 2 }} data-tour="straddle">
-              <input type="checkbox" checked={tripleBlind} disabled={locked} onChange={(e) => setTripleBlind(e.target.checked)} />
-              <span>Triple blind <span style={styles.sideHint}>· SB/BB/STR, e.g. 10/20/40</span></span>
+              <input type="checkbox" checked={anteGame} disabled={locked} onChange={(e) => { setAnteGame(e.target.checked); if (e.target.checked) setTripleBlind(false); }} />
+              <span>Ante Game <span style={styles.sideHint}>· blinds + cascading straddles, BTN double</span></span>
             </label>
-            {tripleBlind && (
+            {anteGame && (
+              <div style={styles.straddlePreview}>
+                {activeStraddles.length
+                  ? `$${anteX}/$${anteX} blinds · ${activeStraddles.map((st) => { const nm = named.find((p) => p.seat === st.seat)?.name || `Seat ${st.seat}`; return `${nm} STR $${st.amount}`; }).join(" · ")}`
+                  : "seat at least 3 players for an ante game"}
+              </div>
+            )}
+
+            {!anteGame && (
+              <label style={{ ...styles.checkRow, marginTop: 2 }}>
+                <input type="checkbox" checked={tripleBlind} disabled={locked} onChange={(e) => setTripleBlind(e.target.checked)} />
+                <span>Triple blind <span style={styles.sideHint}>· SB/BB/STR, e.g. 10/20/40</span></span>
+              </label>
+            )}
+            {!anteGame && tripleBlind && (
               <div style={styles.straddlePreview}>Mandatory UTG straddle: ${mandatoryStraddle} (auto-posted)</div>
             )}
 
@@ -1537,11 +1587,13 @@ function HandBuilder({ me, refreshMe }) {
               </div>
             </div>
 
+            {!anteGame && (
             <label style={{ ...styles.checkRow, marginTop: 4 }}>
               <input type="checkbox" checked={straddleCount > 0} disabled={locked} onChange={(e) => setStraddleCount(e.target.checked ? 1 : 0)} />
               <span>{tripleBlind ? `Voluntary double straddle (2× mandatory = $${2 * mandatoryStraddle})` : "UTG straddle (2× BB)"}</span>
             </label>
-            {straddleCount > 0 && (
+            )}
+            {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
                   <div style={styles.straddleRow}>
@@ -1563,7 +1615,7 @@ function HandBuilder({ me, refreshMe }) {
                 </div>
               </div>
             )}
-            {tripleBlind && straddleCount === 0 && activeStraddles.length > 0 && (
+            {!anteGame && tripleBlind && straddleCount === 0 && activeStraddles.length > 0 && (
               <div style={styles.straddlePreview}>
                 {activeStraddles.map((st) => {
                   const nm = named.find((p) => p.seat === st.seat)?.name || `Seat ${st.seat}`;
@@ -1676,7 +1728,7 @@ function HandBuilder({ me, refreshMe }) {
                 </div>
               )}
             </div>
-            <span>{stakes} {Number(ante) > 0 ? `· $${ante} ante` : ""}</span>
+            <span>{anteGame ? `Ante Game $${anteX}/$${2 * anteX}` : `${stakes}${Number(ante) > 0 ? ` · $${ante} ante` : ""}`}</span>
             {/* Side Game Mode toggle + (when on) the game-type picker. */}
             {sideGameMode && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -1775,7 +1827,7 @@ function HandBuilder({ me, refreshMe }) {
                 empty={p.empty}
                 dataTour={i === 0 ? "seat" : undefined}
                 pos={ellipsePos(i, tableSeats.length)}
-                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : activeStraddles.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
+                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : (anteGame && p.seat === Number(buttonSeat)) ? "BTN" : activeStraddles.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
                 isButton={Number(buttonSeat) === p.seat}
                 isActor={hasActor && eng.actorSeat === p.seat}
                 folded={enginePlayer?.folded}
