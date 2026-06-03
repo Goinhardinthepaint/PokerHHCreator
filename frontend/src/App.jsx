@@ -2322,7 +2322,7 @@ export default function App() {
   if (!me) return <Auth onAuthed={(m) => { setMe(m); navigate("/"); }} />;
 
   let view;
-  if (route === "calendar") view = <Calendar onOpenInBuilder={openInBuilder} onResumeStream={resumeInBuilder} refreshMe={refreshMe} />;
+  if (route === "calendar") view = <Calendar me={me} onOpenInBuilder={openInBuilder} onResumeStream={resumeInBuilder} refreshMe={refreshMe} />;
   else if (route === "dashboard") view = <Dashboard user={me.user} dashboard={me.dashboard} />;
   else if (route === "admin") {
     view = me.user.is_admin

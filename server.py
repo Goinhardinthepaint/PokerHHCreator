@@ -587,6 +587,36 @@ def api_admin_payment():
     return jsonify(auth_db.admin_user_detail(uid))
 
 
+@app.route("/api/admin/assign-month", methods=["POST"])
+@admin_required
+def api_admin_assign_month():
+    d = request.json or {}
+    month = d.get("month")
+    if not month:
+        return jsonify({"error": "month required (YYYY-MM)"}), 400
+    auth_db.set_month_assignment(month, d.get("user_id"), d.get("bonus_amount"), d.get("deadline"))
+    return jsonify(auth_db.admin_overview())
+
+
+@app.route("/api/admin/errors", methods=["POST"])
+@admin_required
+def api_admin_errors():
+    d = request.json or {}
+    uid = d.get("user_id")
+    if not uid or d.get("error_count") is None:
+        return jsonify({"error": "user_id and error_count required"}), 400
+    auth_db.set_error_count(uid, d.get("error_count"))
+    return jsonify(auth_db.admin_user_detail(uid))
+
+
+@app.route("/api/months", methods=["GET"])
+@login_required
+def api_months():
+    # Visible to all workers (owner names + progress); admin gets the richer view.
+    u = current_user()
+    return jsonify({"months": auth_db.month_list(admin=bool(u and u["is_admin"]))})
+
+
 @app.route("/api/admin/export", methods=["GET"])
 @admin_required
 def api_admin_export():

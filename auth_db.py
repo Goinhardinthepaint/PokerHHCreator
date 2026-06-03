@@ -18,7 +18,7 @@ import os
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 # Extract the 11-char YouTube video id from any common URL shape (watch?v=,
@@ -56,6 +56,11 @@ SEED_JSON = os.path.join(HERE, "scripts", "hcl_streams.json")
 PIECE_RATE = 0.03
 COMPLETION_BONUS = 0.10
 STREAM_BONUS_PER_HAND = 0.05
+
+MONTH_BONUS_DEFAULT = 150.0   # paid when a worker's assigned month is completed
+MONTH_DEADLINE_DAYS = 14      # default deadline = 2 weeks from assignment
+ERR_FULL = 0.10               # < 10% errors → full month bonus
+ERR_HALF = 0.20               # 10–20% → half; > 20% → none
 
 
 def now_iso():
@@ -117,6 +122,13 @@ def init_db():
             note       TEXT,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS month_assignments (
+            month        TEXT PRIMARY KEY,   -- "YYYY-MM"
+            user_id      INTEGER,
+            bonus_amount REAL NOT NULL DEFAULT 150,
+            deadline     TEXT,
+            assigned_at  TEXT
+        );
         CREATE INDEX IF NOT EXISTS idx_hands_user ON hands(user_id);
         CREATE INDEX IF NOT EXISTS idx_hands_stream ON hands(stream_id);
         CREATE INDEX IF NOT EXISTS idx_pay_user ON payments(user_id);
@@ -132,6 +144,11 @@ def init_db():
     # Hand Manager can restore the table to immediately after any hand.
     try:
         c.execute("ALTER TABLE hands ADD COLUMN next_state TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # Admin-logged error count per worker (drives the month-bonus tier).
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN error_count INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -328,6 +345,121 @@ def get_resume_state(stream_id):
     return None
 
 
+# ── Month assignments + bonus ────────────────────────────────────────────────
+def _month_stats(conn, month):
+    """Streams + hands progress for a calendar month ("YYYY-MM"), across all workers."""
+    rows = conn.execute(
+        "SELECT is_complete, hands_estimated FROM streams WHERE substr(date,1,7) = ?", (month,)
+    ).fetchall()
+    total = len(rows)
+    complete = sum(1 for r in rows if r["is_complete"])
+    est = sum((r["hands_estimated"] or 0) for r in rows)
+    done = conn.execute(
+        "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
+        "WHERE substr(s.date,1,7) = ?", (month,)
+    ).fetchone()["n"]
+    return {
+        "month": month, "total_streams": total, "complete_streams": complete,
+        "is_complete": total > 0 and complete == total,
+        "hands_estimated": est, "hands_done": done,
+        "pct": round(100 * done / est) if est else 0,
+    }
+
+
+def _user_errors(conn, user_id):
+    hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ?", (user_id,)).fetchone()["n"]
+    errors = conn.execute("SELECT COALESCE(error_count,0) AS e FROM users WHERE id = ?", (user_id,)).fetchone()["e"]
+    return errors, hands, (errors / hands if hands else 0.0)
+
+
+def _month_bonus(conn, user_id):
+    """Month-completion bonus for a worker's assigned month, tiered by error rate."""
+    a = conn.execute("SELECT * FROM month_assignments WHERE user_id = ?", (user_id,)).fetchone()
+    if not a:
+        return None
+    ms = _month_stats(conn, a["month"])
+    errors, hands, rate = _user_errors(conn, user_id)
+    bonus_amount = a["bonus_amount"] if a["bonus_amount"] is not None else MONTH_BONUS_DEFAULT
+    if not ms["is_complete"]:
+        status, amount = "incomplete", 0.0
+    elif rate < ERR_FULL:
+        status, amount = "full", bonus_amount
+    elif rate <= ERR_HALF:
+        status, amount = "half", round(bonus_amount / 2, 2)
+    else:
+        status, amount = "forfeited", 0.0
+    return {
+        "month": a["month"], "bonus_amount": bonus_amount, "deadline": a["deadline"],
+        "is_complete": ms["is_complete"], "total_streams": ms["total_streams"],
+        "complete_streams": ms["complete_streams"], "hands_done": ms["hands_done"],
+        "hands_estimated": ms["hands_estimated"], "pct": ms["pct"],
+        "error_count": errors, "error_rate": round(rate, 4),
+        "status": status, "amount": amount,
+    }
+
+
+def set_month_assignment(month, user_id, bonus_amount=None, deadline=None):
+    conn = get_db()
+    if not user_id:
+        conn.execute("DELETE FROM month_assignments WHERE month = ?", (month,))
+    else:
+        if not deadline:
+            deadline = (datetime.now(timezone.utc) + timedelta(days=MONTH_DEADLINE_DAYS)).date().isoformat()
+        conn.execute(
+            "INSERT OR REPLACE INTO month_assignments (month, user_id, bonus_amount, deadline, assigned_at) "
+            "VALUES (?,?,?,?,?)",
+            (month, user_id, float(bonus_amount) if bonus_amount is not None else MONTH_BONUS_DEFAULT,
+             deadline, now_iso()),
+        )
+    conn.commit()
+    conn.close()
+
+
+def set_error_count(user_id, count):
+    conn = get_db()
+    conn.execute("UPDATE users SET error_count = ? WHERE id = ?", (max(0, int(count or 0)), user_id))
+    conn.commit()
+    conn.close()
+
+
+def month_list(admin=False):
+    """Every month that has streams, with its owner + progress. Admin variant adds
+    owner-vs-helper hand counts and a neglect flag."""
+    conn = get_db()
+    months = [r["m"] for r in conn.execute(
+        "SELECT DISTINCT substr(date,1,7) AS m FROM streams WHERE date IS NOT NULL AND date != '' "
+        "ORDER BY m DESC"
+    ).fetchall()]
+    out = []
+    for m in months:
+        ms = _month_stats(conn, m)
+        a = conn.execute(
+            "SELECT ma.user_id, ma.bonus_amount, ma.deadline, u.username FROM month_assignments ma "
+            "LEFT JOIN users u ON u.id = ma.user_id WHERE ma.month = ?", (m,)
+        ).fetchone()
+        owner = {"id": a["user_id"], "username": a["username"]} if (a and a["user_id"]) else None
+        row = {**ms, "owner": owner,
+               "bonus_amount": (a["bonus_amount"] if a else None),
+               "deadline": (a["deadline"] if a else None)}
+        if admin and owner:
+            oh = conn.execute(
+                "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
+                "WHERE substr(s.date,1,7) = ? AND h.user_id = ?", (m, owner["id"])
+            ).fetchone()["n"]
+            row["owner_hands"] = oh
+            row["helper_hands"] = ms["hands_done"] - oh
+            # Owner neglecting their own month: incomplete, work happening, but the
+            # owner is contributing under a third of it.
+            row["neglect"] = bool(not ms["is_complete"] and ms["hands_done"] > 0 and oh < ms["hands_done"] / 3)
+        elif admin:
+            row["owner_hands"] = 0
+            row["helper_hands"] = ms["hands_done"]
+            row["neglect"] = False
+        out.append(row)
+    conn.close()
+    return out
+
+
 # ── Earnings / stats ─────────────────────────────────────────────────────────
 def _earnings_breakdown(conn, user_id):
     """Full earnings breakdown for one user from hands + completed streams + payments."""
@@ -357,7 +489,9 @@ def _earnings_breakdown(conn, user_id):
     completion = round(hands * COMPLETION_BONUS, 2)
     stream_bonus = round(bonus_hands * STREAM_BONUS_PER_HAND, 2)
     base = round(cards_income + actions_income + completion, 2)
-    total = round(base + stream_bonus, 2)
+    mb = _month_bonus(conn, user_id)
+    month_bonus = mb["amount"] if mb else 0.0
+    total = round(base + stream_bonus + month_bonus, 2)
     return {
         "hands": hands,
         "pieces": cards + actions,
@@ -367,6 +501,8 @@ def _earnings_breakdown(conn, user_id):
         "actions_income": actions_income,
         "completion_bonus": completion,
         "stream_bonus": stream_bonus,
+        "month_bonus": month_bonus,
+        "month_bonus_detail": mb,
         "base": base,
         "total": total,
         "paid": round(paid, 2),
@@ -392,6 +528,21 @@ def user_dashboard(user_id):
         (user_id,),
     ).fetchall()
     bd["recent_hands"] = [dict(r) for r in recent]
+
+    # Assigned month + split of the worker's own hands into their month vs others.
+    bd["assigned_month"] = bd.get("month_bonus_detail")
+    month = bd["assigned_month"]["month"] if bd["assigned_month"] else None
+    if month:
+        own = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(earnings),0) AS e FROM hands h "
+            "JOIN streams s ON h.stream_id = s.id WHERE h.user_id = ? AND substr(s.date,1,7) = ?",
+            (user_id, month),
+        ).fetchone()
+        bd["own_month_hands"] = {"count": own["n"], "earnings": round(own["e"], 2)}
+        bd["other_month_hands"] = {"count": bd["hands"] - own["n"], "earnings": round(bd["base"] - own["e"], 2)}
+    else:
+        bd["own_month_hands"] = None
+        bd["other_month_hands"] = {"count": bd["hands"], "earnings": bd["base"]}
     conn.close()
     return bd
 
@@ -493,10 +644,14 @@ def admin_overview():
         last = conn.execute(
             "SELECT MAX(created_at) AS t FROM hands WHERE user_id = ?", (u["id"],)
         ).fetchone()["t"]
+        errors, _hands, rate = _user_errors(conn, u["id"])
         users.append({
             **public_user(u),
             "hands": bd["hands"], "earnings": bd["total"], "base": bd["base"],
-            "stream_bonus": bd["stream_bonus"], "paid": bd["paid"], "owed": bd["owed"],
+            "stream_bonus": bd["stream_bonus"], "month_bonus": bd["month_bonus"],
+            "month_bonus_detail": bd["month_bonus_detail"],
+            "error_count": errors, "error_rate": round(rate, 4),
+            "paid": bd["paid"], "owed": bd["owed"],
             "last_active": last or u["created_at"],
         })
         total_earned += bd["total"]
@@ -529,7 +684,7 @@ def admin_overview():
         "paid": round(total_paid, 2),
         "owed": round(total_earned - total_paid, 2),
     }
-    return {"users": users, "streams": streams, "platform": platform}
+    return {"users": users, "streams": streams, "platform": platform, "months": month_list(admin=True)}
 
 
 def admin_user_detail(user_id):
@@ -547,9 +702,10 @@ def admin_user_detail(user_id):
         "SELECT id, amount, date, note, created_at FROM payments WHERE user_id = ? ORDER BY id DESC",
         (user_id,),
     ).fetchall()
+    errors, _h, rate = _user_errors(conn, user_id)
     conn.close()
     return {
-        "user": public_user(u),
+        "user": {**public_user(u), "error_count": errors, "error_rate": round(rate, 4)},
         "stats": bd,
         "hands": [dict(h) for h in hands],
         "payments": [dict(p) for p in pays],

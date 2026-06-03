@@ -1,4 +1,12 @@
-import { fmtMoney } from "./api.js";
+import { fmtMoney, fmtMonth } from "./api.js";
+
+const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", incomplete: "In progress" };
+const BONUS_STYLE = {
+  full: { background: "#16a34a", color: "#06210f" },
+  half: { background: "#f59e0b", color: "#0a0e17" },
+  forfeited: { background: "#7f1d1d", color: "#fecaca" },
+  incomplete: { background: "#1e293b", color: "#cbd5e1" },
+};
 
 // Read-only worker dashboard rendered from the /api/me dashboard payload.
 function clock(sec) {
@@ -10,6 +18,7 @@ function clock(sec) {
 
 export default function Dashboard({ user, dashboard: d }) {
   if (!d) return <div style={st.page}>No data.</div>;
+  const am = d.assigned_month;
   return (
     <div style={st.page}>
       <h1 style={st.h1}>Welcome, {user.username}</h1>
@@ -22,6 +31,29 @@ export default function Dashboard({ user, dashboard: d }) {
         <Stat label="Pending payment" value={fmtMoney(d.owed)} accent="#fbbf24" />
       </div>
 
+      {/* Your month */}
+      {am ? (
+        <div style={{ ...st.panel, border: "1px solid #2b3a52" }}>
+          <div style={st.monthHead}>
+            <span style={st.yourMonthBadge}>YOUR MONTH</span>
+            <span style={st.monthTitle}>{fmtMonth(am.month)}</span>
+            <span style={{ ...st.bonusPill, ...BONUS_STYLE[am.status] }}>{BONUS_LABEL[am.status]}</span>
+          </div>
+          <div style={st.monthSub}>
+            {am.hands_done.toLocaleString()}/{am.hands_estimated.toLocaleString()} hands ({am.pct}%) ·
+            {" "}{am.complete_streams}/{am.total_streams} streams complete · deadline {am.deadline || "—"}
+          </div>
+          <div style={st.progressTrack}><div style={{ ...st.progressFill, width: `${Math.min(100, am.pct)}%` }} /></div>
+          <div style={st.monthMeta}>
+            <span>Month bonus: <strong style={{ color: am.amount ? "#4ade80" : "#94a3b8" }}>{fmtMoney(am.amount)}</strong> of {fmtMoney(am.bonus_amount)}</span>
+            <span>Your error rate: <strong style={{ color: am.error_rate < 0.10 ? "#4ade80" : am.error_rate <= 0.20 ? "#fbbf24" : "#fca5a5" }}>{(am.error_rate * 100).toFixed(1)}%</strong> ({am.error_count} errors)</span>
+          </div>
+          {!am.is_complete && <div style={st.monthNote}>Complete every stream in {fmtMonth(am.month)} to unlock the bonus (helpers count toward completion).</div>}
+        </div>
+      ) : (
+        <div style={st.panel}><div style={st.empty}>No assigned month yet — an admin assigns your "home month".</div></div>
+      )}
+
       {/* earnings breakdown */}
       <div style={st.panel}>
         <div style={st.panelHead}>Earnings breakdown</div>
@@ -29,11 +61,18 @@ export default function Dashboard({ user, dashboard: d }) {
         <Row k="Actions income" v={fmtMoney(d.actions_income)} sub={`${d.actions} actions`} />
         <Row k="Completion bonuses" v={fmtMoney(d.completion_bonus)} sub={`${d.hands} hands`} />
         <Row k="Stream bonuses" v={fmtMoney(d.stream_bonus)} sub="completed streams" accent="#fbbf24" />
+        <Row k="Month bonus" v={fmtMoney(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
         <div style={st.divider} />
         <Row k="Base" v={fmtMoney(d.base)} />
         <Row k="Total earned" v={fmtMoney(d.total)} accent="#4ade80" bold />
         <Row k="Paid to date" v={fmtMoney(d.paid)} />
         <Row k="Still owed" v={fmtMoney(d.owed)} accent="#fbbf24" bold />
+      </div>
+
+      {/* own vs other-month hands */}
+      <div style={st.cards}>
+        <Stat label={am ? `Hands in ${fmtMonth(am.month)}` : "Hands (your month)"} value={(d.own_month_hands?.count ?? 0).toLocaleString()} />
+        <Stat label="Hands on other months" value={(d.other_month_hands?.count ?? 0).toLocaleString()} accent="#7dd3fc" />
       </div>
 
       <div style={st.two}>
@@ -100,6 +139,15 @@ const st = {
   statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#64748b" },
   statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
   panel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: 16, marginBottom: 16 },
+  monthHead: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" },
+  yourMonthBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 1, color: "#0a0e17", background: "#f59e0b", borderRadius: 6, padding: "3px 8px" },
+  monthTitle: { fontSize: 18, fontWeight: 800, color: "#f8fafc" },
+  bonusPill: { fontSize: 10.5, fontWeight: 800, borderRadius: 8, padding: "3px 10px" },
+  monthSub: { fontSize: 12.5, color: "#94a3b8", marginBottom: 8 },
+  progressTrack: { height: 10, borderRadius: 6, background: "#0a0f1a", border: "1px solid #1e293b", overflow: "hidden", marginBottom: 8 },
+  progressFill: { height: "100%", background: "linear-gradient(90deg,#16a34a,#4ade80)" },
+  monthMeta: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12.5, color: "#cbd5e1" },
+  monthNote: { fontSize: 11.5, color: "#64748b", marginTop: 8 },
   panelHead: { fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "#f59e0b", marginBottom: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13.5 },
   rowK: { color: "#94a3b8" },

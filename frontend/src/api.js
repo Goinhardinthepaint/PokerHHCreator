@@ -19,3 +19,12 @@ export async function api(path, { method = "GET", body } = {}) {
 }
 
 export const fmtMoney = (n) => "$" + (Number(n) || 0).toFixed(2);
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+// "2025-06" → "June 2025"
+export function fmtMonth(ym) {
+  if (!ym) return "—";
+  const [y, m] = String(ym).split("-").map(Number);
+  return (MONTH_NAMES[m - 1] || ym) + " " + y;
+}

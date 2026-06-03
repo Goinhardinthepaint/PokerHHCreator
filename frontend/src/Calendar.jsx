@@ -104,10 +104,11 @@ function parseCSV(text) {
 }
 
 // ── Calendar page ─────────────────────────────────────────────────────────
-export default function Calendar({ onOpenInBuilder, onResumeStream, refreshMe }) {
+export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshMe }) {
   const [streams, setStreams] = useState(loadStreams);
   // Server truth for per-stream { handsCompleted, isComplete }, overlaid below.
   const [serverState, setServerState] = useState({});
+  const [monthsMap, setMonthsMap] = useState({}); // "YYYY-MM" -> { owner, progress, … }
   const today = useMemo(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth(), str: ymd(d.getFullYear(), d.getMonth(), d.getDate()) }; }, []);
   const [view, setView] = useState(() => ({ year: today.y, month: today.m }));
   const [selectedDate, setSelectedDate] = useState(null); // "YYYY-MM-DD" or null
@@ -121,6 +122,16 @@ export default function Calendar({ onOpenInBuilder, onResumeStream, refreshMe })
 
   const fetchState = () => api("/api/streams/state").then((d) => setServerState(d.states || {})).catch(() => {});
   useEffect(() => { fetchState(); }, []);
+
+  // Month ownership + progress (who's responsible for each month).
+  useEffect(() => {
+    api("/api/months")
+      .then((d) => setMonthsMap(Object.fromEntries((d.months || []).map((m) => [m.month, m]))))
+      .catch(() => {});
+  }, []);
+  const viewMonthKey = `${view.year}-${String(view.month + 1).padStart(2, "0")}`;
+  const viewMonth = monthsMap[viewMonthKey];
+  const isMyMonth = viewMonth && viewMonth.owner && me && viewMonth.owner.id === me.user.id;
 
   // Overlay live server hand counts + completion onto the local catalog.
   const merged = useMemo(() => streams.map((s) => {
@@ -247,6 +258,12 @@ export default function Calendar({ onOpenInBuilder, onResumeStream, refreshMe })
           <div style={s.monthTitle}>{MONTHS[view.month]} {view.year}</div>
           <button style={s.navArrow} onClick={nextMonth} title="Next month">›</button>
           <button style={s.todayBtn} onClick={goToday}>Today</button>
+          {viewMonth && (isMyMonth ? (
+            <span style={s.yourMonth}>★ YOUR MONTH</span>
+          ) : viewMonth.owner ? (
+            <span style={s.ownedBy}>{viewMonth.owner.username}'s month</span>
+          ) : null)}
+          {viewMonth && viewMonth.is_complete && <span style={s.monthDone}>✓ complete</span>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button style={s.addBtn} onClick={() => setSelectedDate(today.str)}>+ Add Stream</button>
@@ -550,6 +567,9 @@ const s = {
   monthNav: { display: "flex", alignItems: "center", gap: 10 },
   navArrow: { width: 34, height: 34, borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#e2e8f0", fontSize: 20, lineHeight: 1, cursor: "pointer" },
   monthTitle: { fontSize: 18, fontWeight: 800, color: "#f8fafc", minWidth: 170, textAlign: "center" },
+  yourMonth: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#f59e0b", borderRadius: 8, padding: "4px 10px" },
+  ownedBy: { fontSize: 10.5, fontWeight: 700, color: "#cbd5e1", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, padding: "4px 10px" },
+  monthDone: { fontSize: 10, fontWeight: 800, color: "#06210f", background: "#16a34a", borderRadius: 8, padding: "3px 8px" },
   todayBtn: { padding: "7px 14px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   addBtn: { padding: "8px 14px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#7dd3fc", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
   importBtn: { padding: "8px 14px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
