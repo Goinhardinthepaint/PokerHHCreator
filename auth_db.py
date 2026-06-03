@@ -156,6 +156,11 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN tutorial_completed INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    # Row kind: 'hand' (real) or 'tutorial_bonus' (one-off $1 credit).
+    try:
+        c.execute("ALTER TABLE hands ADD COLUMN type TEXT NOT NULL DEFAULT 'hand'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
@@ -239,6 +244,31 @@ def set_tutorial_complete(user_id, completed=True):
     conn.close()
 
 
+TUTORIAL_BONUS = 1.00
+
+
+def award_tutorial_bonus(user_id):
+    """Credit the one-off $1 tutorial bonus, exactly once per user. Returns True
+    if it was awarded just now, False if the user already had it."""
+    conn = get_db()
+    exists = conn.execute(
+        "SELECT 1 FROM hands WHERE user_id = ? AND type = 'tutorial_bonus' LIMIT 1", (user_id,)
+    ).fetchone()
+    if exists:
+        conn.close()
+        return False
+    conn.execute(
+        "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, "
+        "cards_count, actions_count, earnings, type, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (user_id, None, None, 0, "Tutorial completion bonus", 0, 0, TUTORIAL_BONUS,
+         "tutorial_bonus", now_iso()),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
 # ── Hands ────────────────────────────────────────────────────────────────────
 def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count, next_state=None):
     cards = int(cards_count or 0)
@@ -285,12 +315,14 @@ def user_hands(user_id, stream_id=None):
     if stream_id:
         sid = extract_video_id(stream_id) or stream_id
         rows = conn.execute(
-            f"SELECT {cols} FROM hands WHERE user_id = ? AND stream_id = ? ORDER BY timestamp_seconds, id",
+            f"SELECT {cols} FROM hands WHERE user_id = ? AND stream_id = ? "
+            "AND COALESCE(type,'hand') = 'hand' ORDER BY timestamp_seconds, id",
             (user_id, sid),
         ).fetchall()
     else:
         rows = conn.execute(
-            f"SELECT {cols} FROM hands WHERE user_id = ? ORDER BY timestamp_seconds, id",
+            f"SELECT {cols} FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand' "
+            "ORDER BY timestamp_seconds, id",
             (user_id,),
         ).fetchall()
     conn.close()
@@ -381,7 +413,7 @@ def _month_stats(conn, month):
 
 
 def _user_errors(conn, user_id):
-    hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ?", (user_id,)).fetchone()["n"]
+    hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'", (user_id,)).fetchone()["n"]
     errors = conn.execute("SELECT COALESCE(error_count,0) AS e FROM users WHERE id = ?", (user_id,)).fetchone()["e"]
     return errors, hands, (errors / hands if hands else 0.0)
 
@@ -480,12 +512,16 @@ def _earnings_breakdown(conn, user_id):
     agg = conn.execute(
         "SELECT COUNT(*) AS hands, COALESCE(SUM(cards_count),0) AS cards, "
         "COALESCE(SUM(actions_count),0) AS actions, COALESCE(SUM(earnings),0) AS base "
-        "FROM hands WHERE user_id = ?",
+        "FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'",
         (user_id,),
     ).fetchone()
     hands = agg["hands"]
     cards = agg["cards"]
     actions = agg["actions"]
+    tutorial_bonus = conn.execute(
+        "SELECT COALESCE(SUM(earnings),0) AS b FROM hands WHERE user_id = ? AND type = 'tutorial_bonus'",
+        (user_id,),
+    ).fetchone()["b"]
 
     # Stream bonus = $0.05 per the user's hands that live in a completed stream.
     bonus_hands = conn.execute(
@@ -505,7 +541,7 @@ def _earnings_breakdown(conn, user_id):
     base = round(cards_income + actions_income + completion, 2)
     mb = _month_bonus(conn, user_id)
     month_bonus = mb["amount"] if mb else 0.0
-    total = round(base + stream_bonus + month_bonus, 2)
+    total = round(base + stream_bonus + month_bonus + tutorial_bonus, 2)
     return {
         "hands": hands,
         "pieces": cards + actions,
@@ -517,6 +553,7 @@ def _earnings_breakdown(conn, user_id):
         "stream_bonus": stream_bonus,
         "month_bonus": month_bonus,
         "month_bonus_detail": mb,
+        "tutorial_bonus": round(tutorial_bonus, 2),
         "base": base,
         "total": total,
         "paid": round(paid, 2),
@@ -538,7 +575,8 @@ def user_dashboard(user_id):
     bd["streams_count"] = len(bd["streams_worked"])
     recent = conn.execute(
         "SELECT id, stream_id, youtube_url, timestamp_seconds, cards_count, actions_count, "
-        "earnings, created_at FROM hands WHERE user_id = ? ORDER BY id DESC LIMIT 25",
+        "earnings, created_at FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand' "
+        "ORDER BY id DESC LIMIT 25",
         (user_id,),
     ).fetchall()
     bd["recent_hands"] = [dict(r) for r in recent]
@@ -689,7 +727,7 @@ def admin_overview():
             "contributors": [dict(c) for c in contributors],
         })
 
-    total_hands = conn.execute("SELECT COUNT(*) AS n FROM hands").fetchone()["n"]
+    total_hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()["n"]
     conn.close()
     platform = {
         "users": len(users),
@@ -709,7 +747,8 @@ def admin_user_detail(user_id):
     bd = _earnings_breakdown(conn, user_id)
     hands = conn.execute(
         "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
-        "actions_count, earnings, created_at FROM hands WHERE user_id = ? ORDER BY id DESC",
+        "actions_count, earnings, created_at FROM hands WHERE user_id = ? "
+        "AND COALESCE(type,'hand') = 'hand' ORDER BY id DESC",
         (user_id,),
     ).fetchall()
     pays = conn.execute(

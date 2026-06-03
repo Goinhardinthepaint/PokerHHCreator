@@ -442,9 +442,17 @@ def api_logout():
 @app.route("/api/tutorial-complete", methods=["POST"])
 @login_required
 def api_tutorial_complete():
-    completed = (request.json or {}).get("completed", True)
-    auth_db.set_tutorial_complete(session["user_id"], bool(completed))
-    return jsonify(_me_payload(session["user_id"]))
+    d = request.json or {}
+    uid = session["user_id"]
+    auth_db.set_tutorial_complete(uid, bool(d.get("completed", True)))
+    # Award the one-off $1 only when the tour was actually finished (not skipped),
+    # and only once ever per user.
+    awarded = False
+    if d.get("completed", True) and d.get("award"):
+        awarded = auth_db.award_tutorial_bonus(uid)
+    payload = _me_payload(uid)
+    payload["awarded"] = awarded
+    return jsonify(payload)
 
 
 @app.route("/api/me", methods=["GET"])

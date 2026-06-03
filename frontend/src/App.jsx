@@ -8,6 +8,7 @@ import TutorialOverlay from "./TutorialOverlay.jsx";
 // Onboarding tour — each step points at an element tagged with data-tour.
 const TUTORIAL_STEPS = [
   { selector: '[data-tour="youtube"]', title: "YouTube link", description: "Paste the timestamped YouTube link for each hand here. The link MUST have a timestamp (?t=seconds)." },
+  { selector: '[data-tour="youtube"]', title: "Get a timestamped link", howto: true, wide: true },
   { selector: '[data-tour="stakes"]', title: "Stakes & BB ante", description: "Set the game stakes and BB ante. These carry over between hands." },
   { selector: '[data-tour="button"]', title: "Button seat", description: "Set which seat has the dealer button. It auto-rotates after each hand." },
   { selector: '[data-tour="roster"]', title: "Roster", description: "Enter player names, seat numbers, and starting stacks. Leave seats blank for empty seats." },
@@ -22,6 +23,7 @@ const TUTORIAL_STEPS = [
   { selector: '[data-tour="earnings"]', title: "Earnings tracker", description: "Track your earnings in real time. You earn per card, per action, plus a completion bonus." },
   { selector: '[data-tour="nav-calendar"]', title: "Calendar", description: "View all streams organized by date — see which need transcription and your monthly progress." },
   { selector: '[data-tour="nav-dashboard"]', title: "Dashboard", description: "View your total earnings, hands completed, and bonus status." },
+  { final: true, title: "Tutorial complete!" },
 ];
 import {
   initHand,
@@ -2347,9 +2349,10 @@ export default function App() {
   // tutorial_completed. Derived (no effect) so it can't re-trigger itself.
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const showTutorial = !!(me && me.user && !me.user.tutorial_completed && !tutorialDismissed && route === "builder");
-  const finishTutorial = async () => {
+  // award = finished via the last step (not skipped); the server only pays once.
+  const finishTutorial = async (award) => {
     setTutorialDismissed(true);
-    try { await api("/api/tutorial-complete", { method: "POST", body: { completed: true } }); } catch { /* ignore */ }
+    try { await api("/api/tutorial-complete", { method: "POST", body: { completed: true, award: !!award } }); } catch { /* ignore */ }
     refreshMe();
   };
   const redoTutorial = async () => {
@@ -2375,7 +2378,7 @@ export default function App() {
     <div style={navStyles.root}>
       <NavBar route={route} navigate={navigate} me={me} onLogout={logout} onRedoTutorial={redoTutorial} />
       <div style={navStyles.view}>{view}</div>
-      {showTutorial && <TutorialOverlay steps={TUTORIAL_STEPS} onFinish={finishTutorial} />}
+      {showTutorial && <TutorialOverlay steps={TUTORIAL_STEPS} bonusAwarded={!!(me.dashboard && me.dashboard.tutorial_bonus)} onFinish={finishTutorial} />}
     </div>
   );
 }

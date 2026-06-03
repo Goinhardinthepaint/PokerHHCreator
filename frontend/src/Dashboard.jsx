@@ -62,6 +62,7 @@ export default function Dashboard({ user, dashboard: d }) {
         <Row k="Completion bonuses" v={fmtMoney(d.completion_bonus)} sub={`${d.hands} hands`} />
         <Row k="Stream bonuses" v={fmtMoney(d.stream_bonus)} sub="completed streams" accent="#fbbf24" />
         <Row k="Month bonus" v={fmtMoney(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
+        {d.tutorial_bonus > 0 && <Row k="Tutorial bonus" v={fmtMoney(d.tutorial_bonus)} sub="onboarding reward" accent="#fbbf24" />}
         <div style={st.divider} />
         <Row k="Base" v={fmtMoney(d.base)} />
         <Row k="Total earned" v={fmtMoney(d.total)} accent="#4ade80" bold />
