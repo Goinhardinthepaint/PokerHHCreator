@@ -108,7 +108,7 @@ export default function TutorialOverlay({ steps, onFinish, bonusAwarded }) {
               </div>
               <button style={st.slideArrow} disabled={slide === SLIDES.length - 1} onClick={() => setSlide((s) => Math.min(SLIDES.length - 1, s + 1))}>›</button>
             </div>
-            <div style={st.desc}>Every hand MUST have a timestamped link. Pause the video at the start of each hand, click Share, check &apos;Start at&apos;, and paste the link.</div>
+            <div style={st.desc}>{step.description || "Pause the video at the start of each hand, click Share, check 'Start at', and paste the link."}</div>
           </>
         ) : step.final ? (
           <div style={{ ...st.desc, fontSize: 13.5 }}>

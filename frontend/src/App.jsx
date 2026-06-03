@@ -6,23 +6,24 @@ import Admin from "./Admin.jsx";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 
 // Onboarding tour — each step points at an element tagged with data-tour.
+// Order follows the real workflow: set up the table → paste link → deal → cards
+// → actions → complete.
 const TUTORIAL_STEPS = [
-  { selector: '[data-tour="youtube"]', title: "YouTube link", description: "Paste the timestamped YouTube link for each hand here. The link MUST have a timestamp (?t=seconds)." },
-  { selector: '[data-tour="youtube"]', title: "Get a timestamped link", howto: true, wide: true },
-  { selector: '[data-tour="stakes"]', title: "Stakes & BB ante", description: "Set the game stakes and BB ante. These carry over between hands." },
-  { selector: '[data-tour="button"]', title: "Button seat", description: "Set which seat has the dealer button. It auto-rotates after each hand." },
-  { selector: '[data-tour="roster"]', title: "Roster", description: "Enter player names, seat numbers, and starting stacks. Leave seats blank for empty seats." },
-  { selector: '[data-tour="setdefault"]', title: "Default lineup", description: "Save the current lineup as the default. Use 'Restore Default' when a player returns to the table." },
-  { selector: '[data-tour="straddle"]', title: "UTG straddle", description: "Check this for games with a mandatory UTG straddle (triple blind like 10/20/40)." },
-  { selector: '[data-tour="deal"]', title: "Deal a hand", description: "Click to start entering a new hand. This locks in the roster and deals cards." },
-  { selector: '[data-tour="seat"]', title: "Hole cards", description: "Click the card slots on each seat to set that player's hole cards. Read them from the stream overlay." },
-  { selector: '[data-tour="board"]', title: "Community cards", description: "Click each card slot in the center to set the flop, turn, and river." },
-  { selector: '[data-tour="actionbar"]', title: "Action bar", description: "Enter each player's action in order — the tool tracks whose turn it is. Fold, Check, Call, Bet, Raise, or All-in." },
-  { selector: '[data-tour="completehand"]', title: "Complete the hand", description: "When the hand is over, click Complete Hand. The tool auto-generates the hand history and saves it." },
-  { selector: '[data-tour="handmanager"]', title: "Hand Manager", description: "All completed hands appear here. Click a hand to restore the game to that point, and Export to download histories." },
-  { selector: '[data-tour="earnings"]', title: "Earnings tracker", description: "Track your earnings in real time. You earn per card, per action, plus a completion bonus." },
-  { selector: '[data-tour="nav-calendar"]', title: "Calendar", description: "View all streams organized by date — see which need transcription and your monthly progress." },
-  { selector: '[data-tour="nav-dashboard"]', title: "Dashboard", description: "View your total earnings, hands completed, and bonus status." },
+  { selector: '[data-tour="roster"]', title: "Roster", description: "First, enter all player names and their starting stacks." },
+  { selector: '[data-tour="stakes"]', title: "Stakes & BB ante", description: "Set the game stakes and ante amount." },
+  { selector: '[data-tour="button"]', title: "Button seat", description: "Set the dealer button position." },
+  { selector: '[data-tour="straddle"]', title: "Mandatory straddle", description: "Check this if the game has a mandatory straddle." },
+  { selector: '[data-tour="setdefault"]', title: "Default lineup", description: "Save this lineup as default for the stream." },
+  { selector: '[data-tour="youtube"]', title: "YouTube link", howto: true, wide: true, description: "Before EVERY hand, paste a timestamped YouTube link. You cannot deal without one." },
+  { selector: '[data-tour="deal"]', title: "Deal a hand", description: "Click Deal to start the hand." },
+  { selector: '[data-tour="seat"]', title: "Hole cards", description: "Assign each player's cards from the stream overlay." },
+  { selector: '[data-tour="board"]', title: "Community cards", description: "Set the board cards." },
+  { selector: '[data-tour="actionbar"]', title: "Action bar", description: "Enter actions in order." },
+  { selector: '[data-tour="completehand"]', title: "Complete the hand", description: "Finish the hand and auto-save." },
+  { selector: '[data-tour="handmanager"]', title: "Hand Manager", description: "View and manage completed hands." },
+  { selector: '[data-tour="earnings"]', title: "Earnings", description: "Track your pay." },
+  { selector: '[data-tour="nav-calendar"]', title: "Calendar", description: "View stream progress." },
+  { selector: '[data-tour="nav-dashboard"]', title: "Dashboard", description: "Your stats and bonus." },
   { final: true, title: "Tutorial complete!" },
 ];
 import {
@@ -273,9 +274,10 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
           <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || "#475569" }}>{badge}</div>
         )}
         {isButton && <div style={styles.dealerBtn}>D</div>}
-        <div style={styles.cardsRow}>
-          <Card card={cards[0]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={() => onCardClick(0)} />
-          <Card card={cards[1]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={() => onCardClick(1)} />
+        {/* Hole cards are locked until the hand is dealt (workflow: deal → cards). */}
+        <div style={{ ...styles.cardsRow, opacity: phase === "setup" ? 0.35 : 1 }} title={phase === "setup" ? "Deal a hand first" : undefined}>
+          <Card card={cards[0]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={phase === "setup" ? undefined : () => onCardClick(0)} />
+          <Card card={cards[1]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={phase === "setup" ? undefined : () => onCardClick(1)} />
         </div>
         <div style={{ ...styles.seatName, cursor: onNameClick ? "pointer" : "default" }} onClick={onNameClick} title={onNameClick ? "Buy the button / straddle" : undefined}>{p.name}</div>
         {bought && <div style={styles.boughtTag}>BOUGHT {bought === "str" ? "STR" : "BTN"}</div>}
@@ -687,6 +689,12 @@ function HandBuilder({ me, refreshMe }) {
   const currentStreamId = useMemo(() => extractVideoId(youtubeLink), [youtubeLink]);
   const currentDefault = currentStreamId ? defaultLineups[currentStreamId] : null;
 
+  // A valid, timestamped YouTube link is required before a hand can be dealt.
+  const ytReady = useMemo(() => {
+    const l = youtubeLink.trim();
+    return /youtube\.com|youtu\.be/i.test(l) && /[?&](?:t|start)=/.test(l) && !!extractVideoId(l);
+  }, [youtubeLink]);
+
   // ── Server-stored hands (for the Hand Manager + timeline) ──────────────────
   // {hands:[...], stream:{...}|null, last_timestamp:int|null}. Scoped to the
   // active stream when a YouTube link is set, else the user's whole history.
@@ -985,6 +993,10 @@ function HandBuilder({ me, refreshMe }) {
 
   function dealHand() {
     setError("");
+    if (!ytReady) {
+      setError("Paste a timestamped YouTube link to deal.");
+      return;
+    }
     if (named.length < 2) {
       setError("Add at least 2 players in the sidebar.");
       setSidebarOpen(true);
@@ -1847,8 +1859,16 @@ function HandBuilder({ me, refreshMe }) {
 
           {!sideGameMode && phase === "setup" && (
             <div style={styles.barCenter}>
-              <div style={styles.barHint}>{named.length} players seated · button on Seat {buttonSeat}</div>
-              <button style={styles.dealBtn} onClick={dealHand} data-tour="deal">♠ DEAL HAND</button>
+              <div style={{ ...styles.barHint, color: ytReady ? "#94a3b8" : "#fbbf24" }}>
+                {ytReady ? `${named.length} players seated · button on Seat ${buttonSeat}` : "⚠ Paste a timestamped YouTube link to deal"}
+              </div>
+              <button
+                style={{ ...styles.dealBtn, opacity: ytReady ? 1 : 0.4, cursor: ytReady ? "pointer" : "not-allowed", boxShadow: ytReady ? styles.dealBtn.boxShadow : "none" }}
+                disabled={!ytReady}
+                onClick={dealHand}
+                data-tour="deal"
+                title={ytReady ? undefined : "Paste a timestamped YouTube link first"}
+              >♠ DEAL HAND</button>
             </div>
           )}
 

@@ -50,8 +50,17 @@ def extract_video_id(url):
 from werkzeug.security import generate_password_hash, check_password_hash
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(HERE, "users.db")
 SEED_JSON = os.path.join(HERE, "scripts", "hcl_streams.json")
+
+# Persist the database on Railway's mounted volume (its container filesystem is
+# ephemeral — without this, users.db is wiped on every deploy and accounts
+# vanish). Locally there's no volume var, so it stays in the project root.
+_DATA_DIR = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or HERE
+try:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+except OSError:
+    _DATA_DIR = HERE
+DB_PATH = os.path.join(_DATA_DIR, "users.db")
 
 PIECE_RATE = 0.03
 COMPLETION_BONUS = 0.10
@@ -191,6 +200,11 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # seeding is best-effort
+
+    # Report what was loaded — confirms the DB persisted across restarts/deploys.
+    n_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    n_hands = c.execute("SELECT COUNT(*) FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()[0]
+    print(f"Database loaded: {n_users} users, {n_hands} hands  [{DB_PATH}]", flush=True)
     conn.close()
 
 
