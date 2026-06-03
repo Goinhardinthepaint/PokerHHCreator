@@ -122,6 +122,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_pay_user ON payments(user_id);
         """
     )
+    # Columns added after the initial schema shipped.
+    for col in ("default_lineup TEXT", "resume_state TEXT"):
+        try:
+            c.execute(f"ALTER TABLE streams ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
@@ -224,6 +230,90 @@ def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, ca
     return hand_id, earnings
 
 
+def user_hands(user_id, stream_id=None):
+    """All of a user's hands (optionally one stream), ordered by timestamp."""
+    conn = get_db()
+    if stream_id:
+        sid = extract_video_id(stream_id) or stream_id
+        rows = conn.execute(
+            "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
+            "actions_count, earnings, created_at FROM hands WHERE user_id = ? AND stream_id = ? "
+            "ORDER BY timestamp_seconds, id",
+            (user_id, sid),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
+            "actions_count, earnings, created_at FROM hands WHERE user_id = ? "
+            "ORDER BY timestamp_seconds, id",
+            (user_id,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_hand(hand_id, user_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM hands WHERE id = ? AND user_id = ?", (hand_id, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_hand(hand_id, user_id):
+    conn = get_db()
+    cur = conn.execute("DELETE FROM hands WHERE id = ? AND user_id = ?", (hand_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    return deleted > 0
+
+
+def stream_meta(stream_id):
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, youtube_url, title, date, duration_minutes, hands_estimated, is_complete "
+        "FROM streams WHERE id = ?", (sid,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def last_stream_timestamp(stream_id):
+    """Latest hand timestamp on a stream (across all workers) — the resume point."""
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    conn = get_db()
+    row = conn.execute(
+        "SELECT MAX(timestamp_seconds) AS t FROM hands WHERE stream_id = ?", (sid,)
+    ).fetchone()
+    conn.close()
+    return row["t"] if row else None
+
+
+def set_resume_state(stream_id, state):
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    if not sid:
+        return
+    conn = get_db()
+    conn.execute("INSERT OR IGNORE INTO streams (id, is_complete) VALUES (?,0)", (sid,))
+    conn.execute("UPDATE streams SET resume_state = ? WHERE id = ?", (json.dumps(state), sid))
+    conn.commit()
+    conn.close()
+
+
+def get_resume_state(stream_id):
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    conn = get_db()
+    row = conn.execute("SELECT resume_state FROM streams WHERE id = ?", (sid,)).fetchone()
+    conn.close()
+    if row and row["resume_state"]:
+        try:
+            return json.loads(row["resume_state"])
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 # ── Earnings / stats ─────────────────────────────────────────────────────────
 def _earnings_breakdown(conn, user_id):
     """Full earnings breakdown for one user from hands + completed streams + payments."""
@@ -321,6 +411,34 @@ def upsert_stream(stream):
         (stream.get("id"), stream.get("youtubeUrl"), stream.get("title"), stream.get("date"),
          stream.get("durationMinutes"), stream.get("handsEstimated")),
     )
+    conn.commit()
+    conn.close()
+
+
+def get_default_lineup(stream_id):
+    """Saved default lineup [{seat, name}] for a stream (by video id)."""
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    conn = get_db()
+    row = conn.execute("SELECT default_lineup FROM streams WHERE id = ?", (sid,)).fetchone()
+    conn.close()
+    if row and row["default_lineup"]:
+        try:
+            return json.loads(row["default_lineup"])
+        except (ValueError, TypeError):
+            return []
+    return []
+
+
+def set_default_lineup(stream_id, lineup):
+    sid = extract_video_id(stream_id) or (stream_id or "")
+    if not sid:
+        return
+    # Keep only seat + name (never stacks).
+    clean = [{"seat": r.get("seat"), "name": (r.get("name") or "").strip()}
+             for r in (lineup or []) if r.get("seat") is not None]
+    conn = get_db()
+    conn.execute("INSERT OR IGNORE INTO streams (id, is_complete) VALUES (?,0)", (sid,))
+    conn.execute("UPDATE streams SET default_lineup = ? WHERE id = ?", (json.dumps(clean), sid))
     conn.commit()
     conn.close()
 

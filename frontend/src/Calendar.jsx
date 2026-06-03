@@ -104,7 +104,7 @@ function parseCSV(text) {
 }
 
 // ── Calendar page ─────────────────────────────────────────────────────────
-export default function Calendar({ onOpenInBuilder, refreshMe }) {
+export default function Calendar({ onOpenInBuilder, onResumeStream, refreshMe }) {
   const [streams, setStreams] = useState(loadStreams);
   // Server truth for per-stream { handsCompleted, isComplete }, overlaid below.
   const [serverState, setServerState] = useState({});
@@ -187,6 +187,23 @@ export default function Calendar({ onOpenInBuilder, refreshMe }) {
       fetchState();
       if (refreshMe) refreshMe();
     } catch { /* keep the optimistic local toggle */ }
+  };
+
+  // Resume a stream: pull the last hand's saved table + timestamp from the
+  // server and hand it to the Hand Builder so work continues where it stopped.
+  const resumeStream = async (stream) => {
+    let payload = { youtubeUrl: stream.youtubeUrl || `https://youtu.be/${stream.id}` };
+    try {
+      const r = await api(`/api/streams/${stream.id}/resume`);
+      const ts = r.last_timestamp || 0;
+      payload = {
+        youtubeUrl: `https://youtu.be/${stream.id}${ts ? `?t=${ts}` : ""}`,
+        roster: r.resume_state?.roster,
+        buttonSeat: r.resume_state?.buttonSeat,
+        handNumber: r.resume_state?.handNumber,
+      };
+    } catch { /* fall back to just the URL */ }
+    onResumeStream(payload);
   };
 
   const importStreams = (rows) => {
@@ -286,6 +303,7 @@ export default function Calendar({ onOpenInBuilder, refreshMe }) {
           onAdd={addStream}
           onUpdate={updateStream}
           onComplete={markComplete}
+          onResume={resumeStream}
           onRemove={removeStream}
           onOpenInBuilder={onOpenInBuilder}
         />
@@ -329,7 +347,7 @@ function StatsBanner({ stats }) {
 }
 
 // ── Day panel (right drawer) ────────────────────────────────────────────────
-function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onRemove, onOpenInBuilder }) {
+function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResume, onRemove, onOpenInBuilder }) {
   const [showAdd, setShowAdd] = useState(streams.length === 0);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -399,13 +417,20 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onRemov
                     {st.isComplete ? "✓ Complete" : "Mark Complete"}
                   </button>
                   <button
-                    style={s.openBtn}
-                    disabled={!st.youtubeUrl}
-                    onClick={() => st.youtubeUrl && onOpenInBuilder(st.youtubeUrl)}
+                    style={s.resumeBtn}
+                    title="Continue from the last completed hand on this stream"
+                    onClick={() => onResume(st)}
                   >
-                    Open in Hand Builder ↗
+                    ▸ Resume
                   </button>
                 </div>
+                <button
+                  style={{ ...s.openBtn, width: "100%", marginTop: 6 }}
+                  disabled={!st.youtubeUrl && !st.id}
+                  onClick={() => onOpenInBuilder(st.youtubeUrl || `https://youtu.be/${st.id}`)}
+                >
+                  Open in Hand Builder ↗
+                </button>
               </div>
             );
           })}
@@ -571,6 +596,7 @@ const s = {
   completeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   completeOn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16a34a", border: "1px solid #16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, cursor: "pointer" },
   openBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#0e7490", border: "1px solid #155e75", color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  resumeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 12, fontWeight: 800, cursor: "pointer" },
 
   addForm: { background: "#0e1626", border: "1px dashed #334155", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
   addFormTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase" },

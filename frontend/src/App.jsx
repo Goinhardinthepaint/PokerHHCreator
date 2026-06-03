@@ -21,6 +21,16 @@ import Calendar from "./Calendar.jsx";
 // When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
 // tool, it's stashed here and the Hand Builder picks it up on mount.
 const PENDING_YT_KEY = "pokerTable.pendingYoutube";
+// "Resume" from the Calendar stashes a fuller snapshot here (URL + last hand's
+// roster/stacks + rotated button + hand #) so the builder can continue a stream.
+const PENDING_RESUME_KEY = "pokerTable.pendingResume";
+function readAndClearPendingResume() {
+  try {
+    const raw = localStorage.getItem(PENDING_RESUME_KEY);
+    if (raw) { localStorage.removeItem(PENDING_RESUME_KEY); return JSON.parse(raw); }
+  } catch { /* ignore */ }
+  return null;
+}
 
 // ── Card constants ──────────────────────────────────────────────────────────
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
@@ -47,7 +57,6 @@ const BLIND_POSTS = new Set(["posts_sb", "posts_bb", "posts_ante", "posts_stradd
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
 // special server pricing is needed; these constants drive the live counter only.
 const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
-const SIDE_GAME_STREAM_BONUS = 0.05; // additional once the stream is completed
 const SIDE_GAME_TYPES = ["Squid Game", "Bounty Game", "Other"];
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
@@ -73,7 +82,7 @@ function parseTimestamp(s) {
 //   youtube.com/live/VIDEO_ID   ← was previously unhandled → hands didn't match
 //   youtube.com/embed/VIDEO_ID, youtube.com/shorts/VIDEO_ID
 // …with any combination of &t=, ?t=, &si=, &list=, etc. A bare id passes through.
-export function extractVideoId(url) {
+function extractVideoId(url) {
   if (!url) return "";
   const s = String(url).trim();
   if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s; // already a bare id
@@ -298,27 +307,89 @@ function loadSession() {
 const SAVED = loadSession();
 const pick = (key, fallback) => (SAVED[key] !== undefined ? SAVED[key] : fallback);
 
+// Per-stream default lineups (seat → name), keyed by video id. Mirrored to the
+// server too, but cached locally so they survive offline / reloads.
+const DEFAULTS_KEY = "pokerTable.defaultLineups.v1";
+function loadDefaultLineups() {
+  try { return JSON.parse(localStorage.getItem(DEFAULTS_KEY)) || {}; } catch { return {}; }
+}
+
+// Light parsers for server-stored PT4 text (which has no structured summary),
+// so server hands can show a winner / pot / players in the Hand Manager.
+function parsePt4Winner(pt4) {
+  if (!pt4) return "";
+  const m = pt4.match(/^(.+?) collected \$[\d,]+ from pot/m);
+  return m ? m[1].trim() : "";
+}
+function parsePt4Pot(pt4) {
+  if (!pt4) return null;
+  const m = pt4.match(/Total pot \$([\d,]+)/);
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}
+function parsePt4Players(pt4) {
+  if (!pt4) return [];
+  const out = [];
+  const re = /^Seat \d+: (.+?)(?= \(| folded| showed| mucked| collected| won| lost|$)/gm;
+  let m;
+  while ((m = re.exec(pt4))) { const nm = m[1].trim(); if (nm) out.push(nm); }
+  return out;
+}
+function parsePt4Summary(pt4) {
+  const w = parsePt4Winner(pt4);
+  const pot = parsePt4Pot(pt4);
+  if (w && pot != null) return `${w} wins $${pot.toLocaleString()}`;
+  if (w) return `${w} wins`;
+  return "(hand)";
+}
+
 // ── Hand Manager panel ──────────────────────────────────────────────────────
 // Right-side collapsible panel: every completed hand rendered as a selectable
 // card, grouped by video and sorted date→timestamp, with range/toggle selection
 // (like a file explorer), bulk + per-card delete, and drag-to-export plus
 // Export Selected / Export All buttons. Hands live in App state (→ localStorage).
-function HandManager({ hands, onDeleteIds, onExportHands }) {
+function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onDeleteLocal, onDeleteServer, onExportHands }) {
   const [selected, setSelected] = useState(() => new Set());
   const [anchor, setAnchor] = useState(null); // last single-clicked card (range pivot)
   const [dragOver, setDragOver] = useState(false);
+  const [detail, setDetail] = useState(null); // open hand-detail card
 
-  const sorted = useMemo(() => [...hands].sort(cmpHand), [hands]);
-  const ids = useMemo(() => sorted.map((h) => h.n), [sorted]);
+  // Merge server hands (completed, authoritative) with localStorage hands
+  // (unsaved/in-progress). A local hand that matches a server hand by
+  // (video, timestamp) is dropped in favour of the saved server copy.
+  const sorted = useMemo(() => {
+    const sv = (serverHands || []).map((h) => ({
+      key: "s" + h.id, source: "server", serverId: h.id,
+      startSec: h.timestamp_seconds || 0, timestamp: fmtClock(h.timestamp_seconds || 0),
+      youtubeUrl: h.youtube_url, pt4Text: h.pt4_text, cards: h.cards_count, actions: h.actions_count,
+      videoId: h.stream_id, videoDate: stream?.date, sessionLabel: stream?.title,
+      summary: parsePt4Summary(h.pt4_text), potSize: parsePt4Pot(h.pt4_text),
+      winner: parsePt4Winner(h.pt4_text), players: parsePt4Players(h.pt4_text),
+    }));
+    const haveServer = new Set(sv.map((c) => `${c.videoId}|${c.startSec}`));
+    let loc = localHands || [];
+    if (streamId) loc = loc.filter((h) => (h.videoId || "") === streamId);
+    const lc = loc
+      .filter((h) => !haveServer.has(`${h.videoId}|${h.startSec || 0}`))
+      .map((h) => ({
+        key: "l" + h.n, source: "local", n: h.n,
+        startSec: h.startSec || 0, timestamp: h.timestamp || fmtClock(h.startSec || 0),
+        youtubeUrl: h.youtubeUrl, pt4Text: h.pt4Text || h.text, cards: h.cards, actions: h.actions,
+        videoId: h.videoId, videoDate: h.videoDate, sessionLabel: h.sessionLabel,
+        summary: h.summary, potSize: h.potSize, playerCount: h.playerCount,
+        winner: null, players: null,
+      }));
+    return [...sv, ...lc].sort(cmpHand);
+  }, [serverHands, localHands, stream, streamId]);
 
-  // Effective selection — raw state intersected with the hands that still exist,
-  // so a deleted hand's id can't linger and skew the count (derived, no effect).
+  const ids = useMemo(() => sorted.map((h) => h.key), [sorted]);
+
+  // Effective selection — intersected with cards that still exist.
   const sel = useMemo(() => {
     const live = new Set(ids);
     return new Set([...selected].filter((id) => live.has(id)));
   }, [selected, ids]);
 
-  // Group consecutive (sorted) hands by their video — one header per video.
+  // Group by video — one header per video.
   const groups = useMemo(() => {
     const m = new Map();
     for (const h of sorted) {
@@ -328,17 +399,15 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
     }
     return [...m.values()].map((hs) => ({
       key: hs[0].videoId || hs[0].videoDate || "ungrouped",
-      videoDate: hs[0].videoDate,
-      label: hs[0].sessionLabel,
-      hands: hs,
+      videoDate: hs[0].videoDate, label: hs[0].sessionLabel, videoId: hs[0].videoId, hands: hs,
     }));
   }, [sorted]);
 
   const allSelected = ids.length > 0 && ids.every((id) => sel.has(id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(ids));
 
-  // File-explorer selection: plain = single, Ctrl/Cmd = toggle, Shift = range.
-  function clickCard(e, id) {
+  // File-explorer selection: Ctrl/Cmd = toggle, Shift = range.
+  function selectCard(e, id) {
     const idx = ids.indexOf(id);
     if (e.shiftKey && anchor != null) {
       const a = ids.indexOf(anchor);
@@ -348,47 +417,49 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
         return;
       }
     }
-    if (e.ctrlKey || e.metaKey) {
-      setSelected((prev) => {
-        const n = new Set(prev);
-        if (n.has(id)) n.delete(id); else n.add(id);
-        return n;
-      });
-      setAnchor(id);
-      return;
-    }
-    setSelected(new Set([id]));
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
     setAnchor(id);
   }
 
-  function deleteOne(h) {
-    if (window.confirm(`Delete hand at ${h.timestamp || "?"}?`)) onDeleteIds([h.n]);
+  async function deleteCard(card) {
+    if (card.source === "server") await onDeleteServer(card.serverId);
+    else onDeleteLocal(card.n);
   }
-  function deleteSelected() {
-    const c = sel.size;
-    if (!c) return;
-    if (window.confirm(`Delete ${c} hand${c === 1 ? "" : "s"}?`)) {
-      onDeleteIds([...sel]);
-      setSelected(new Set());
-    }
+  async function deleteOne(card) {
+    if (!window.confirm(`Delete hand at ${card.timestamp || "?"}?`)) return;
+    await deleteCard(card);
+    setSelected((prev) => { const n = new Set(prev); n.delete(card.key); return n; });
+    setDetail(null);
+  }
+  async function deleteSelected() {
+    const cards = sorted.filter((h) => sel.has(h.key));
+    if (!cards.length) return;
+    if (!window.confirm(`Delete ${cards.length} hand${cards.length === 1 ? "" : "s"}?`)) return;
+    for (const c of cards) await deleteCard(c);
+    setSelected(new Set());
   }
   const exportSelected = () => {
-    const hs = sorted.filter((h) => sel.has(h.n));
+    const hs = sorted.filter((h) => sel.has(h.key));
     if (hs.length) onExportHands(hs);
   };
   const exportAll = () => sorted.length && onExportHands(sorted);
 
-  // Dropping into the export zone exports the current selection plus whichever
-  // card was dragged (covers dragging an as-yet-unselected card).
   function onDrop(e) {
     e.preventDefault();
     setDragOver(false);
-    const dragged = Number(e.dataTransfer.getData("text/plain"));
+    const dragged = e.dataTransfer.getData("text/plain");
     const set = new Set(sel);
-    if (!Number.isNaN(dragged)) set.add(dragged);
-    const hs = sorted.filter((h) => set.has(h.n));
+    if (dragged) set.add(dragged);
+    const hs = sorted.filter((h) => set.has(h.key));
     if (hs.length) onExportHands(hs);
   }
+
+  const span = (stream?.duration_minutes ? stream.duration_minutes * 60
+    : Math.max(lastTimestamp || 0, ...sorted.map((c) => c.startSec), 1)) || 1;
 
   return (
     <div style={styles.hmInner}>
@@ -396,6 +467,35 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
         <span style={styles.sideHead}>HAND MANAGER</span>
         <span style={styles.hmCount}>{sorted.length} hand{sorted.length === 1 ? "" : "s"}</span>
       </div>
+
+      {/* Stream timeline — markers for every completed hand, with gaps visible */}
+      {streamId && (
+        <div style={styles.hmTimelineWrap}>
+          <div style={styles.hmTimelineHead}>
+            <span>STREAM TIMELINE</span>
+            <span>{stream?.duration_minutes ? `${Math.floor(stream.duration_minutes / 60)}h ${stream.duration_minutes % 60}m` : "duration unknown"}</span>
+          </div>
+          <div style={styles.hmTrack}>
+            {lastTimestamp != null && <div style={{ ...styles.hmProgress, width: `${Math.min(100, (lastTimestamp / span) * 100)}%` }} />}
+            {sorted.map((c) => (
+              <div
+                key={c.key}
+                title={`${c.timestamp} — ${c.summary || ""}`}
+                style={{ ...styles.hmMarker, left: `${Math.min(99.5, (c.startSec / span) * 100)}%`, background: c.source === "server" ? "#4ade80" : "#fbbf24" }}
+                onClick={() => setDetail(c)}
+              />
+            ))}
+          </div>
+          {lastTimestamp != null ? (
+            <div style={styles.hmTimelineFoot}>
+              <span>Last completed: <a href={`${streamUrl}?t=${lastTimestamp}`} target="_blank" rel="noreferrer" style={styles.hmLink}>{fmtClock(lastTimestamp)} ↗</a></span>
+              <button style={styles.hmResumeBtn} onClick={() => onResumeFrom(`${streamUrl}?t=${lastTimestamp}`)}>Resume from {fmtClock(lastTimestamp)}</button>
+            </div>
+          ) : (
+            <div style={styles.hmTimelineFoot}><span style={{ color: "#64748b" }}>No completed hands on this stream yet.</span></div>
+          )}
+        </div>
+      )}
 
       {sorted.length === 0 ? (
         <div style={styles.hmEmpty}>No hands yet. Complete a hand and it lands here.</div>
@@ -419,41 +519,41 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
             {groups.map((g) => (
               <div key={g.key}>
                 <div style={styles.hmGroupHead}>
-                  {fmtDate(g.videoDate)}{g.label ? ` — ${g.label}` : ""}
+                  {g.videoDate ? fmtDate(g.videoDate) : (g.label || g.videoId || "Hands")}{g.videoDate && g.label ? ` — ${g.label}` : ""}
                 </div>
-                {g.hands.map((h) => {
-                  const isSel = sel.has(h.n);
+                {g.hands.map((c) => {
+                  const isSel = sel.has(c.key);
                   return (
                     <div
-                      key={h.n}
+                      key={c.key}
                       draggable
                       onDragStart={(e) => {
-                        if (!sel.has(h.n)) { setSelected(new Set([h.n])); setAnchor(h.n); }
+                        if (!sel.has(c.key)) { setSelected(new Set([c.key])); setAnchor(c.key); }
                         e.dataTransfer.effectAllowed = "copy";
-                        e.dataTransfer.setData("text/plain", String(h.n));
+                        e.dataTransfer.setData("text/plain", c.key);
                       }}
-                      onClick={(e) => clickCard(e, h.n)}
+                      onClick={(e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) selectCard(e, c.key); else setDetail(c); }}
                       style={{ ...styles.hmCard, ...(isSel ? styles.hmCardSel : {}) }}
                     >
-                      <button
-                        style={styles.hmCardX}
-                        title="Delete this hand"
-                        onClick={(e) => { e.stopPropagation(); deleteOne(h); }}
-                      >✕</button>
                       <div style={styles.hmCardTop}>
-                        <span style={styles.hmTime}>⏱ {h.timestamp || "—"}</span>
-                        <span style={styles.hmHandNo}>#{h.n}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          title="Select"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => selectCard(e, c.key)}
+                          style={{ marginRight: 2 }}
+                        />
+                        <span style={styles.hmTime}>⏱ {c.timestamp || "—"}</span>
+                        {c.source === "local" && <span style={styles.hmUnsaved}>unsaved</span>}
+                        <span style={{ flex: 1 }} />
+                        <button style={styles.hmCardX} title="Delete this hand" onClick={(e) => { e.stopPropagation(); deleteOne(c); }}>✕</button>
                       </div>
-                      <div style={styles.hmSummary}>{h.summary || "(hand)"}</div>
+                      <div style={styles.hmSummary}>{c.summary || "(hand)"}</div>
                       <div style={styles.hmCardMeta}>
-                        <span>{h.playerCount != null ? `${h.playerCount} to flop` : ""}</span>
-                        <span>{h.potSize != null ? `Pot ${fmtChips(h.potSize)}` : ""}</span>
+                        <span>{c.playerCount != null ? `${c.playerCount} to flop` : (c.players?.length ? `${c.players.length} players` : "")}</span>
+                        <span>{c.potSize != null ? `Pot ${fmtChips(c.potSize)}` : ""}</span>
                       </div>
-                      {h.youtubeUrl ? (
-                        <a href={h.youtubeUrl} target="_blank" rel="noreferrer" style={styles.hmLink} onClick={(e) => e.stopPropagation()}>
-                          ▶ watch ↗
-                        </a>
-                      ) : null}
                     </div>
                   );
                 })}
@@ -471,20 +571,44 @@ function HandManager({ hands, onDeleteIds, onExportHands }) {
           </div>
         </>
       )}
+
+      {/* Hand detail */}
+      {detail && (
+        <div style={styles.hmDetailOverlay} onClick={() => setDetail(null)}>
+          <div style={styles.hmDetailBox} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.hmDetailHead}>
+              <span>Hand @ {detail.timestamp || "—"} {detail.source === "local" ? "(unsaved)" : ""}</span>
+              <button style={styles.closeMini} onClick={() => setDetail(null)}>✕</button>
+            </div>
+            {detail.summary && <div style={styles.hmDetailSummary}>{detail.summary}</div>}
+            {detail.winner && <div style={styles.hmDetailRow}>Winner: <strong style={{ color: "#4ade80" }}>{detail.winner}</strong></div>}
+            {detail.players?.length ? <div style={styles.hmDetailRow}>Players: {detail.players.join(", ")}</div> : null}
+            {detail.youtubeUrl && (
+              <a href={detail.youtubeUrl} target="_blank" rel="noreferrer" style={styles.hmLink}>▶ open at timestamp ↗</a>
+            )}
+            <pre style={styles.hmDetailPre}>{detail.pt4Text || "(no PT4 text)"}</pre>
+            <button style={{ ...styles.hmBtnRed, width: "100%" }} onClick={() => deleteOne(detail)}>Delete hand</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Hand Builder (the poker table workspace) ─────────────────────────────────
 function HandBuilder({ me, refreshMe }) {
+  // A "Resume" handoff from the Calendar, consumed once on mount.
+  const [pendingResume] = useState(() => readAndClearPendingResume());
+
   // Session (persists across hands) — initialised from any saved session.
   const [stakes, setStakes] = useState(() => pick("stakes", "50/100"));
   const [ante, setAnte] = useState(() => pick("ante", 100));
-  const [buttonSeat, setButtonSeat] = useState(() => pick("buttonSeat", 1));
+  const [buttonSeat, setButtonSeat] = useState(() => (pendingResume?.buttonSeat != null ? pendingResume.buttonSeat : pick("buttonSeat", 1)));
   const [straddleCount, setStraddleCount] = useState(() => pick("straddleCount", 0)); // # of UTG-style straddles
+  const [tripleBlind, setTripleBlind] = useState(() => pick("tripleBlind", false)); // SB/BB/mandatory-STR game
   const [buyButton, setBuyButton] = useState(() => pick("buyButton", null)); // {seat, type:'btn'|'str'}
   const [buyMenuSeat, setBuyMenuSeat] = useState(null); // seat whose buy-the-button menu is open
-  const [roster, setRoster] = useState(() => pick("roster", DEFAULT_ROSTER));
+  const [roster, setRoster] = useState(() => (pendingResume?.roster?.length ? pendingResume.roster : pick("roster", DEFAULT_ROSTER)));
 
   // Hand state
   const [phase, setPhase] = useState(() => pick("phase", "setup")); // setup | holecards | betting | complete
@@ -496,10 +620,11 @@ function HandBuilder({ me, refreshMe }) {
   const [rit, setRit] = useState(() => pick("rit", false));
   const [winner, setWinner] = useState(() => pick("winner", ""));
   const [winner2, setWinner2] = useState(() => pick("winner2", ""));
-  const [handNumber, setHandNumber] = useState(() => pick("handNumber", 1));
+  const [handNumber, setHandNumber] = useState(() => (pendingResume?.handNumber != null ? pendingResume.handNumber : pick("handNumber", 1)));
   const [youtubeLink, setYoutubeLink] = useState(() => {
-    // A URL handed over from the Calendar's "Open in Hand Builder" wins, and is
-    // consumed once; otherwise fall back to the saved per-hand link.
+    // A Resume snapshot or "Open in Hand Builder" URL wins (consumed once);
+    // otherwise fall back to the saved per-hand link.
+    if (pendingResume?.youtubeUrl) return pendingResume.youtubeUrl;
     try {
       const pending = localStorage.getItem(PENDING_YT_KEY);
       if (pending) { localStorage.removeItem(PENDING_YT_KEY); return pending; }
@@ -538,6 +663,65 @@ function HandBuilder({ me, refreshMe }) {
   const [flash, setFlash] = useState(""); // transient green "Hand #N saved" toast
 
   const named = useMemo(() => roster.filter((p) => p.name.trim()), [roster]);
+
+  // ── Per-stream default lineup ──────────────────────────────────────────────
+  const [defaultLineups, setDefaultLineups] = useState(loadDefaultLineups);
+  const currentStreamId = useMemo(() => extractVideoId(youtubeLink), [youtubeLink]);
+  const currentDefault = currentStreamId ? defaultLineups[currentStreamId] : null;
+
+  // ── Server-stored hands (for the Hand Manager + timeline) ──────────────────
+  // {hands:[...], stream:{...}|null, last_timestamp:int|null}. Scoped to the
+  // active stream when a YouTube link is set, else the user's whole history.
+  const [handsData, setHandsData] = useState({ hands: [], stream: null, last_timestamp: null });
+  const fetchHands = useCallback(() => {
+    const q = currentStreamId ? `?stream_id=${currentStreamId}` : "";
+    return api(`/api/hands${q}`)
+      .then((d) => setHandsData({ hands: d.hands || [], stream: d.stream || null, last_timestamp: d.last_timestamp ?? null }))
+      .catch(() => {});
+  }, [currentStreamId]);
+  useEffect(() => { fetchHands(); }, [fetchHands]);
+
+  // Canonical stream URL + the resume timestamp for "Resume from".
+  const streamUrl = currentStreamId ? `https://youtu.be/${currentStreamId}` : "";
+
+  useEffect(() => {
+    try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(defaultLineups)); } catch { /* ignore */ }
+  }, [defaultLineups]);
+
+  // Pull the server's saved default for the active stream (server is source of truth).
+  useEffect(() => {
+    if (!currentStreamId) return;
+    api(`/api/streams/${currentStreamId}/default`)
+      .then((d) => { if (d.lineup && d.lineup.length) setDefaultLineups((m) => ({ ...m, [currentStreamId]: d.lineup })); })
+      .catch(() => {});
+  }, [currentStreamId]);
+
+  // Seats whose current name differs from the saved default (shown as a marker).
+  const defaultDiffers = useMemo(() => {
+    const out = new Set();
+    if (!currentDefault) return out;
+    const bySeat = new Map(currentDefault.map((r) => [r.seat, (r.name || "").trim()]));
+    roster.forEach((p) => {
+      const def = bySeat.get(p.seat);
+      if (def !== undefined && def !== p.name.trim()) out.add(p.seat);
+    });
+    return out;
+  }, [currentDefault, roster]);
+
+  // Save current names+seats (NOT stacks) as the default for this stream.
+  function setAsDefaultLineup() {
+    if (!currentStreamId) return;
+    const lineup = named.map((p) => ({ seat: p.seat, name: p.name.trim() }));
+    setDefaultLineups((m) => ({ ...m, [currentStreamId]: lineup }));
+    api(`/api/streams/${currentStreamId}/default`, { method: "POST", body: { lineup } }).catch(() => {});
+  }
+
+  // Restore default NAMES by seat; stacks are left exactly as they are.
+  function restoreDefaultLineup() {
+    if (!currentDefault) return;
+    const bySeat = new Map(currentDefault.map((r) => [r.seat, r.name]));
+    setRoster((r) => r.map((p) => (bySeat.has(p.seat) ? { ...p, name: bySeat.get(p.seat) } : p)));
+  }
   // Session/roster are editable until betting actually starts — so the button
   // and stacks can still be changed after dealing or resetting a hand.
   const locked = phase === "betting" || phase === "complete";
@@ -546,11 +730,23 @@ function HandBuilder({ me, refreshMe }) {
     const [s, b] = stakes.split("/").map(Number);
     return { sb: s || 50, bb: b || 100 };
   }, [stakes]);
+  // Triple-blind mandatory UTG straddle = the 3rd stakes value (e.g. 10/20/40 → $40),
+  // falling back to 2× BB if omitted.
+  const mandatoryStraddle = useMemo(() => Number(stakes.split("/")[2]) || 2 * bb, [stakes, bb]);
   // UTG-style straddles (UTG, UTG+1, …) computed from the count + button.
   const straddleList = useMemo(
     () => utgStraddles(named, buttonSeat, bb, straddleCount),
     [named, buttonSeat, bb, straddleCount]
   );
+  // The straddles actually posted this hand. In triple-blind games the UTG
+  // straddle is mandatory (3rd stakes value); ticking the voluntary straddle adds
+  // a UTG+1 double straddle at 2× the mandatory (e.g. 10/20/40 → 40 then 80).
+  const activeStraddles = useMemo(() => {
+    if (!tripleBlind) return straddleList;
+    const count = straddleCount > 0 ? 2 : 1;
+    const seats = utgStraddles(named, buttonSeat, bb, count); // reuse seat selection
+    return seats.map((st, i) => ({ seat: st.seat, amount: i === 0 ? mandatoryStraddle : 2 * mandatoryStraddle }));
+  }, [tripleBlind, straddleCount, straddleList, named, buttonSeat, bb, mandatoryStraddle]);
 
   // Every roster row is a physical seat at the table; a blank name = an empty
   // seat that still occupies its spot. Returns all seats sorted by seat number,
@@ -662,7 +858,7 @@ function HandBuilder({ me, refreshMe }) {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          stakes, ante, buttonSeat, straddleCount, buyButton, roster,
+          stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster,
           phase, eng, engHistory, holeCards, board, board2, rit,
           winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands,
@@ -671,7 +867,7 @@ function HandBuilder({ me, refreshMe }) {
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
 
 
   // Board cards required to deal the next street
@@ -727,7 +923,7 @@ function HandBuilder({ me, refreshMe }) {
   // hand-specific entry (cards, board, winner, preview). Keeps the YouTube link.
   function freshDeal() {
     setEng(
-      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : straddleList, buyButton })
+      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
     );
     setEngHistory([]);
     setHoleCards({});
@@ -776,7 +972,7 @@ function HandBuilder({ me, refreshMe }) {
       return;
     }
     setEng(
-      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : straddleList, buyButton })
+      initHand({ players: named, buttonSeat, sb, bb, ante: Number(ante) || 0, straddles: buyButton ? [] : activeStraddles, buyButton })
     );
     setEngHistory([]);
     setPhase("betting");
@@ -876,7 +1072,9 @@ function HandBuilder({ me, refreshMe }) {
       setHandPanelOpen(true); // surface the new card in the Hand Manager
 
       // Persist server-side for cross-device tracking + earnings/bonuses, then
-      // refresh the header totals. Local copy is kept even if the write fails.
+      // refresh the header totals + Hand Manager. Local copy is kept even if the
+      // write fails. `next_state` snapshots the table for the NEXT hand so this
+      // stream can be resumed by anyone.
       try {
         await api("/api/hands/submit", {
           method: "POST",
@@ -887,9 +1085,11 @@ function HandBuilder({ me, refreshMe }) {
             pt4_text: data.text,
             cards_count: cards,
             actions_count: actions,
+            next_state: computeNextHandState(),
           },
         });
         if (refreshMe) refreshMe();
+        fetchHands();
       } catch { /* offline / server write failed — local Hand Manager still has it */ }
 
       // Earnings breakdown toast.
@@ -913,6 +1113,7 @@ function HandBuilder({ me, refreshMe }) {
         ante: Number(ante),
         buttonSeat: Number(buttonSeat),
         straddleCount,
+        tripleBlind,
         handNumber,
         roster,
       },
@@ -929,6 +1130,7 @@ function HandBuilder({ me, refreshMe }) {
       if (c.stakes) setStakes(c.stakes);
       if (c.ante != null) setAnte(c.ante);
       if (c.straddleCount != null) setStraddleCount(c.straddleCount);
+      if (c.tripleBlind != null) setTripleBlind(c.tripleBlind);
       if (Array.isArray(c.roster)) setRoster(c.roster);
       if (c.buttonSeat != null) setButtonSeat(Number(c.buttonSeat));
       if (c.handNumber != null) setHandNumber(c.handNumber);
@@ -948,6 +1150,7 @@ function HandBuilder({ me, refreshMe }) {
     setAnte(100);
     setButtonSeat(1);
     setStraddleCount(0);
+    setTripleBlind(false);
     setBuyButton(null);
     setRoster(DEFAULT_ROSTER);
     setEng(null);
@@ -972,6 +1175,34 @@ function HandBuilder({ me, refreshMe }) {
     setSideGameHands([]);
     setEndingSideGame(false);
     setPhase("setup");
+  }
+
+  // Snapshot of the table for the NEXT hand (ending stacks carried over, button
+  // rotated, hand # bumped) — used as the stream's server-side resume point.
+  function computeNextHandState() {
+    let newRoster = roster;
+    if (eng) {
+      const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || phase === "complete";
+      if (resolved) {
+        const ends = computeEndStacks(eng, { rit, winner: autoEval ? autoEval.winner : winner, winner2, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
+        newRoster = roster.map((p) => {
+          if (ends[p.seat] == null) return p;
+          const s = ends[p.seat];
+          return s <= 0 ? { ...p, name: "", stack: 0 } : { ...p, stack: s };
+        });
+      }
+    }
+    const occ = newRoster.filter((p) => p.name.trim()).sort((a, b) => a.seat - b.seat);
+    let nextSeat = Number(buttonSeat);
+    if (occ.length) {
+      const i = occ.findIndex((p) => p.seat === Number(buttonSeat));
+      nextSeat = i >= 0 ? occ[(i + 1) % occ.length].seat : (occ.find((p) => p.seat > Number(buttonSeat)) || occ[0]).seat;
+    }
+    return {
+      roster: newRoster.map(({ seat, name, stack }) => ({ seat, name, stack })),
+      buttonSeat: nextSeat,
+      handNumber: handNumber + 1,
+    };
   }
 
   function nextHand() {
@@ -1134,6 +1365,12 @@ function HandBuilder({ me, refreshMe }) {
     const drop = new Set(idsArr);
     setSessionHands((hs) => hs.filter((h) => !drop.has(h.n)));
   }
+  const deleteLocalHand = (n) => deleteHandIds([n]);
+  async function deleteServerHand(id) {
+    try { await api(`/api/hands/${id}`, { method: "DELETE" }); } catch { /* ignore */ }
+    fetchHands();
+    if (refreshMe) refreshMe();
+  }
 
   // ── Layout positions ──────────────────────────────────────────────────────
   // Seats sit around a rounded-rectangle (racetrack) table, leaving a gap at the
@@ -1177,6 +1414,14 @@ function HandBuilder({ me, refreshMe }) {
               </div>
             </div>
 
+            <label style={{ ...styles.checkRow, marginTop: 2 }}>
+              <input type="checkbox" checked={tripleBlind} disabled={locked} onChange={(e) => setTripleBlind(e.target.checked)} />
+              <span>Triple blind <span style={styles.sideHint}>· SB/BB/STR, e.g. 10/20/40</span></span>
+            </label>
+            {tripleBlind && (
+              <div style={styles.straddlePreview}>Mandatory UTG straddle: ${mandatoryStraddle} (auto-posted)</div>
+            )}
+
             <div style={styles.row}>
               <div style={styles.col}>
                 <label style={styles.label}>Button Seat</label>
@@ -1199,21 +1444,23 @@ function HandBuilder({ me, refreshMe }) {
 
             <label style={{ ...styles.checkRow, marginTop: 4 }}>
               <input type="checkbox" checked={straddleCount > 0} disabled={locked} onChange={(e) => setStraddleCount(e.target.checked ? 1 : 0)} />
-              <span>UTG straddle (2× BB)</span>
+              <span>{tripleBlind ? `Voluntary double straddle (2× mandatory = $${2 * mandatoryStraddle})` : "UTG straddle (2× BB)"}</span>
             </label>
             {straddleCount > 0 && (
               <div style={styles.straddleBox}>
-                <div style={styles.straddleRow}>
-                  <span style={styles.label}>Straddlers</span>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button style={styles.stepBtn} disabled={locked || straddleCount <= 1} onClick={() => setStraddleCount((c) => Math.max(1, c - 1))}>−</button>
-                    <span style={{ minWidth: 16, textAlign: "center", fontWeight: 700 }}>{straddleCount}</span>
-                    <button style={styles.stepBtn} disabled={locked} onClick={() => setStraddleCount((c) => c + 1)}>+</button>
+                {!tripleBlind && (
+                  <div style={styles.straddleRow}>
+                    <span style={styles.label}>Straddlers</span>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <button style={styles.stepBtn} disabled={locked || straddleCount <= 1} onClick={() => setStraddleCount((c) => Math.max(1, c - 1))}>−</button>
+                      <span style={{ minWidth: 16, textAlign: "center", fontWeight: 700 }}>{straddleCount}</span>
+                      <button style={styles.stepBtn} disabled={locked} onClick={() => setStraddleCount((c) => c + 1)}>+</button>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div style={styles.straddlePreview}>
-                  {straddleList.length
-                    ? straddleList.map((st, i) => {
+                  {activeStraddles.length
+                    ? activeStraddles.map((st, i) => {
                         const nm = named.find((p) => p.seat === st.seat)?.name || `Seat ${st.seat}`;
                         return `${i === 0 ? "UTG" : `UTG+${i}`} ${nm}: $${st.amount}`;
                       }).join("  ·  ")
@@ -1221,11 +1468,20 @@ function HandBuilder({ me, refreshMe }) {
                 </div>
               </div>
             )}
+            {tripleBlind && straddleCount === 0 && activeStraddles.length > 0 && (
+              <div style={styles.straddlePreview}>
+                {activeStraddles.map((st) => {
+                  const nm = named.find((p) => p.seat === st.seat)?.name || `Seat ${st.seat}`;
+                  return `UTG ${nm}: $${st.amount}`;
+                }).join("  ·  ")}
+              </div>
+            )}
 
             <div style={{ ...styles.sideHead, marginTop: 16 }}>ROSTER <span style={styles.sideHint}>· blank name = empty seat</span></div>
             {[...roster].sort((a, b) => a.seat - b.seat).map((p) => (
               <div key={p.seat} style={styles.rosterRow}>
                 <span style={styles.seatTag}>{p.seat}</span>
+                <span style={{ ...styles.diffDot, opacity: defaultDiffers.has(p.seat) ? 1 : 0 }} title="Differs from default lineup">●</span>
                 <input style={{ ...styles.input, flex: 1 }} value={p.name} placeholder="(empty)" onChange={(e) => updateRoster(p.seat, { name: e.target.value })} disabled={locked} />
                 <input style={{ ...styles.input, width: 74 }} type="number" value={p.stack} onChange={(e) => updateRoster(p.seat, { stack: Number(e.target.value) })} disabled={locked} />
                 {!locked && p.name.trim() && <button style={styles.miniX} title="Stand up (keep seat)" onClick={() => emptySeat(p.seat)}>⏏</button>}
@@ -1236,6 +1492,27 @@ function HandBuilder({ me, refreshMe }) {
               <button style={styles.addBtn} onClick={addSeat}>+ Add seat</button>
             )}
             {locked && <div style={styles.lockNote}>Session locked during betting — Reset Hand to edit.</div>}
+
+            {/* Default lineup (per stream) */}
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button
+                style={{ ...styles.addBtn, flex: 1, marginTop: 0, opacity: currentStreamId ? 1 : 0.4 }}
+                disabled={!currentStreamId}
+                title={currentStreamId ? "Save current names + seats as this stream's default" : "Paste a YouTube link first to identify the stream"}
+                onClick={setAsDefaultLineup}
+              >★ Set as Default</button>
+              <button
+                style={{ ...styles.addBtn, flex: 1, marginTop: 0, opacity: currentDefault ? 1 : 0.4 }}
+                disabled={!currentDefault || locked}
+                title="Restore default player names (keeps current stacks)"
+                onClick={restoreDefaultLineup}
+              >↺ Restore Default</button>
+            </div>
+            <div style={styles.sideHint}>
+              {currentStreamId
+                ? (currentDefault ? `Default set for ${currentStreamId}${defaultDiffers.size ? ` · ${defaultDiffers.size} differ` : ""}` : `No default yet for ${currentStreamId}`)
+                : "Default lineup is per stream — add a YouTube link to enable."}
+            </div>
 
             <div style={{ ...styles.sideHead, marginTop: 16 }}>SAVE / RESTORE <span style={styles.sideHint}>· back up the table</span></div>
             <div style={styles.autosaveNote}>✓ Auto-saved — survives reloads &amp; refreshes</div>
@@ -1401,7 +1678,7 @@ function HandBuilder({ me, refreshMe }) {
                 p={p}
                 empty={p.empty}
                 pos={ellipsePos(i, tableSeats.length)}
-                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : straddleList.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
+                badge={buyButton ? (p.seat === buyButton.seat ? "BTN" : "") : activeStraddles.some((st) => st.seat === p.seat) ? "STR" : positions[p.seat]}
                 isButton={Number(buttonSeat) === p.seat}
                 isActor={hasActor && eng.actorSeat === p.seat}
                 folded={enginePlayer?.folded}
@@ -1589,7 +1866,18 @@ function HandBuilder({ me, refreshMe }) {
       {/* Hand Manager — right-side collapsible panel */}
       <aside style={{ ...styles.handPanel, width: handPanelOpen ? 348 : 0, padding: handPanelOpen ? "18px 14px" : 0 }}>
         {handPanelOpen && (
-          <HandManager hands={sessionHands} onDeleteIds={deleteHandIds} onExportHands={downloadHands} />
+          <HandManager
+            localHands={sessionHands}
+            serverHands={handsData.hands}
+            stream={handsData.stream}
+            lastTimestamp={handsData.last_timestamp}
+            streamId={currentStreamId}
+            streamUrl={streamUrl}
+            onResumeFrom={(u) => setYoutubeLink(u)}
+            onDeleteLocal={deleteLocalHand}
+            onDeleteServer={deleteServerHand}
+            onExportHands={downloadHands}
+          />
         )}
       </aside>
       <button
@@ -1666,6 +1954,7 @@ const styles = {
   label: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: "#64748b" },
   input: { padding: "7px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%" },
   rosterRow: { display: "flex", gap: 6, alignItems: "center" },
+  diffDot: { color: "#fbbf24", fontSize: 9, width: 8, transition: "opacity .15s" },
   seatTag: { width: 20, textAlign: "center", fontSize: 11, color: "#64748b", fontWeight: 700 },
   miniX: { width: 24, height: 24, background: "#1e293b", border: "none", borderRadius: 5, color: "#94a3b8", cursor: "pointer", fontSize: 11 },
   addBtn: { marginTop: 4, padding: "7px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
@@ -1720,6 +2009,23 @@ const styles = {
   hmLink: { display: "inline-block", marginTop: 5, fontSize: 10.5, color: "#7dd3fc", fontWeight: 600, textDecoration: "none" },
   hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "2px dashed #2b3a52", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", background: "rgba(10,15,26,.4)", transition: "all .12s" },
   hmDropActive: { borderColor: "#22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
+  hmUnsaved: { fontSize: 8.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 6, padding: "1px 5px", marginLeft: 6 },
+  // Timeline
+  hmTimelineWrap: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px", marginBottom: 8, flexShrink: 0 },
+  hmTimelineHead: { display: "flex", justifyContent: "space-between", fontSize: 9.5, fontWeight: 800, letterSpacing: 1, color: "#64748b", marginBottom: 6 },
+  hmTrack: { position: "relative", height: 22, background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 5, overflow: "hidden" },
+  hmProgress: { position: "absolute", left: 0, top: 0, bottom: 0, background: "rgba(74,222,128,.12)", borderRight: "1px solid rgba(74,222,128,.4)" },
+  hmMarker: { position: "absolute", top: 3, width: 4, height: 16, borderRadius: 2, transform: "translateX(-50%)", cursor: "pointer", boxShadow: "0 0 3px rgba(0,0,0,.5)" },
+  hmTimelineFoot: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#94a3b8", marginTop: 6, gap: 8 },
+  hmResumeBtn: { padding: "5px 10px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  // Detail modal
+  hmDetailOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.7)", zIndex: 140, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
+  hmDetailBox: { width: 560, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto", background: "#0d1320", border: "1px solid #334155", borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
+  hmDetailHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, fontWeight: 800, color: "#f8fafc" },
+  hmDetailSummary: { fontSize: 14, fontWeight: 700, color: "#fde68a" },
+  hmDetailRow: { fontSize: 13, color: "#cbd5e1" },
+  hmDetailPre: { margin: "4px 0", padding: 12, background: "#06090f", color: "#a5d6a7", fontSize: 11.5, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 8, border: "1px solid #1e293b", maxHeight: "48vh", overflowY: "auto" },
+  closeMini: { width: 28, height: 28, borderRadius: 7, background: "#1e293b", border: "1px solid #334155", color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
 
   tableWrap: { position: "relative", flex: 1, margin: "12px 16px 6px", minHeight: 420 },
   rail: {
@@ -1899,6 +2205,12 @@ export default function App() {
     navigate("/");
   };
 
+  // Resume a stream in the Hand Builder: URL + last hand's roster/stacks/button.
+  const resumeInBuilder = (payload) => {
+    try { localStorage.setItem(PENDING_RESUME_KEY, JSON.stringify(payload || {})); } catch { /* ignore */ }
+    navigate("/");
+  };
+
   const logout = async () => {
     try { await api("/api/logout", { method: "POST" }); } catch { /* ignore */ }
     setMe(false);
@@ -1909,7 +2221,7 @@ export default function App() {
   if (!me) return <Auth onAuthed={(m) => { setMe(m); navigate("/"); }} />;
 
   let view;
-  if (route === "calendar") view = <Calendar onOpenInBuilder={openInBuilder} refreshMe={refreshMe} />;
+  if (route === "calendar") view = <Calendar onOpenInBuilder={openInBuilder} onResumeStream={resumeInBuilder} refreshMe={refreshMe} />;
   else if (route === "dashboard") view = <Dashboard user={me.user} dashboard={me.dashboard} />;
   else if (route === "admin") {
     view = me.user.is_admin

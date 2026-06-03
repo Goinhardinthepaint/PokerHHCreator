@@ -458,8 +458,46 @@ def api_hands_submit():
         uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
         d.get("pt4_text"), d.get("cards_count"), d.get("actions_count"),
     )
+    # Snapshot the state for the NEXT hand so anyone can resume this stream.
+    next_state = d.get("next_state")
+    sid = d.get("stream_id") or d.get("youtube_url")
+    if next_state and sid:
+        auth_db.set_resume_state(sid, next_state)
     return jsonify({"hand_id": hand_id, "earnings": earnings,
                     "dashboard": auth_db.user_dashboard(uid)})
+
+
+@app.route("/api/hands", methods=["GET"])
+@login_required
+def api_hands_list():
+    uid = session["user_id"]
+    stream_id = request.args.get("stream_id")
+    hands = auth_db.user_hands(uid, stream_id)
+    payload = {"hands": hands}
+    if stream_id:
+        payload["stream"] = auth_db.stream_meta(stream_id)
+        payload["resume_state"] = auth_db.get_resume_state(stream_id)
+        payload["last_timestamp"] = max((h["timestamp_seconds"] or 0 for h in hands), default=None)
+    return jsonify(payload)
+
+
+@app.route("/api/hands/<int:hand_id>", methods=["DELETE"])
+@login_required
+def api_hands_delete(hand_id):
+    ok = auth_db.delete_hand(hand_id, session["user_id"])
+    if not ok:
+        return jsonify({"error": "No such hand."}), 404
+    return jsonify({"ok": True, "dashboard": auth_db.user_dashboard(session["user_id"])})
+
+
+@app.route("/api/streams/<sid>/resume", methods=["GET"])
+@login_required
+def api_stream_resume(sid):
+    return jsonify({
+        "youtube_url": (auth_db.stream_meta(sid) or {}).get("youtube_url"),
+        "resume_state": auth_db.get_resume_state(sid),
+        "last_timestamp": auth_db.last_stream_timestamp(sid),
+    })
 
 
 # ── Streams (calendar) ───────────────────────────────────────────────────────
@@ -480,6 +518,20 @@ def api_streams_complete():
     shares = auth_db.set_stream_complete(sid, bool(d.get("complete", True)), meta)
     return jsonify({"ok": True, "shares": shares,
                     "dashboard": auth_db.user_dashboard(session["user_id"])})
+
+
+@app.route("/api/streams/<sid>/default", methods=["GET"])
+@login_required
+def api_get_default_lineup(sid):
+    return jsonify({"lineup": auth_db.get_default_lineup(sid)})
+
+
+@app.route("/api/streams/<sid>/default", methods=["POST"])
+@login_required
+def api_set_default_lineup(sid):
+    lineup = (request.json or {}).get("lineup") or []
+    auth_db.set_default_lineup(sid, lineup)
+    return jsonify({"ok": True, "lineup": auth_db.get_default_lineup(sid)})
 
 
 @app.route("/api/streams", methods=["POST"])
