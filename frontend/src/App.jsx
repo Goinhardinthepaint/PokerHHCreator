@@ -285,17 +285,19 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
 // mirrored to localStorage on every change and restored at load, so reloads,
 // code updates and refreshes never lose data. Read once at module load.
 const STORAGE_KEY = "pokerTable.session.v2";
+// 8 empty seats at $10,000 — names are filled in per session (or via Restore
+// Default). Empty seats render greyed out until a name is entered.
 const DEFAULT_ROSTER = [
-  { seat: 1, name: "Ivey", stack: 10000 },
-  { seat: 2, name: "Negreanu", stack: 10000 },
-  { seat: 3, name: "Dwan", stack: 10000 },
-  { seat: 4, name: "Selbst", stack: 10000 },
-  { seat: 5, name: "Hellmuth", stack: 10000 },
-  { seat: 6, name: "Brunson", stack: 10000 },
-  { seat: 7, name: "Antonius", stack: 10000 },
-  { seat: 8, name: "Polk", stack: 10000 },
-  { seat: 9, name: "Galfond", stack: 10000 },
+  { seat: 1, name: "", stack: 10000 },
+  { seat: 2, name: "", stack: 10000 },
+  { seat: 3, name: "", stack: 10000 },
+  { seat: 4, name: "", stack: 10000 },
+  { seat: 5, name: "", stack: 10000 },
+  { seat: 6, name: "", stack: 10000 },
+  { seat: 7, name: "", stack: 10000 },
+  { seat: 8, name: "", stack: 10000 },
 ];
+const DEFAULT_BUTTON_SEAT = 4;
 function loadSession() {
   try {
     const raw = typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY);
@@ -603,7 +605,7 @@ function HandBuilder({ me, refreshMe }) {
   // Session (persists across hands) — initialised from any saved session.
   const [stakes, setStakes] = useState(() => pick("stakes", "50/100"));
   const [ante, setAnte] = useState(() => pick("ante", 100));
-  const [buttonSeat, setButtonSeat] = useState(() => (pendingResume?.buttonSeat != null ? pendingResume.buttonSeat : pick("buttonSeat", 1)));
+  const [buttonSeat, setButtonSeat] = useState(() => (pendingResume?.buttonSeat != null ? pendingResume.buttonSeat : pick("buttonSeat", DEFAULT_BUTTON_SEAT)));
   const [straddleCount, setStraddleCount] = useState(() => pick("straddleCount", 0)); // # of UTG-style straddles
   const [tripleBlind, setTripleBlind] = useState(() => pick("tripleBlind", false)); // SB/BB/mandatory-STR game
   const [buyButton, setBuyButton] = useState(() => pick("buyButton", null)); // {seat, type:'btn'|'str'}
@@ -1186,7 +1188,7 @@ function HandBuilder({ me, refreshMe }) {
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     setStakes("50/100");
     setAnte(100);
-    setButtonSeat(1);
+    setButtonSeat(DEFAULT_BUTTON_SEAT);
     setStraddleCount(0);
     setTripleBlind(false);
     setBuyButton(null);
