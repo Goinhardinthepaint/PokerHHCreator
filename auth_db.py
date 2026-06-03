@@ -80,11 +80,73 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# ── Backend selection: Postgres when DATABASE_URL is set, else local SQLite ───
+DATABASE_URL = os.environ.get("DATABASE_URL")
+IS_PG = bool(DATABASE_URL)
+if IS_PG:
+    import psycopg2
+    import psycopg2.extras
+    _INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+else:
+    _INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+
+# Autoincrement PK differs by dialect.
+PK = "SERIAL PRIMARY KEY" if IS_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+
+def _q(sql):
+    """SQLite uses '?' placeholders; Postgres uses '%s'. Queries are written with
+    '?' and translated here. (No query uses a literal '%', so this is safe.)"""
+    return sql.replace("?", "%s") if IS_PG else sql
+
+
+class _Conn:
+    """Uniform connection wrapper over psycopg2 / sqlite3. `.execute(sql, params)`
+    takes '?'-style SQL and returns a cursor whose rows are accessible by column
+    name (and dict(row) / row.keys() work on both)."""
+
+    def __init__(self):
+        if IS_PG:
+            self._c = psycopg2.connect(DATABASE_URL)
+        else:
+            self._c = sqlite3.connect(DB_PATH)
+            self._c.row_factory = sqlite3.Row
+            self._c.execute("PRAGMA foreign_keys = ON")
+
+    def execute(self, sql, params=()):
+        if IS_PG:
+            cur = self._c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            cur = self._c.cursor()
+        cur.execute(_q(sql), params)
+        return cur
+
+    def commit(self):
+        self._c.commit()
+
+    def rollback(self):
+        try:
+            self._c.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        self._c.close()
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    return _Conn()
+
+
+def _add_column(conn, table, coldef):
+    """Add a column if missing (idempotent across dialects)."""
+    if IS_PG:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {coldef}")
+    else:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def _hand_earnings(cards, actions):
@@ -94,122 +156,74 @@ def _hand_earnings(cards, actions):
 # ── Schema + seed ────────────────────────────────────────────────────────────
 def init_db():
     conn = get_db()
-    c = conn.cursor()
-    c.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            username      TEXT UNIQUE NOT NULL,
-            email         TEXT,
-            password_hash TEXT NOT NULL,
-            is_admin      INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS hands (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id          INTEGER NOT NULL,
-            stream_id        TEXT,
-            youtube_url      TEXT,
-            timestamp_seconds INTEGER,
-            pt4_text         TEXT,
-            cards_count      INTEGER NOT NULL DEFAULT 0,
-            actions_count    INTEGER NOT NULL DEFAULT 0,
-            earnings         REAL NOT NULL DEFAULT 0,
-            created_at       TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS streams (
-            id               TEXT PRIMARY KEY,
-            youtube_url      TEXT,
-            title            TEXT,
-            date             TEXT,
-            duration_minutes INTEGER,
-            hands_estimated  INTEGER,
-            is_complete      INTEGER NOT NULL DEFAULT 0,
-            completed_at     TEXT
-        );
-        CREATE TABLE IF NOT EXISTS payments (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER NOT NULL,
-            amount     REAL NOT NULL,
-            date       TEXT,
-            note       TEXT,
-            created_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS month_assignments (
-            month        TEXT PRIMARY KEY,   -- "YYYY-MM"
-            user_id      INTEGER,
-            bonus_amount REAL NOT NULL DEFAULT 150,
-            deadline     TEXT,
-            assigned_at  TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_hands_user ON hands(user_id);
-        CREATE INDEX IF NOT EXISTS idx_hands_stream ON hands(stream_id);
-        CREATE INDEX IF NOT EXISTS idx_pay_user ON payments(user_id);
-        """
-    )
-    # Columns added after the initial schema shipped.
-    for col in ("default_lineup TEXT", "resume_state TEXT"):
-        try:
-            c.execute(f"ALTER TABLE streams ADD COLUMN {col}")
-        except sqlite3.OperationalError:
-            pass  # column already exists
-    # Per-hand post-hand snapshot (roster/stacks/button for the NEXT hand) so the
-    # Hand Manager can restore the table to immediately after any hand.
-    try:
-        c.execute("ALTER TABLE hands ADD COLUMN next_state TEXT")
-    except sqlite3.OperationalError:
-        pass
-    # Admin-logged error count per worker (drives the month-bonus tier).
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN error_count INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    # Whether the worker has finished (or skipped) the onboarding tutorial.
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN tutorial_completed INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    # Row kind: 'hand' (real) or 'tutorial_bonus' (one-off $1 credit).
-    try:
-        c.execute("ALTER TABLE hands ADD COLUMN type TEXT NOT NULL DEFAULT 'hand'")
-    except sqlite3.OperationalError:
-        pass
+    for stmt in (
+        f"CREATE TABLE IF NOT EXISTS users (id {PK}, username TEXT UNIQUE NOT NULL, "
+        "email TEXT, password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0, "
+        "created_at TEXT NOT NULL)",
+        f"CREATE TABLE IF NOT EXISTS hands (id {PK}, user_id INTEGER NOT NULL, stream_id TEXT, "
+        "youtube_url TEXT, timestamp_seconds INTEGER, pt4_text TEXT, "
+        "cards_count INTEGER NOT NULL DEFAULT 0, actions_count INTEGER NOT NULL DEFAULT 0, "
+        "earnings REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS streams (id TEXT PRIMARY KEY, youtube_url TEXT, title TEXT, "
+        "date TEXT, duration_minutes INTEGER, hands_estimated INTEGER, "
+        "is_complete INTEGER NOT NULL DEFAULT 0, completed_at TEXT)",
+        f"CREATE TABLE IF NOT EXISTS payments (id {PK}, user_id INTEGER NOT NULL, amount REAL NOT NULL, "
+        "date TEXT, note TEXT, created_at TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS month_assignments (month TEXT PRIMARY KEY, user_id INTEGER, "
+        "bonus_amount REAL NOT NULL DEFAULT 150, deadline TEXT, assigned_at TEXT)",
+        "CREATE INDEX IF NOT EXISTS idx_hands_user ON hands(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_hands_stream ON hands(stream_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pay_user ON payments(user_id)",
+    ):
+        conn.execute(stmt)
+    conn.commit()
+
+    # Columns added after the initial schema shipped (idempotent).
+    _add_column(conn, "streams", "default_lineup TEXT")
+    _add_column(conn, "streams", "resume_state TEXT")
+    _add_column(conn, "hands", "next_state TEXT")          # post-hand snapshot
+    _add_column(conn, "users", "error_count INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "users", "tutorial_completed INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "hands", "type TEXT NOT NULL DEFAULT 'hand'")  # 'hand' | 'tutorial_bonus'
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
-    admin = c.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
-    if not admin:
+    if not conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone():
         pw = os.environ.get("ADMIN_PASSWORD", "changeme")
-        c.execute(
+        conn.execute(
             "INSERT INTO users (username, email, password_hash, is_admin, created_at) "
             "VALUES (?,?,?,?,?)",
             ("admin", "", generate_password_hash(pw), 1, now_iso()),
         )
         conn.commit()
 
-    # Seed the stream catalog from the committed scrape (once).
-    have = c.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"]
+    # Seed the stream catalog from the committed scrape into the DB (once); from
+    # then on the database is the source of truth.
+    have = conn.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"]
     if have == 0 and os.path.exists(SEED_JSON):
         try:
             with open(SEED_JSON, encoding="utf-8") as f:
                 rows = json.load(f)
             for s in rows:
-                c.execute(
-                    "INSERT OR IGNORE INTO streams "
+                conn.execute(
+                    "INSERT INTO streams "
                     "(id, youtube_url, title, date, duration_minutes, hands_estimated, is_complete) "
-                    "VALUES (?,?,?,?,?,?,0)",
+                    "VALUES (?,?,?,?,?,?,0) ON CONFLICT DO NOTHING",
                     (s.get("id"), s.get("youtubeUrl"), s.get("title"), s.get("date"),
                      s.get("durationMinutes"), s.get("handsEstimated")),
                 )
             conn.commit()
         except Exception:
-            pass  # seeding is best-effort
+            conn.rollback()  # seeding is best-effort; don't poison the connection
 
     # Report what was loaded — confirms the DB persisted across restarts/deploys.
-    n_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    n_hands = c.execute("SELECT COUNT(*) FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()[0]
-    n_streams = c.execute("SELECT COUNT(*) FROM streams").fetchone()[0]
-    print(f"Database at {DB_PATH} — {n_users} users, {n_hands} hands, {n_streams} streams", flush=True)
+    n_users = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    n_hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()["n"]
+    n_streams = conn.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"]
+    if IS_PG:
+        print(f"Connected to Postgres — {n_users} users, {n_hands} hands, {n_streams} streams", flush=True)
+    else:
+        print(f"Connected to SQLite (local dev) — {n_users} users, {n_hands} hands, {n_streams} streams", flush=True)
     conn.close()
 
 
@@ -220,14 +234,15 @@ def create_user(username, email, password):
         raise ValueError("Username and password are required.")
     conn = get_db()
     try:
-        cur = conn.execute(
+        row = conn.execute(
             "INSERT INTO users (username, email, password_hash, is_admin, created_at) "
-            "VALUES (?,?,?,0,?)",
+            "VALUES (?,?,?,0,?) RETURNING id",
             (username, (email or "").strip(), generate_password_hash(password), now_iso()),
-        )
+        ).fetchone()
         conn.commit()
-        return get_user(cur.lastrowid)
-    except sqlite3.IntegrityError:
+        return get_user(row["id"])
+    except _INTEGRITY_ERRORS:
+        conn.rollback()
         raise ValueError("That username is already taken.")
     finally:
         conn.close()
@@ -298,20 +313,21 @@ def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, ca
     stream_id = extract_video_id(stream_id) or extract_video_id(youtube_url) or (stream_id or "")
     earnings = _hand_earnings(cards, actions)
     conn = get_db()
-    cur = conn.execute(
+    row = conn.execute(
         "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, "
-        "cards_count, actions_count, earnings, next_state, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "cards_count, actions_count, earnings, next_state, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id",
         (user_id, stream_id, youtube_url, int(timestamp_seconds or 0), pt4_text or "",
          cards, actions, earnings, json.dumps(next_state) if next_state else None, now_iso()),
-    )
+    ).fetchone()
+    hand_id = row["id"]
     # Upsert a minimal stream row so the hand always ties to a known stream.
     if stream_id:
         conn.execute(
-            "INSERT OR IGNORE INTO streams (id, youtube_url, is_complete) VALUES (?,?,0)",
+            "INSERT INTO streams (id, youtube_url, is_complete) VALUES (?,?,0) ON CONFLICT DO NOTHING",
             (stream_id, youtube_url),
         )
     conn.commit()
-    hand_id = cur.lastrowid
     conn.close()
     return hand_id, earnings
 
@@ -391,7 +407,7 @@ def set_resume_state(stream_id, state):
     if not sid:
         return
     conn = get_db()
-    conn.execute("INSERT OR IGNORE INTO streams (id, is_complete) VALUES (?,0)", (sid,))
+    conn.execute("INSERT INTO streams (id, is_complete) VALUES (?,0) ON CONFLICT DO NOTHING", (sid,))
     conn.execute("UPDATE streams SET resume_state = ? WHERE id = ?", (json.dumps(state), sid))
     conn.commit()
     conn.close()
@@ -471,8 +487,10 @@ def set_month_assignment(month, user_id, bonus_amount=None, deadline=None):
         if not deadline:
             deadline = (datetime.now(timezone.utc) + timedelta(days=MONTH_DEADLINE_DAYS)).date().isoformat()
         conn.execute(
-            "INSERT OR REPLACE INTO month_assignments (month, user_id, bonus_amount, deadline, assigned_at) "
-            "VALUES (?,?,?,?,?)",
+            "INSERT INTO month_assignments (month, user_id, bonus_amount, deadline, assigned_at) "
+            "VALUES (?,?,?,?,?) ON CONFLICT (month) DO UPDATE SET "
+            "user_id=excluded.user_id, bonus_amount=excluded.bonus_amount, "
+            "deadline=excluded.deadline, assigned_at=excluded.assigned_at",
             (month, user_id, float(bonus_amount) if bonus_amount is not None else MONTH_BONUS_DEFAULT,
              deadline, now_iso()),
         )
@@ -639,7 +657,7 @@ def upsert_stream(stream):
     conn = get_db()
     conn.execute(
         "INSERT INTO streams (id, youtube_url, title, date, duration_minutes, hands_estimated) "
-        "VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+        "VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
         "youtube_url=COALESCE(excluded.youtube_url, youtube_url), "
         "title=COALESCE(excluded.title, title), date=COALESCE(excluded.date, date), "
         "duration_minutes=COALESCE(excluded.duration_minutes, duration_minutes), "
@@ -673,7 +691,7 @@ def set_default_lineup(stream_id, lineup):
     clean = [{"seat": r.get("seat"), "name": (r.get("name") or "").strip()}
              for r in (lineup or []) if r.get("seat") is not None]
     conn = get_db()
-    conn.execute("INSERT OR IGNORE INTO streams (id, is_complete) VALUES (?,0)", (sid,))
+    conn.execute("INSERT INTO streams (id, is_complete) VALUES (?,0) ON CONFLICT DO NOTHING", (sid,))
     conn.execute("UPDATE streams SET default_lineup = ? WHERE id = ?", (json.dumps(clean), sid))
     conn.commit()
     conn.close()
@@ -685,7 +703,7 @@ def set_stream_complete(stream_id, complete=True, meta=None):
         meta = {**meta, "id": stream_id}
         upsert_stream(meta)
     conn = get_db()
-    conn.execute("INSERT OR IGNORE INTO streams (id, is_complete) VALUES (?,0)", (stream_id,))
+    conn.execute("INSERT INTO streams (id, is_complete) VALUES (?,0) ON CONFLICT DO NOTHING", (stream_id,))
     conn.execute(
         "UPDATE streams SET is_complete = ?, completed_at = ? WHERE id = ?",
         (1 if complete else 0, now_iso() if complete else None, stream_id),
