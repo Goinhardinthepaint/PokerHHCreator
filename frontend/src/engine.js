@@ -449,10 +449,11 @@ export function resolveSidePots(state, holeCards, board) {
 // Ending stacks after the hand resolves: chips not committed + uncalled returned
 // + pot awarded to the winner(s). Returns { seat: endingStack }. Matches the
 // backend's pot/uncalled accounting so carried-over stacks stay consistent.
-export function computeEndStacks(state, { rit, winner, winner2, winners, holeCards, board }) {
+export function computeEndStacks(state, { numRuns = 1, runWinners = [], winner, winners, holeCards, board }) {
   const end = {};
   state.players.forEach((p) => { end[p.seat] = p.stack; });
   const seatOf = (nm) => (state.players.find((p) => p.name === nm) || {}).seat;
+  const multi = numRuns >= 2;
 
   let U = 0;
   if (state.uncalled && end[state.uncalled.seat] != null) {
@@ -461,7 +462,8 @@ export function computeEndStacks(state, { rit, winner, winner2, winners, holeCar
   }
 
   // Multiway all-in side pots: distribute each pot to its evaluated winner(s).
-  if (!rit) {
+  // (Run-it-multiple-times splits the single pot across runs instead.)
+  if (!multi) {
     const sp = resolveSidePots(state, holeCards || {}, board || []);
     if (sp) {
       for (const seat of Object.keys(sp.winningsBySeat)) end[seat] += sp.winningsBySeat[seat];
@@ -476,12 +478,15 @@ export function computeEndStacks(state, { rit, winner, winner2, winners, holeCar
   if (surv.length === 1) {
     end[surv[0].seat] += truePot;
   } else if (surv.length >= 2) {
-    if (rit) {
-      const half = Math.floor(truePot / 2);
-      const w1 = seatOf(winner || surv[0].name);
-      const w2 = seatOf(winner2 || winner || surv[0].name);
-      if (w1 != null) end[w1] += half;
-      if (w2 != null) end[w2] += truePot - half;
+    if (multi) {
+      // Pot split equally across runs; each run's winner collects pot/N (odd
+      // chips to the first run). A player who wins multiple runs sums them.
+      const share = Math.floor(truePot / numRuns);
+      const rem = truePot - share * numRuns;
+      for (let i = 0; i < numRuns; i++) {
+        const seat = seatOf(runWinners[i] || surv[0].name);
+        if (seat != null) end[seat] += share + (i === 0 ? rem : 0);
+      }
     } else {
       // Chopped pot: split equally among all tied winners (odd chip to first).
       const ws = winners && winners.length ? winners : [winner || surv[0].name];
@@ -497,7 +502,7 @@ export function computeEndStacks(state, { rit, winner, winner2, winners, holeCar
 }
 
 // ── Build the hand dict for the backend formatter ───────────────────────────
-export function buildHandDict(state, { stakes, holeCards, board, board2, rit, winner, winner2, winners, positions }) {
+export function buildHandDict(state, { stakes, holeCards, board, runBoards = [], runWinners = [], numRuns = 1, allInStreetIdx = 0, winner, winners, positions }) {
   const players = occupiedSorted(state.players).map((p) => {
     const cards = (holeCards[p.seat] || []).filter(Boolean);
     const posRaw = positions[p.seat] || "";
@@ -515,10 +520,25 @@ export function buildHandDict(state, { stakes, holeCards, board, board2, rit, wi
     const flop = (arr.slice(0, 3) || []).filter(Boolean);
     return { flop: flop.length === 3 ? flop : [], turn: arr[3] || null, river: arr[4] || null };
   };
+  const multi = numRuns >= 2;
 
   let boardOut;
-  if (rit) {
-    boardOut = { first_run: cleanRun(board), second_run: cleanRun(board2) };
+  if (multi) {
+    // Cards dealt BEFORE the all-in are shared across runs (shown once); each run
+    // carries only the streets dealt after the all-in (FIRST/SECOND/… markers).
+    const runs = (runBoards.length ? runBoards : [board]).slice(0, numRuns);
+    const sharedFlop = allInStreetIdx >= 1 ? (runs[0].slice(0, 3) || []).filter(Boolean) : [];
+    const sharedTurn = allInStreetIdx >= 2 ? (runs[0][3] || null) : null;
+    boardOut = {};
+    if (sharedFlop.length === 3) boardOut.flop = sharedFlop;
+    if (sharedTurn) boardOut.turn = sharedTurn;
+    boardOut.runs = runs.map((rb) => {
+      const run = {};
+      if (allInStreetIdx < 1) { const f = (rb.slice(0, 3) || []).filter(Boolean); if (f.length === 3) run.flop = f; }
+      if (allInStreetIdx < 2 && rb[3]) run.turn = rb[3];
+      if (allInStreetIdx < 3 && rb[4]) run.river = rb[4];
+      return run;
+    });
   } else {
     const r = cleanRun(board);
     boardOut = {};
@@ -542,10 +562,12 @@ export function buildHandDict(state, { stakes, holeCards, board, board2, rit, wi
           ...(run ? { run } : {}),
         };
       });
-    if (rit) {
-      const w1 = winner || surv[0];
-      const w2 = winner2 || w1;
-      showdown = [...entries(1, new Set([w1])), ...entries(2, new Set([w2]))];
+    if (multi) {
+      showdown = [];
+      for (let i = 0; i < numRuns; i++) {
+        const w = runWinners[i] || surv[0];
+        showdown.push(...entries(i + 1, new Set([w])));
+      }
     } else {
       // All tied winners are marked "wins" (chopped pot); else the single winner.
       const winSet = new Set(winners && winners.length ? winners : [winner || surv[0]]);
@@ -564,11 +586,13 @@ export function buildHandDict(state, { stakes, holeCards, board, board2, rit, wi
     board: boardOut,
     showdown,
   };
+  if (multi) hand.num_runs = numRuns;
   if (winnerField) hand.winner = winnerField;
 
   // Multiway all-in side pots: attach explicit pots (amounts + evaluated winners)
-  // for the formatter to render as main/side pots.
-  if (!rit) {
+  // for the formatter to render as main/side pots. (Not for multi-run, which
+  // splits the single pot evenly across runs.)
+  if (!multi) {
     const sp = resolveSidePots(state, holeCards, board);
     if (sp) hand.pots = sp.pots.map((p) => ({ amount: p.amount, type: p.type, winners: p.winners }));
   }

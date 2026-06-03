@@ -202,7 +202,7 @@ def _preprocess_hand(hand: dict) -> dict:
                 pot += actual
                 new_vol.append(new_a)
 
-            elif act_type == "bets":
+            elif act_type in ("bets", "bets_allin"):
                 actual = min(amount, rem)
                 if actual <= 0:
                     new_vol.append(a)
@@ -212,7 +212,7 @@ def _preprocess_hand(hand: dict) -> dict:
                 remaining[key] = rem - actual
                 commitments[key] = already_in + actual
                 current_bet = already_in + actual
-                if remaining[key] == 0:
+                if remaining[key] == 0 or act_type == "bets_allin":
                     new_a["action"] = "bets_allin"
                     all_in_players.add(key)
                 pot += actual
@@ -449,12 +449,19 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
         initial_commitments=preflop_commitments,
     ))
 
-    # ── Detect run-it-twice ───────────────────────────────────────────────────
-    first_run  = board.get("first_run")  or {}
-    second_run = board.get("second_run") or {}
-    is_rit = bool(first_run and second_run)
+    # ── Detect run-it-multiple-times (1–4 runs) ───────────────────────────────
+    # New shape: board["runs"] = [{flop?,turn?,river?}, …] (post-all-in streets).
+    # Back-compat: first_run/second_run map to a 2-run list.
+    runs = board.get("runs")
+    if not runs:
+        fr, sr = board.get("first_run") or {}, board.get("second_run") or {}
+        if fr and sr:
+            runs = [fr, sr]
+    is_rit = bool(runs and len(runs) >= 2)  # name kept; gates "no side pots" etc.
+    num_runs = len(runs) if is_rit else 1
+    ORDINALS = ["FIRST", "SECOND", "THIRD", "FOURTH", "FIFTH"]
 
-    # ── Regular board (up to the all-in point, or full board if not RIT) ─────
+    # ── Regular board (the streets dealt before the all-in, shown once) ──────
     flop_cards = board.get("flop") or []
     turn_card  = board.get("turn")
     river_card = board.get("river")
@@ -472,51 +479,40 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
         lines.append(f"*** RIVER *** {format_cards(board_to_turn)} [{river_card}]")
         lines.extend(_format_street_actions(action["river"], facing_bet=0))
 
-    # ── Run-it-twice boards ───────────────────────────────────────────────────
-    full_board_r1: list[str] = []
-    full_board_r2: list[str] = []
-
+    # ── Run-it-multiple-times boards (FIRST/SECOND/THIRD/FOURTH … markers) ────
+    full_boards: list[list] = []
     if is_rit:
-        r1_flop  = first_run.get("flop")  or []
-        r1_turn  = first_run.get("turn")
-        r1_river = first_run.get("river")
-        r2_flop  = second_run.get("flop")  or []
-        r2_turn  = second_run.get("turn")
-        r2_river = second_run.get("river")
-
-        if r1_flop:
-            lines.append(f"*** FIRST FLOP *** {format_cards(r1_flop)}")
-        if r1_turn:
-            lines.append(f"*** FIRST TURN *** {format_cards(r1_flop)} [{r1_turn}]")
-        if r1_river:
-            lines.append(
-                f"*** FIRST RIVER *** "
-                f"{format_cards(r1_flop + ([r1_turn] if r1_turn else []))} [{r1_river}]"
-            )
-        if r2_flop:
-            lines.append(f"*** SECOND FLOP *** {format_cards(r2_flop)}")
-        if r2_turn:
-            lines.append(f"*** SECOND TURN *** {format_cards(r2_flop)} [{r2_turn}]")
-        if r2_river:
-            lines.append(
-                f"*** SECOND RIVER *** "
-                f"{format_cards(r2_flop + ([r2_turn] if r2_turn else []))} [{r2_river}]"
-            )
-
-        full_board_r1 = (r1_flop + ([r1_turn] if r1_turn else [])
-                         + ([r1_river] if r1_river else []))
-        full_board_r2 = (r2_flop + ([r2_turn] if r2_turn else [])
-                         + ([r2_river] if r2_river else []))
+        shared = list(flop_cards) + ([turn_card] if turn_card else [])
+        for i, run in enumerate(runs):
+            ordn = ORDINALS[i] if i < len(ORDINALS) else f"RUN{i + 1}"
+            r_flop = run.get("flop") or []
+            r_turn = run.get("turn")
+            r_river = run.get("river")
+            cum = list(shared)
+            if r_flop:
+                lines.append(f"*** {ordn} FLOP *** {format_cards(r_flop)}")
+                cum = list(r_flop)
+            if r_turn:
+                lines.append(f"*** {ordn} TURN *** {format_cards(cum)} [{r_turn}]")
+                cum = cum + [r_turn]
+            if r_river:
+                lines.append(f"*** {ordn} RIVER *** {format_cards(cum)} [{r_river}]")
+                cum = cum + [r_river]
+            full_boards.append(cum)
 
     # ── Determine winner(s) (needed for validation) ───────────────────────────
     # Fix 2: deduplicate showdown by player name before any rendering
     _sd_raw = hand.get("showdown") or []
-    _sd_seen: dict[str, dict] = {}
-    for _sd in _sd_raw:
-        _key = (_sd.get("player") or "").casefold()
-        if _key not in _sd_seen or _sd.get("result") == "wins":
-            _sd_seen[_key] = _sd
-    showdown = list(_sd_seen.values())
+    if is_rit:
+        # Multi-run: each player legitimately appears once per run — keep them all.
+        showdown = list(_sd_raw)
+    else:
+        _sd_seen: dict[str, dict] = {}
+        for _sd in _sd_raw:
+            _key = (_sd.get("player") or "").casefold()
+            if _key not in _sd_seen or _sd.get("result") == "wins":
+                _sd_seen[_key] = _sd
+        showdown = list(_sd_seen.values())
     pot_total = hand.get("pot", {}).get("total", 0)
     uncalled  = hand.get("_uncalled")
     # Explicit side pots (multiway all-in) — non-RIT only.
@@ -550,42 +546,35 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
 
     # ── Showdown / winner ─────────────────────────────────────────────────────
     if is_rit:
-        run1_sd = [sd for sd in showdown if sd.get("run") == 1]
-        run2_sd = [sd for sd in showdown if sd.get("run") == 2]
-        # If model omitted run tags, split showdown list in half
-        if not run1_sd and not run2_sd and showdown:
-            mid = max(1, len(showdown) // 2)
-            run1_sd, run2_sd = showdown[:mid], showdown[mid:]
+        share = pot_total // num_runs
+        rem = pot_total - share * num_runs
+        tagged = any(sd.get("run") for sd in showdown)
+        run_winners_list = []
+        for i in range(num_runs):
+            if tagged:
+                run_sd = [sd for sd in showdown if sd.get("run") == i + 1]
+            elif showdown:
+                per = max(1, len(showdown) // num_runs)
+                run_sd = showdown[i * per:(i + 1) * per] if i < num_runs - 1 else showdown[i * per:]
+            else:
+                run_sd = []
+            ordn = ORDINALS[i] if i < len(ORDINALS) else f"RUN{i + 1}"
+            rw = next((sd["player"] for sd in run_sd if sd.get("result") == "wins"), None)
+            run_winners_list.append(rw)
+            if run_sd:
+                lines.append(f"*** {ordn} SHOW DOWN ***")
+                for sd in run_sd:
+                    cards = sd.get("hole_cards", [])
+                    if cards:
+                        lines.append(
+                            f"{sd['player']}: shows {format_cards(cards)} "
+                            f"({sd.get('hand_description', '')})"
+                        )
+                if rw:
+                    amt = share + (rem if i == 0 else 0)
+                    lines.append(f"{rw} collected ${amt} from pot")
 
-        half_pot  = pot_total // 2
-        run1_winner = next((sd["player"] for sd in run1_sd if sd.get("result") == "wins"), None)
-        run2_winner = next((sd["player"] for sd in run2_sd if sd.get("result") == "wins"), None)
-
-        if run1_sd:
-            lines.append("*** FIRST SHOW DOWN ***")
-            for sd in run1_sd:
-                cards = sd.get("hole_cards", [])
-                if cards:
-                    lines.append(
-                        f"{sd['player']}: shows {format_cards(cards)} "
-                        f"({sd.get('hand_description', '')})"
-                    )
-            if run1_winner:
-                lines.append(f"{run1_winner} collected ${half_pot} from pot")
-
-        if run2_sd:
-            lines.append("*** SECOND SHOW DOWN ***")
-            for sd in run2_sd:
-                cards = sd.get("hole_cards", [])
-                if cards:
-                    lines.append(
-                        f"{sd['player']}: shows {format_cards(cards)} "
-                        f"({sd.get('hand_description', '')})"
-                    )
-            if run2_winner:
-                lines.append(f"{run2_winner} collected ${pot_total - half_pot} from pot")
-
-        winner_name = run1_winner or run2_winner  # for per-seat summary
+        winner_name = next((w for w in run_winners_list if w), None)  # per-seat summary
 
     elif showdown:
         lines.append("*** SHOW DOWN ***")
@@ -613,11 +602,12 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
         lines.append(f"Total pot ${pot_total} | Rake $0")
 
     if is_rit:
-        lines.append("Hand was run twice")
-        if full_board_r1:
-            lines.append(f"FIRST Board {format_cards(full_board_r1)}")
-        if full_board_r2:
-            lines.append(f"SECOND Board {format_cards(full_board_r2)}")
+        _times = {2: "twice", 3: "three times", 4: "four times"}.get(num_runs, f"{num_runs} times")
+        lines.append(f"Hand was run {_times}")
+        for i, fb in enumerate(full_boards):
+            if fb:
+                ordn = ORDINALS[i] if i < len(ORDINALS) else f"RUN{i + 1}"
+                lines.append(f"{ordn} Board {format_cards(fb)}")
     else:
         full_board = list(flop_cards) if flop_cards else []
         if turn_card:
@@ -635,14 +625,16 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
             if a["action"] in _VOLUNTARY_ACTIONS:
                 players_who_bet.add(a["player"].casefold())
 
-    # Pre-compute RIT per-player winnings for summary
+    # Pre-compute RIT per-player winnings for summary (pot split across N runs,
+    # odd chips to the first run).
     rit_winnings: dict[str, int] = {}
     if is_rit:
-        half_pot = pot_total // 2
+        share = pot_total // num_runs
+        rem = pot_total - share * num_runs
         for sd in showdown:
             if sd.get("result") == "wins":
                 run = sd.get("run", 1)
-                amt = half_pot if run == 1 else (pot_total - half_pot)
+                amt = share + (rem if run == 1 else 0)
                 key = sd["player"].casefold()
                 rit_winnings[key] = rit_winnings.get(key, 0) + amt
 

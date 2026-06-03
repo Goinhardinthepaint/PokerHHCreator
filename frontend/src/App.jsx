@@ -615,11 +615,15 @@ function HandBuilder({ me, refreshMe }) {
   const [eng, setEng] = useState(() => pick("eng", null));
   const [engHistory, setEngHistory] = useState(() => pick("engHistory", [])); // prior engine states for undo
   const [holeCards, setHoleCards] = useState(() => pick("holeCards", {})); // seat -> [c1,c2]
-  const [board, setBoard] = useState(() => pick("board", ["", "", "", "", ""]));
-  const [board2, setBoard2] = useState(() => pick("board2", ["", "", "", "", ""]));
-  const [rit, setRit] = useState(() => pick("rit", false));
+  const [board, setBoard] = useState(() => pick("board", ["", "", "", "", ""])); // run 1 (full board)
   const [winner, setWinner] = useState(() => pick("winner", ""));
-  const [winner2, setWinner2] = useState(() => pick("winner2", ""));
+  // Run-it-multiple-times (all-in): numRuns 1–4. Run 1 uses `board`; runs 2..N
+  // use extraBoards (each a 5-card array that mirrors the shared pre-all-in
+  // cards). runWinners holds the picked winner per run.
+  const [numRuns, setNumRuns] = useState(() => pick("numRuns", 1));
+  const [runsChosen, setRunsChosen] = useState(() => pick("runsChosen", false));
+  const [extraBoards, setExtraBoards] = useState(() => pick("extraBoards", [])); // runs 2..N
+  const [runWinners, setRunWinners] = useState(() => pick("runWinners", [])); // winner per run
   const [handNumber, setHandNumber] = useState(() => (pendingResume?.handNumber != null ? pendingResume.handNumber : pick("handNumber", 1)));
   const [youtubeLink, setYoutubeLink] = useState(() => {
     // A Resume snapshot or "Open in Hand Builder" URL wins (consumed once);
@@ -781,9 +785,9 @@ function HandBuilder({ me, refreshMe }) {
     const set = new Set();
     Object.values(holeCards).forEach((arr) => arr.forEach((c) => c && set.add(c)));
     board.forEach((c) => c && set.add(c));
-    if (rit) board2.forEach((c) => c && set.add(c));
+    if (numRuns >= 2) extraBoards.forEach((b) => (b || []).forEach((c) => c && set.add(c)));
     return set;
-  }, [holeCards, board, board2, rit]);
+  }, [holeCards, board, extraBoards, numRuns]);
 
   // ── Derived flow flags ────────────────────────────────────────────────────
   const inBetting = phase === "betting" && eng;
@@ -793,6 +797,30 @@ function HandBuilder({ me, refreshMe }) {
   const canComplete = inBetting && eng.actorSeat == null && (eng.handOver || eng.street === "river");
   const surv = eng ? survivors(eng) : [];
 
+  // ── Run-it-multiple-times (all-in runout) flow ─────────────────────────────
+  const allInStreetIdx = eng ? STREETS.indexOf(eng.street) : 0;
+  const sharedCount = [0, 3, 4, 5][allInStreetIdx] || 0; // board cards dealt pre-all-in
+  // All-in detected before the river: everyone left is all-in / can't bet more.
+  const allInRunout = needBoard && eng.bettingClosed;
+  const showRunPrompt = allInRunout && !runsChosen;
+  const showMultiRun = allInRunout && runsChosen && numRuns >= 2;
+  const showDealNext = needBoard && !allInRunout || (allInRunout && runsChosen && numRuns === 1);
+  // Choose how many times to run it; seed each extra run with the shared cards.
+  function chooseRuns(n) {
+    setNumRuns(n);
+    setRunsChosen(true);
+    if (n >= 2) {
+      const seedShared = (b) => board.map((c, i) => (i < sharedCount ? b[i] ?? c : ""));
+      setExtraBoards(Array.from({ length: n - 1 }, () => seedShared(board)));
+      setRunWinners(Array.from({ length: n }, () => surv[0] || ""));
+    } else {
+      setExtraBoards([]);
+      setRunWinners([]);
+    }
+  }
+  const setRunWinner = (i, name) => setRunWinners((w) => { const c = [...w]; c[i] = name; return c; });
+  const runBoardsAll = numRuns >= 2 ? [board, ...extraBoards] : [board];
+
   // ── Piece-rate earnings tracker ───────────────────────────────────────────
   // Live count of billable pieces for the CURRENT hand: each filled hole/board
   // card + each voluntary action (auto blind/ante/straddle posts don't count).
@@ -800,7 +828,7 @@ function HandBuilder({ me, refreshMe }) {
     const cards =
       Object.values(holeCards).reduce((s, arr) => s + arr.filter(Boolean).length, 0) +
       board.filter(Boolean).length +
-      board2.filter(Boolean).length;
+      (numRuns >= 2 ? extraBoards.reduce((s, b) => s + (b || []).filter(Boolean).length, 0) : 0);
     const actions = eng
       ? Object.values(eng.actionsByStreet).reduce(
           (s, arr) => s + arr.filter((a) => !BLIND_POSTS.has(a.action)).length,
@@ -808,12 +836,12 @@ function HandBuilder({ me, refreshMe }) {
         )
       : 0;
     return { cards, actions, total: cards + actions };
-  }, [holeCards, board, board2, eng]);
+  }, [holeCards, board, extraBoards, numRuns, eng]);
 
   // When every surviving player has hole cards AND the board is complete, the
   // showdown can be evaluated authoritatively — the winner is no longer a guess.
   const showdownEval = useMemo(() => {
-    if (!eng || rit) return null;
+    if (!eng || numRuns >= 2) return null;
     const survList = eng.players.filter((p) => !p.folded);
     if (survList.length < 2) return null;
     const fullBoard = board.filter(Boolean);
@@ -825,7 +853,7 @@ function HandBuilder({ me, refreshMe }) {
       evalPlayers.push({ name: p.name, hole_cards: hc });
     }
     return { players: evalPlayers, board: fullBoard, key: JSON.stringify({ p: evalPlayers, b: fullBoard }) };
-  }, [eng, holeCards, board, rit]);
+  }, [eng, holeCards, board, numRuns]);
 
   const [evalResult, setEvalResult] = useState(() => pick("evalResult", null)); // {key, winner, winners, descriptions}
   const lastEvalKey = useRef(null);
@@ -859,15 +887,15 @@ function HandBuilder({ me, refreshMe }) {
         STORAGE_KEY,
         JSON.stringify({
           stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster,
-          phase, eng, engHistory, holeCards, board, board2, rit,
-          winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
+          phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
+          winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster, phase, eng, engHistory, holeCards, board, board2, rit, winner, winner2, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, buyButton, roster, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
 
 
   // Board cards required to deal the next street
@@ -898,15 +926,18 @@ function HandBuilder({ me, refreshMe }) {
   // empty slot in the group and only closes once the group is filled.
   const openHole = (seat, idx) => setEditor({ kind: "hole", seat, group: [0, 1], cur: idx });
   const openBoard = (idx) => setEditor({ kind: "board", group: idx <= 2 ? [0, 1, 2] : [idx], cur: idx });
-  const openBoard2 = (idx) => setEditor({ kind: "board2", group: idx <= 2 ? [0, 1, 2] : [idx], cur: idx });
+  // Extra runs (2..N): `run` is the index into extraBoards (0 = run 2).
+  const openRunBoard = (run, idx) => setEditor({ kind: "run", run, group: idx <= 2 ? [0, 1, 2] : [idx], cur: idx });
   const pickCard = (c) => {
     if (!editor) return;
-    const { kind, seat, group, cur } = editor;
-    const base = kind === "hole" ? (holeCards[seat] ? [...holeCards[seat]] : ["", ""]) : kind === "board" ? [...board] : [...board2];
+    const { kind, seat, run, group, cur } = editor;
+    const base = kind === "hole" ? (holeCards[seat] ? [...holeCards[seat]] : ["", ""])
+      : kind === "board" ? [...board]
+      : [...(extraBoards[run] || ["", "", "", "", ""])];
     base[cur] = c;
     if (kind === "hole") setHoleCards((hc) => ({ ...hc, [seat]: base }));
     else if (kind === "board") setBoard(base);
-    else setBoard2(base);
+    else setExtraBoards((arr) => { const cpy = arr.map((b) => [...b]); cpy[run] = base; return cpy; });
     // Advance to the next still-empty slot in the group (forward, wrapping);
     // never re-open the slot just edited.
     const startPos = group.indexOf(cur);
@@ -928,10 +959,11 @@ function HandBuilder({ me, refreshMe }) {
     setEngHistory([]);
     setHoleCards({});
     setBoard(["", "", "", "", ""]);
-    setBoard2(["", "", "", "", ""]);
-    setRit(false);
+    setNumRuns(1);
+    setRunsChosen(false);
+    setExtraBoards([]);
+    setRunWinners([]);
     setWinner("");
-    setWinner2("");
     setPreview("");
     setError("");
     setPhase("holecards");
@@ -1003,15 +1035,21 @@ function HandBuilder({ me, refreshMe }) {
     if (!link) return setError("Add a timestamped YouTube link before completing.");
     if (!/youtube\.com|youtu\.be/i.test(link)) return setError("Enter a valid YouTube link (youtube.com or youtu.be).");
     if (!/[?&](?:t|start)=/.test(link)) return setError("This link has no timestamp. Add ?t=SECONDS to the URL.");
-    // 2. Winner must be determinable — for a multiway showdown that means cards in.
-    if (surv.length >= 2 && !autoEval) {
+    // 2. Winner must be determinable. For a single board that means cards in (so
+    //    the evaluator can score it); for multi-run the worker picks each winner.
+    if (numRuns < 2 && surv.length >= 2 && !autoEval) {
       return setError("Enter hole cards for every player still in so the winner can be scored.");
+    }
+    if (numRuns >= 2 && runWinners.slice(0, numRuns).some((w) => !w)) {
+      return setError("Pick a winner for every run.");
     }
 
     try {
       const effWinner = autoEval ? autoEval.winner : winner || surv[0];
       const effWinners = autoEval ? autoEval.winners : surv.length === 1 ? [surv[0]] : [winner || surv[0]];
-      const hand = buildHandDict(eng, { stakes, holeCards, board, board2, rit: false, winner: effWinner, winner2, winners: effWinners, positions: buyButton ? {} : positions });
+      const hand = numRuns >= 2
+        ? buildHandDict(eng, { stakes, holeCards, board, runBoards: runBoardsAll, runWinners, numRuns, allInStreetIdx, positions: buyButton ? {} : positions })
+        : buildHandDict(eng, { stakes, holeCards, board, winner: effWinner, winners: effWinners, positions: buyButton ? {} : positions });
       if (buyButton) hand.buy_button_seat = buyButton.seat;
       const { url, startSec, id: videoId } = parseYouTube(link);
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
@@ -1157,10 +1195,11 @@ function HandBuilder({ me, refreshMe }) {
     setEngHistory([]);
     setHoleCards({});
     setBoard(["", "", "", "", ""]);
-    setBoard2(["", "", "", "", ""]);
-    setRit(false);
+    setNumRuns(1);
+    setRunsChosen(false);
+    setExtraBoards([]);
+    setRunWinners([]);
     setWinner("");
-    setWinner2("");
     setHandNumber(1);
     setYoutubeLink("");
     setVideoDate(TODAY_ISO);
@@ -1184,7 +1223,7 @@ function HandBuilder({ me, refreshMe }) {
     if (eng) {
       const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || phase === "complete";
       if (resolved) {
-        const ends = computeEndStacks(eng, { rit, winner: autoEval ? autoEval.winner : winner, winner2, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
+        const ends = computeEndStacks(eng, { numRuns, runWinners, winner: autoEval ? autoEval.winner : winner, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
         newRoster = roster.map((p) => {
           if (ends[p.seat] == null) return p;
           const s = ends[p.seat];
@@ -1213,7 +1252,7 @@ function HandBuilder({ me, refreshMe }) {
       const survList = eng.players.filter((p) => !p.folded);
       const resolved = survList.length === 1 || phase === "complete";
       if (resolved) {
-        const ends = computeEndStacks(eng, { rit, winner: autoEval ? autoEval.winner : winner, winner2, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
+        const ends = computeEndStacks(eng, { numRuns, runWinners, winner: autoEval ? autoEval.winner : winner, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
         newRoster = roster.map((p) => {
           if (ends[p.seat] == null) return p;
           const s = ends[p.seat];
@@ -1236,10 +1275,11 @@ function HandBuilder({ me, refreshMe }) {
     setEngHistory([]);
     setHoleCards({});
     setBoard(["", "", "", "", ""]);
-    setBoard2(["", "", "", "", ""]);
-    setRit(false);
+    setNumRuns(1);
+    setRunsChosen(false);
+    setExtraBoards([]);
+    setRunWinners([]);
     setWinner("");
-    setWinner2("");
     setPreview("");
     setError("");
     setYoutubeLink("");
@@ -1636,24 +1676,24 @@ function HandBuilder({ me, refreshMe }) {
                 <div style={styles.potValue}>{fmtChips(potTotal(eng))}</div>
               </div>
 
-              {/* Community cards */}
+              {/* Community cards (one row per run when running it 2–4 times) */}
               <div style={styles.boardArea}>
-                {rit && <div style={styles.runLabel}>RUN 1</div>}
+                {numRuns >= 2 && <div style={styles.runLabel}>RUN 1</div>}
                 <div style={styles.boardRow}>
                   {[0, 1, 2, 3, 4].map((i) => (
                     <Card key={i} card={board[i]} size="lg" faceDownIfEmpty={false} onClick={() => openBoard(i)} />
                   ))}
                 </div>
-                {rit && (
-                  <>
-                    <div style={styles.runLabel}>RUN 2</div>
+                {numRuns >= 2 && extraBoards.map((rb, ri) => (
+                  <div key={ri}>
+                    <div style={styles.runLabel}>RUN {ri + 2}</div>
                     <div style={styles.boardRow}>
                       {[0, 1, 2, 3, 4].map((i) => (
-                        <Card key={i} card={board2[i]} size="lg" faceDownIfEmpty={false} onClick={() => openBoard2(i)} />
+                        <Card key={i} card={rb[i]} size="lg" faceDownIfEmpty={false} onClick={() => openRunBoard(ri, i)} />
                       ))}
                     </div>
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1836,7 +1876,19 @@ function HandBuilder({ me, refreshMe }) {
             </div>
           )}
 
-          {needBoard && (
+          {showRunPrompt && (
+            <div style={styles.barCenter}>
+              <div style={styles.barHint}>All players are effectively all-in. How many times are they running it?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={styles.dealBtn} onClick={() => chooseRuns(1)}>1 (normal)</button>
+                <button style={styles.runBtn} onClick={() => chooseRuns(2)}>2 (twice)</button>
+                <button style={styles.runBtn} onClick={() => chooseRuns(3)}>3 (three times)</button>
+                <button style={styles.runBtn} onClick={() => chooseRuns(4)}>4 (four times)</button>
+              </div>
+            </div>
+          )}
+
+          {showDealNext && (
             <div style={styles.barCenter}>
               <div style={styles.barHint}>
                 {eng.bettingClosed ? "All-in — set the " : "Betting complete — set the "}
@@ -1849,6 +1901,29 @@ function HandBuilder({ me, refreshMe }) {
               >
                 DEAL {STREET_LABEL[nextStreet].toUpperCase()} ▶
               </button>
+            </div>
+          )}
+
+          {showMultiRun && (
+            <div style={styles.barCenter}>
+              <div style={styles.barHint}>
+                Running it <strong>{numRuns}×</strong> — set each run's remaining cards on the table, then pick a winner per run.
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+                {Array.from({ length: numRuns }).map((_, i) => (
+                  <div key={i} style={styles.runWinnerBox}>
+                    <span style={styles.runLabelSm}>RUN {i + 1}</span>
+                    <select style={{ ...styles.input, width: 130 }} value={runWinners[i] || ""} onChange={(e) => setRunWinner(i, e.target.value)}>
+                      <option value="">winner…</option>
+                      {surv.map((nm) => (<option key={nm} value={nm}>{nm}</option>))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={styles.completeBtn} onClick={completeHand}>✓ COMPLETE HAND ({numRuns} runs)</button>
+                <button style={styles.topBtn} onClick={() => { setRunsChosen(false); setNumRuns(1); setExtraBoards([]); setRunWinners([]); }}>↺ change runs</button>
+              </div>
             </div>
           )}
 
@@ -2090,6 +2165,9 @@ const styles = {
   barCenter: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
   barHint: { fontSize: 13, color: "#94a3b8" },
   dealBtn: { padding: "13px 40px", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: 1.5, cursor: "pointer", boxShadow: "0 0 26px #f59e0b44" },
+  runBtn: { padding: "13px 22px", background: "#16243a", color: "#e2e8f0", border: "1px solid #2b3a52", borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: "pointer" },
+  runWinnerBox: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "#0e1626", border: "1px solid #1e293b", borderRadius: 8, padding: "6px 8px" },
+  runLabelSm: { fontSize: 9, letterSpacing: 1.5, color: "#cbe8d5", opacity: 0.8, fontWeight: 800 },
   completeBtn: { padding: "13px 40px", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#06210f", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: 1.5, cursor: "pointer", boxShadow: "0 0 26px #22c55e44" },
   actionRow: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "center" },
   actorTag: { textAlign: "right", marginRight: 6 },
