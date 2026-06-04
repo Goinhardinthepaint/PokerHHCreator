@@ -730,6 +730,18 @@ function HandBuilder({ me, refreshMe }) {
       .catch(() => {});
   }, [currentStreamId]);
 
+  // Auto-fill the Video Date from the stream catalog whenever the YouTube link's
+  // video id changes. If the stream is unknown (or has no date) the field is left
+  // as-is for manual entry.
+  useEffect(() => {
+    if (!currentStreamId) return;
+    let cancelled = false;
+    api(`/api/streams/${currentStreamId}`)
+      .then((s) => { if (!cancelled && s && s.date) setVideoDate(s.date); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentStreamId]);
+
   // Seats whose current name differs from the saved default (shown as a marker).
   const defaultDiffers = useMemo(() => {
     const out = new Set();
@@ -1130,9 +1142,11 @@ function HandBuilder({ me, refreshMe }) {
         : buildHandDict(eng, { stakes: ptStakes, holeCards, board, winner: effWinner, winners: effWinners, positions: buyButton ? {} : positions });
       if (buyButton) hand.buy_button_seat = buyButton.seat;
       const { url, startSec, id: videoId } = parseYouTube(link);
-      if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
+      // PT4 header time comes from the YouTube timestamp (t=), never the clock —
+      // 00:00:00 when the link carries no timestamp.
+      hand.timestamp_start = secsToHMS(startSec);
       if (url) hand.table_name = url; // timestamped link → PT4 table name
-      if (videoDate) hand.video_date = videoDate; // stream date → PT4 header date
+      if (videoDate) hand.video_date = videoDate; // video date → PT4 header date
 
       const n = handNumber;
       const { cards, actions } = handPieces;
@@ -1596,12 +1610,8 @@ function HandBuilder({ me, refreshMe }) {
 
             <div style={styles.row}>
               <div style={styles.col}>
-                <label style={styles.label}>Video Date</label>
+                <label style={styles.label}>Video Date <span style={styles.sideHint}>· auto-filled from the YouTube link</span></label>
                 <input style={styles.input} type="date" value={videoDate} onChange={(e) => setVideoDate(e.target.value)} />
-              </div>
-              <div style={styles.col}>
-                <label style={styles.label}>Stream Name</label>
-                <input style={styles.input} value={sessionLabel} placeholder="HCL Stream" onChange={(e) => setSessionLabel(e.target.value)} />
               </div>
             </div>
 

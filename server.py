@@ -554,6 +554,14 @@ def api_stream_resume(sid):
     })
 
 
+@app.route("/api/streams/<sid>", methods=["GET"])
+@login_required
+def api_stream_meta(sid):
+    """Stream catalog metadata (date, title, …) by video id — used to auto-fill
+    the Video Date when a YouTube link is pasted. Returns {} if unknown."""
+    return jsonify(auth_db.stream_meta(sid) or {})
+
+
 # ── Streams (calendar) ───────────────────────────────────────────────────────
 @app.route("/api/streams/state", methods=["GET"])
 @login_required

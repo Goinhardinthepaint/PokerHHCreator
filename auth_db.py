@@ -526,11 +526,11 @@ def import_hands(raw_text, user_id):
                     )
                 affected.add(vid)
 
-            # ── Date/time rewrite (only when the stream date is known) ────────
-            text = p["text"]
-            if stream_date:
-                new_time = hand_import.secs_to_hms(ts) if p["has_timestamp"] else None
-                text = hand_import.rewrite_header(text, new_date=stream_date, new_time=new_time)
+            # ── Date/time rewrite ─────────────────────────────────────────────
+            # Time always comes from the YouTube timestamp (00:00:00 when none);
+            # date comes from the stream when known, else the original is kept.
+            text = hand_import.rewrite_header(
+                p["text"], new_date=stream_date, new_time=hand_import.secs_to_hms(ts))
 
             # ── Earnings + post-hand snapshot + insert ────────────────────────
             cards, actions = p["cards_count"], p["actions_count"]
