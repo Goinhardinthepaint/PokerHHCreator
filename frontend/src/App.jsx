@@ -75,6 +75,19 @@ const PIECE_RATE = 0.03; // per filled card / per voluntary action
 const COMPLETION_BONUS = 0.1; // per completed hand
 const BLIND_POSTS = new Set(["posts_sb", "posts_bb", "posts_ante", "posts_straddle"]);
 
+// A hole-card pair is "7-2" if its two ranks are a 7 and a 2 (suited or not).
+// Cards are "<rank><suit>", e.g. "7h", "2c" — rank is the first char.
+function is72(cards) {
+  if (!cards || cards.length < 2 || !cards[0] || !cards[1]) return false;
+  const ranks = [cards[0][0], cards[1][0]];
+  return ranks.includes("7") && ranks.includes("2");
+}
+// A preflop VPIP is any voluntary money-in — not a blind/ante/straddle post,
+// not a fold, not a check.
+function isVpipAction(action) {
+  return !BLIND_POSTS.has(action) && action !== "folds" && action !== "checks";
+}
+
 // Side-game pricing: a flat base per counted hand + a stream-completion bonus.
 // Backend-wise a side-game hand is just a 0-piece submission, which already
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
@@ -677,6 +690,13 @@ function HandBuilder({ me, refreshMe }) {
   const [endingSideGame, setEndingSideGame] = useState(false); // showing the adjust-stacks prompt
   const [sideStackDraft, setSideStackDraft] = useState({}); // seat -> stack string while confirming
 
+  // 7-2 game: when active, a player who VPIPs holding 7-2 converts the hand into
+  // a side-game record. sevenTwoActive persists across hands until toggled off.
+  const [sevenTwoActive, setSevenTwoActive] = useState(() => pick("sevenTwoActive", false));
+  const [sevenTwoDetect, setSevenTwoDetect] = useState(null); // {seat,name,cards} — "enable?" popup
+  const [sevenTwoVpip, setSevenTwoVpip] = useState(null);     // {name,cards,src} — "convert?" popup
+  const [sevenTwoHandled, setSevenTwoHandled] = useState(false); // VPIP prompt already answered this hand
+
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [handPanelOpen, setHandPanelOpen] = useState(false); // right-side Hand Manager
@@ -903,6 +923,22 @@ function HandBuilder({ me, refreshMe }) {
   const setRunWinner = (i, name) => setRunWinners((w) => { const c = [...w]; c[i] = name; return c; });
   const runBoardsAll = numRuns >= 2 ? [board, ...extraBoards] : [board];
 
+  // ── 7-2 game ───────────────────────────────────────────────────────────────
+  // The first seated player currently holding 7-2, with their cards.
+  const sevenTwoHolder = useMemo(() => {
+    for (const p of named) {
+      if (is72(holeCards[p.seat])) return { seat: p.seat, name: p.name, cards: holeCards[p.seat] };
+    }
+    return null;
+  }, [named, holeCards]);
+  // Whether that holder voluntarily put money in preflop (called/bet/raised).
+  const holderVpiped = useMemo(() => {
+    if (!sevenTwoHolder || !eng) return false;
+    return (eng.actionsByStreet.preflop || []).some(
+      (a) => a.player === sevenTwoHolder.name && isVpipAction(a.action)
+    );
+  }, [sevenTwoHolder, eng]);
+
   // ── Piece-rate earnings tracker ───────────────────────────────────────────
   // Live count of billable pieces for the CURRENT hand: each filled hole/board
   // card + each voluntary action (auto blind/ante/straddle posts don't count).
@@ -971,13 +1007,13 @@ function HandBuilder({ me, refreshMe }) {
           stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
-          sideGameMode, sideGameType, sideGameOther, sideGameHands,
+          sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive]);
 
 
   // Board cards required to deal the next street
@@ -1042,7 +1078,15 @@ function HandBuilder({ me, refreshMe }) {
       : kind === "board" ? [...board]
       : [...(extraBoards[run] || ["", "", "", "", ""])];
     base[cur] = c;
-    if (kind === "hole") setHoleCards((hc) => ({ ...hc, [seat]: base }));
+    if (kind === "hole") {
+      setHoleCards((hc) => ({ ...hc, [seat]: base }));
+      // 7-2 detection: as soon as a player's two hole cards form a 7-2 and the
+      // game isn't already on, offer to enable it.
+      if (is72(base) && !sevenTwoActive && !sevenTwoDetect) {
+        const player = named.find((p) => p.seat === seat);
+        if (player) setSevenTwoDetect({ seat, name: player.name, cards: base });
+      }
+    }
     else if (kind === "board") setBoard(base);
     else setExtraBoards((arr) => { const cpy = arr.map((b) => [...b]); cpy[run] = base; return cpy; });
     // Advance to the next still-empty slot in the group (forward, wrapping);
@@ -1073,6 +1117,7 @@ function HandBuilder({ me, refreshMe }) {
     setWinner("");
     setPreview("");
     setError("");
+    setSevenTwoHandled(false); // re-arm 7-2 VPIP detection for the new hand
     setPhase("holecards");
   }
 
@@ -1126,10 +1171,71 @@ function HandBuilder({ me, refreshMe }) {
     setEngHistory((h) => [...h, eng]);
     setEng((s) => applyAction(s, { type, amount }));
   };
-  const dealNextStreet = () => {
+  const doAdvanceStreet = () => {
     setEngHistory((h) => [...h, eng]);
     setEng((s) => advanceStreet(s));
   };
+  const dealNextStreet = () => {
+    // Preflop just closed — if the 7-2 game is on and the 7-2 holder VPIPed,
+    // offer to convert before dealing the flop.
+    if (eng && eng.street === "preflop" && trySevenTwoVpip("advance")) return;
+    doAdvanceStreet();
+  };
+
+  // If the 7-2 game is active and the 7-2 holder VPIPed preflop, surface the
+  // "convert to side game?" popup (once per hand). Returns true when shown.
+  function trySevenTwoVpip(src) {
+    if (!sevenTwoActive || sevenTwoHandled || !holderVpiped || !sevenTwoHolder) return false;
+    setSevenTwoHandled(true);
+    setSevenTwoVpip({ name: sevenTwoHolder.name, cards: sevenTwoHolder.cards, src });
+    return true;
+  }
+
+  // Advance to the next hand WITHOUT computing end stacks (the hand wasn't played
+  // out) — rotate the button, clear entry, bump the hand number.
+  function advanceToNextHand() {
+    const occ = roster.filter((p) => p.name.trim()).sort((a, b) => a.seat - b.seat);
+    if (occ.length) {
+      const i = occ.findIndex((p) => p.seat === Number(buttonSeat));
+      const nextSeat = i >= 0 ? occ[(i + 1) % occ.length].seat : (occ.find((p) => p.seat > Number(buttonSeat)) || occ[0]).seat;
+      setButtonSeat(nextSeat);
+    }
+    setEng(null); setEngHistory([]); setHoleCards({});
+    setBoard(["", "", "", "", ""]); setNumRuns(1); setRunsChosen(false);
+    setExtraBoards([]); setRunWinners([]); setWinner(""); setPreview("");
+    setError(""); setYoutubeLink(""); setBuyButton(null); setBuyMenuSeat(null); setSevenTwoHandled(false);
+    setPhase("setup");
+    setHandNumber((h) => h + 1);
+  }
+
+  // Convert the current hand to a 7-2 side-game record: save the timestamp (cards
+  // + preflop action are kept in the local record), submit a 0-piece hand so it
+  // pays the side-game rate, show a brief summary, and advance to the next hand.
+  async function convertSevenTwoHand() {
+    const holder = sevenTwoHolder;
+    setSevenTwoVpip(null);
+    const { url, startSec, id: videoId } = parseYouTube(youtubeLink.trim());
+    const cardsStr = (holder?.cards || []).filter(Boolean).join(" ");
+    const n = handNumber;
+    setSideGameHands((hs) => [...hs, {
+      type: "72_game", gameType: "7-2 Game", player: holder?.name || "",
+      cards: cardsStr, timestamp: startSec > 0 ? fmtClock(startSec) : "", handNumber: n, videoId,
+    }]);
+    if (videoId) {
+      try {
+        await api("/api/hands/submit", { method: "POST", body: {
+          stream_id: videoId, youtube_url: url, timestamp_seconds: startSec,
+          pt4_text: "", cards_count: 0, actions_count: 0,
+          hand_type: "72_game", side_game: `7-2 Game (${holder?.name || "?"})`,
+        } });
+        if (refreshMe) refreshMe();
+      } catch { /* offline — the local record still stands */ }
+    }
+    setFlash(`7-2 side game — ${holder?.name || "?"} VPIPed with ${cardsStr || "7-2"} · +$${SIDE_GAME_RATE.toFixed(2)}`);
+    setTimeout(() => setFlash(""), 2800);
+    advanceToNextHand();
+  }
+
   function undo() {
     if (!engHistory.length) return;
     setEng(engHistory[engHistory.length - 1]);
@@ -1138,8 +1244,14 @@ function HandBuilder({ me, refreshMe }) {
   }
 
   // One click: validate the YouTube link, auto-generate the PT4 text, save it to
-  // the session, flash confirmation, and advance to the next hand.
+  // the session, flash confirmation, and advance to the next hand. If the 7-2
+  // game is on and the 7-2 holder VPIPed (hand ended preflop), offer to convert
+  // to a side game first.
   async function completeHand() {
+    if (trySevenTwoVpip("complete")) return;
+    await runCompleteHand();
+  }
+  async function runCompleteHand() {
     setError("");
     // 1. YouTube link validation
     const link = youtubeLink.trim();
@@ -1311,6 +1423,10 @@ function HandBuilder({ me, refreshMe }) {
     setSideGameOther("");
     setSideGameHands([]);
     setEndingSideGame(false);
+    setSevenTwoActive(false);
+    setSevenTwoDetect(null);
+    setSevenTwoVpip(null);
+    setSevenTwoHandled(false);
     setPhase("setup");
   }
 
@@ -1642,6 +1758,11 @@ function HandBuilder({ me, refreshMe }) {
               <span>{tripleBlind ? `Voluntary double straddle (2× mandatory = $${2 * mandatoryStraddle})` : "UTG straddle (2× BB)"}</span>
             </label>
             )}
+
+            <label style={{ ...styles.checkRow, marginTop: 4 }} title="When on, a player who voluntarily plays 7-2 converts the hand into a side game.">
+              <input type="checkbox" checked={sevenTwoActive} onChange={(e) => setSevenTwoActive(e.target.checked)} />
+              <span>7-2 Game Active <span style={styles.sideHint}>· VPIP with 7-2 → side game</span></span>
+            </label>
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
@@ -2195,6 +2316,47 @@ function HandBuilder({ me, refreshMe }) {
         />
       )}
 
+      {/* 7-2 detection: offer to enable the 7-2 game */}
+      {sevenTwoDetect && (
+        <div style={styles.pickerOverlay} onClick={() => setSevenTwoDetect(null)}>
+          <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmTitle}>7-2 detected</div>
+            <div style={styles.confirmBody}>
+              <strong>{sevenTwoDetect.name || `Seat ${sevenTwoDetect.seat}`}</strong> was dealt{" "}
+              <span style={styles.confirmCards}>{(sevenTwoDetect.cards || []).filter(Boolean).join(" ")}</span>.
+              <br />Is the 7-2 game active?
+            </div>
+            <div style={styles.confirmBtnRow}>
+              <button style={styles.confirmYes} onClick={() => { setSevenTwoActive(true); setSevenTwoDetect(null); }}>Yes, enable 7-2 game</button>
+              <button style={styles.confirmNo} onClick={() => setSevenTwoDetect(null)}>No</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7-2 VPIP: offer to convert this hand to a side game */}
+      {sevenTwoVpip && (
+        <div style={styles.pickerOverlay}>
+          <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmTitle}>7-2 VPIP!</div>
+            <div style={styles.confirmBody}>
+              <strong>{sevenTwoVpip.name}</strong> VPIPed with{" "}
+              <span style={styles.confirmCards}>{(sevenTwoVpip.cards || []).filter(Boolean).join(" ")}</span>!
+              <br />Switch to side game mode for this hand?
+            </div>
+            <div style={styles.confirmBtnRow}>
+              <button style={styles.confirmYes} onClick={convertSevenTwoHand}>Yes, convert to side game</button>
+              <button style={styles.confirmNo} onClick={() => {
+                const src = sevenTwoVpip.src;
+                setSevenTwoVpip(null);
+                if (src === "advance") doAdvanceStreet();
+                else if (src === "complete") runCompleteHand();
+              }}>No, record normally</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Buy-the-button menu */}
       {buyMenuSeat != null && (() => {
         const p = named.find((x) => x.seat === buyMenuSeat);
@@ -2411,6 +2573,13 @@ const styles = {
 
   pickerOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
   pickerBox: { background: "#0e1626", border: "1px solid #334155", borderRadius: 12, padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,.6)" },
+  confirmBox: { width: 380, maxWidth: "92vw", background: "#0e1626", border: "1px solid #334155", borderRadius: 14, padding: 22, boxShadow: "0 30px 80px rgba(0,0,0,.6)", display: "flex", flexDirection: "column", gap: 14 },
+  confirmTitle: { fontSize: 16, fontWeight: 800, color: "#fbbf24", letterSpacing: 0.5 },
+  confirmBody: { fontSize: 14, lineHeight: 1.6, color: "#e2e8f0" },
+  confirmCards: { fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, color: "#a78bfa", background: "#1e1b3a", padding: "1px 6px", borderRadius: 5 },
+  confirmBtnRow: { display: "flex", gap: 8, flexWrap: "wrap" },
+  confirmYes: { flex: 1, minWidth: 150, padding: "10px 14px", background: "linear-gradient(135deg,#a78bfa,#7c3aed)", border: "none", borderRadius: 9, color: "#0a0e17", fontSize: 13, fontWeight: 800, cursor: "pointer" },
+  confirmNo: { padding: "10px 16px", background: "#1e293b", border: "1px solid #334155", borderRadius: 9, color: "#cbd5e1", fontSize: 13, fontWeight: 700, cursor: "pointer" },
   pickerTitle: { fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#94a3b8", marginBottom: 10, textTransform: "uppercase" },
   pickerCard: { width: 38, height: 34, background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 12, fontWeight: 800, padding: 0 },
   pickerClear: { padding: "7px 16px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
