@@ -653,7 +653,7 @@ def user_dashboard(user_id):
         "SELECT h.stream_id AS stream_id, COALESCE(s.title, h.stream_id) AS title, "
         "MAX(s.is_complete) AS is_complete, COUNT(*) AS hands "
         "FROM hands h LEFT JOIN streams s ON h.stream_id = s.id "
-        "WHERE h.user_id = ? GROUP BY h.stream_id ORDER BY hands DESC",
+        "WHERE h.user_id = ? GROUP BY h.stream_id, s.title ORDER BY hands DESC",
         (user_id,),
     ).fetchall()
     bd["streams_worked"] = [dict(r) for r in bd["streams_worked"]]
@@ -802,7 +802,7 @@ def admin_overview():
     ).fetchall():
         contributors = conn.execute(
             "SELECT u.username AS username, COUNT(*) AS hands FROM hands h "
-            "JOIN users u ON u.id = h.user_id WHERE h.stream_id = ? GROUP BY h.user_id ORDER BY hands DESC",
+            "JOIN users u ON u.id = h.user_id WHERE h.stream_id = ? GROUP BY h.user_id, u.username ORDER BY hands DESC",
             (s["id"],),
         ).fetchall()
         streams.append({
