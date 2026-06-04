@@ -392,8 +392,8 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
       nextState: h.next_state || null,
     }));
     const haveServer = new Set(sv.map((c) => `${c.videoId}|${c.startSec}`));
-    let loc = localHands || [];
-    if (streamId) loc = loc.filter((h) => (h.videoId || "") === streamId);
+    // Only show hands from the active stream. With no stream selected, show none.
+    let loc = streamId ? (localHands || []).filter((h) => (h.videoId || "") === streamId) : [];
     const lc = loc
       .filter((h) => !haveServer.has(`${h.videoId}|${h.startSec || 0}`))
       .map((h) => ({
@@ -522,8 +522,10 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
         </div>
       )}
 
-      {sorted.length === 0 ? (
-        <div style={styles.hmEmpty}>No hands yet. Complete a hand and it lands here.</div>
+      {!streamId ? (
+        <div style={styles.hmEmpty}>Paste a YouTube URL to see hands from that stream.</div>
+      ) : sorted.length === 0 ? (
+        <div style={styles.hmEmpty}>No hands yet for this stream. Complete a hand and it lands here.</div>
       ) : (
         <>
           <div style={styles.hmToolbar}>
@@ -708,15 +710,34 @@ function HandBuilder({ me, refreshMe }) {
   // active stream when a YouTube link is set, else the user's whole history.
   const [handsData, setHandsData] = useState({ hands: [], stream: null, last_timestamp: null });
   const fetchHands = useCallback(() => {
-    const q = currentStreamId ? `?stream_id=${currentStreamId}` : "";
-    return api(`/api/hands${q}`)
+    // Sidebar is scoped to ONE stream — without a YouTube URL there's no stream
+    // to fetch. The consumers below gate on currentStreamId so nothing shows.
+    if (!currentStreamId) return Promise.resolve();
+    return api(`/api/hands?video_id=${currentStreamId}`)
       .then((d) => setHandsData({ hands: d.hands || [], stream: d.stream || null, last_timestamp: d.last_timestamp ?? null }))
       .catch(() => {});
   }, [currentStreamId]);
   useEffect(() => { fetchHands(); }, [fetchHands]);
 
+  // Hands/stream data scoped to the ACTIVE stream — empty when no URL is set, so
+  // a stale fetch from a previous stream never leaks into the sidebar.
+  const streamHands = useMemo(() => (currentStreamId ? handsData.hands : []), [currentStreamId, handsData]);
+  const streamMeta = currentStreamId ? handsData.stream : null;
+  const streamLastTs = currentStreamId ? handsData.last_timestamp : null;
+
   // Canonical stream URL + the resume timestamp for "Resume from".
   const streamUrl = currentStreamId ? `https://youtu.be/${currentStreamId}` : "";
+
+  // Count of hands for the ACTIVE stream only (server hands + any local hands on
+  // this stream not yet mirrored to the server) — drives the Hand Manager badge.
+  const streamHandCount = useMemo(() => {
+    if (!currentStreamId) return 0;
+    const haveServer = new Set(streamHands.map((h) => `${h.stream_id}|${h.timestamp_seconds || 0}`));
+    const localExtra = (sessionHands || []).filter(
+      (h) => (h.videoId || "") === currentStreamId && !haveServer.has(`${h.videoId}|${h.startSec || 0}`)
+    );
+    return streamHands.length + localExtra.length;
+  }, [currentStreamId, streamHands, sessionHands]);
 
   useEffect(() => {
     try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(defaultLineups)); } catch { /* ignore */ }
@@ -1837,9 +1858,9 @@ function HandBuilder({ me, refreshMe }) {
                 <button style={styles.topBtn} title="Next hand (carry over stacks, rotate button)" onClick={nextHand}>Next Hand ↻</button>
               </>
             )}
-            {sessionHands.length > 0 && (
+            {streamHandCount > 0 && (
               <button style={styles.sessionBtn} title="Open the Hand Manager" onClick={() => setHandPanelOpen((o) => !o)}>
-                🗂 Hand Manager ({sessionHands.length})
+                🗂 Hand Manager ({streamHandCount})
               </button>
             )}
             <span style={styles.handTag}>Hand #{handNumber}</span>
@@ -2135,9 +2156,9 @@ function HandBuilder({ me, refreshMe }) {
         {handPanelOpen && (
           <HandManager
             localHands={sessionHands}
-            serverHands={handsData.hands}
-            stream={handsData.stream}
-            lastTimestamp={handsData.last_timestamp}
+            serverHands={streamHands}
+            stream={streamMeta}
+            lastTimestamp={streamLastTs}
             streamId={currentStreamId}
             streamUrl={streamUrl}
             onResumeFrom={(u) => setYoutubeLink(u)}

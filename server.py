@@ -520,7 +520,9 @@ def api_hands_submit():
 @login_required
 def api_hands_list():
     uid = session["user_id"]
-    stream_id = request.args.get("stream_id")
+    # Scope to a single stream by its YouTube video id (?video_id=; ?stream_id=
+    # accepted for back-compat). user_hands normalizes either to the video id.
+    stream_id = request.args.get("video_id") or request.args.get("stream_id")
     hands = auth_db.user_hands(uid, stream_id)
     # Only admins may see the raw PT4 text — strip it for workers.
     u = current_user()
