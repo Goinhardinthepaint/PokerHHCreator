@@ -362,7 +362,18 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
               )}
 
               {/* Hand review */}
-              <div style={st.section}>Hands ({detail.hands.length})</div>
+              <div style={st.handsHead}>
+                <span style={st.section}>Hands ({detail.hands.length})</span>
+                {detail.hands.length > 0 && (
+                  <a
+                    style={st.dlBtn}
+                    href={`/api/admin/user/${detail.user.id}/export`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Download all of this worker's hands as raw PT4 (.txt)"
+                  >⬇ Download All Hands</a>
+                )}
+              </div>
               {detail.hands.map((h) => (
                 <div key={h.id} style={st.handBlock}>
                   <div style={st.handRow} onClick={() => setOpenHand(openHand === h.id ? null : h.id)}>
@@ -460,6 +471,8 @@ const st = {
   miniK: { fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748b" },
   miniV: { fontSize: 15, fontWeight: 800, marginTop: 2 },
   section: { fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "#f59e0b", margin: "14px 0 8px" },
+  handsHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  dlBtn: { padding: "6px 12px", background: "#16a34a", color: "#06210f", border: "none", borderRadius: 7, fontSize: 11.5, fontWeight: 800, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" },
   payForm: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" },
   input: { flex: 1, minWidth: 80, padding: "8px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" },
   payBtn: { padding: "8px 14px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },

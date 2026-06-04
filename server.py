@@ -636,6 +636,20 @@ def api_admin_user(uid):
     return jsonify(det)
 
 
+@app.route("/api/admin/user/<int:uid>/export", methods=["GET"])
+@admin_required
+def api_admin_user_export(uid):
+    """All of one worker's completed hands as raw PT4 text (admin-only)."""
+    u = auth_db.get_user(uid)
+    if not u:
+        return jsonify({"error": "No such user."}), 404
+    text = auth_db.export_user_text(uid)
+    safe = "".join(c if (c.isalnum() or c in "-_") else "_" for c in (u["username"] or "")) or "user"
+    fname = f"hands_{safe}_{time.strftime('%Y-%m-%d')}.txt"
+    return Response(text, mimetype="text/plain",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
 @app.route("/api/admin/user/<int:uid>/password", methods=["POST"])
 @admin_required
 def api_admin_reset_password(uid):

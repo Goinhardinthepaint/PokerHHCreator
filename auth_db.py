@@ -1025,3 +1025,18 @@ def export_all_text():
     ).fetchall()
     conn.close()
     return "\n\n\n".join(r["pt4_text"].strip() for r in rows) + "\n"
+
+
+def export_user_text(user_id):
+    """All of one worker's completed hands as RAW PT4 text, two blank lines
+    between, sorted by stream date then timestamp — for the admin per-user export."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT h.pt4_text AS pt4_text FROM hands h "
+        "LEFT JOIN streams s ON h.stream_id = s.id "
+        "WHERE h.user_id = ? AND COALESCE(h.type,'hand') = 'hand' "
+        "AND h.pt4_text IS NOT NULL AND h.pt4_text != '' "
+        "ORDER BY s.date, h.timestamp_seconds, h.id", (user_id,)
+    ).fetchall()
+    conn.close()
+    return "\n\n\n".join(r["pt4_text"].strip() for r in rows) + "\n"
