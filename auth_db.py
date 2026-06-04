@@ -217,6 +217,13 @@ def init_db():
         except Exception:
             conn.rollback()  # seeding is best-effort; don't poison the connection
 
+    # Backfill post-hand snapshots for older hands that predate next_state, so
+    # clicking them in the sidebar restores the table (esp. imported hands).
+    try:
+        backfill_snapshots(conn)
+    except Exception as e:
+        print(f"snapshot backfill skipped: {e}", flush=True)
+
     # Report what was loaded — confirms the DB persisted across restarts/deploys.
     n_users = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
     n_hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()["n"]
@@ -429,6 +436,38 @@ def delete_hand(hand_id, user_id):
     return deleted > 0
 
 
+def backfill_snapshots(conn=None):
+    """Generate next_state snapshots for every real hand that lacks one, by
+    parsing its stored pt4_text. Idempotent — only fills NULL/empty next_state.
+    Returns the number of hands updated."""
+    import hand_import
+
+    own = conn is None
+    if own:
+        conn = get_db()
+    rows = conn.execute(
+        "SELECT id, pt4_text FROM hands WHERE COALESCE(type,'hand') = 'hand' "
+        "AND (next_state IS NULL OR next_state = '') "
+        "AND pt4_text IS NOT NULL AND pt4_text != ''"
+    ).fetchall()
+    n = 0
+    for r in rows:
+        try:
+            ns = hand_import.next_state_from_pt4(r["pt4_text"])
+        except Exception:
+            ns = None
+        if ns:
+            conn.execute("UPDATE hands SET next_state = ? WHERE id = ?",
+                         (json.dumps(ns), r["id"]))
+            n += 1
+    conn.commit()
+    if own:
+        conn.close()
+    if n:
+        print(f"Backfilled {n} hand snapshot(s)", flush=True)
+    return n
+
+
 def import_hands(raw_text, user_id):
     """Bulk-import raw PT4 hand-history text under `user_id` (the admin).
 
@@ -493,15 +532,20 @@ def import_hands(raw_text, user_id):
                 new_time = hand_import.secs_to_hms(ts) if p["has_timestamp"] else None
                 text = hand_import.rewrite_header(text, new_date=stream_date, new_time=new_time)
 
-            # ── Earnings + insert ─────────────────────────────────────────────
+            # ── Earnings + post-hand snapshot + insert ────────────────────────
             cards, actions = p["cards_count"], p["actions_count"]
             earnings = _hand_earnings(cards, actions)
+            try:
+                next_state = hand_import.next_state_from_pt4(text)
+            except Exception:
+                next_state = None
             conn.execute(
                 "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, "
-                "pt4_text, cards_count, actions_count, earnings, type, hand_number, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "pt4_text, cards_count, actions_count, earnings, type, hand_number, "
+                "next_state, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (user_id, vid or "", p["youtube_url"] or None, ts, text,
-                 cards, actions, earnings, "hand", hand_number, now_iso()),
+                 cards, actions, earnings, "hand", hand_number,
+                 json.dumps(next_state) if next_state else None, now_iso()),
             )
             imported += 1
         conn.commit()

@@ -1302,8 +1302,14 @@ function HandBuilder({ me, refreshMe }) {
     setNumRuns(1); setRunsChosen(false); setExtraBoards([]); setRunWinners([]);
     setWinner(""); setPreview(""); setError(""); setBuyButton(null); setBuyMenuSeat(null);
     setPhase("setup");
-    const nextN = snap.handNumber != null ? snap.handNumber : (card.n || 0) + 1;
-    setFlash(`Restored to after Hand #${nextN - 1} — ready for Hand #${nextN}`);
+    // Live hands carry a session hand number; imported/parsed snapshots don't —
+    // fall back to the local hand # or the timestamp for the confirmation label.
+    const afterLabel =
+      snap.handNumber != null ? `Hand #${snap.handNumber - 1}`
+        : card.n ? `Hand #${card.n}`
+        : card.timestamp ? `the hand at ${card.timestamp}`
+        : "that hand";
+    setFlash(`Restored to after ${afterLabel} — ready for next hand`);
     setTimeout(() => setFlash(""), 3200);
   }
 

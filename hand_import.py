@@ -140,6 +140,163 @@ def parse_hand(block):
     }
 
 
+# ── Post-hand snapshot (player ending stacks, rotated button) ─────────────────
+_SEAT_RE = re.compile(r"^Seat (\d+): (.+?) \(\$(-?\d+) in chips\)$", re.MULTILINE)
+_BUTTON_RE = re.compile(r"Seat #(\d+) is the button")
+_ANTE_RE = re.compile(r"^(.+?): posts the ante \$(\d+)$")
+_BLIND_RE = re.compile(r"^(.+?): posts (?:small blind|big blind|straddle) \$(\d+)$")
+_CALL_RE = re.compile(r"^(.+?): calls \$(\d+)")
+_BET_RE = re.compile(r"^(.+?): bets \$(\d+)")
+_RAISE_RE = re.compile(r"^(.+?): raises \$\d+ to \$(\d+)")
+_COLLECT_RE = re.compile(r"^(.+?) collected \$(\d+) from pot$")
+_UNCALLED_RE = re.compile(r"^Uncalled bet \(\$(\d+)\) returned to (.+)$")
+
+
+def _next_occupied_seat(button_seat, seats):
+    """Seat clockwise (ascending, wrapping) from the button among `seats`."""
+    occ = sorted(seats)
+    if not occ:
+        return button_seat
+    after = [s for s in occ if s > button_seat]
+    return after[0] if after else occ[0]
+
+
+def parse_pt4_snapshot(pt4_text):
+    """Reconstruct the post-hand table state from raw PT4 text.
+
+    Returns: { players: [{name, seat, startStack, endStack}], buttonSeat,
+    nextButtonSeat, youtubeUrl, timestamp } — or None if no seats are found.
+
+    Ending stack = startStack - total invested + pot collected + uncalled returned.
+    Investment is summed per street: posts/calls/bets add their amount, a
+    "raises $inc to $total" sets that street's commitment to $total (absolute)."""
+    text = (pt4_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not text.strip():
+        return None
+
+    seats = {}        # name -> {name, seat, startStack}
+    by_seat = {}
+    for m in _SEAT_RE.finditer(text):
+        seat, name, stack = int(m.group(1)), m.group(2).strip(), int(m.group(3))
+        seats[name] = {"name": name, "seat": seat, "startStack": stack}
+        by_seat[seat] = name
+    if not seats:
+        return None
+
+    bm = _BUTTON_RE.search(text)
+    button_seat = int(bm.group(1)) if bm else min(by_seat)
+
+    invested = {n: 0 for n in seats}
+    collected = {n: 0 for n in seats}
+    street_commit = {}
+
+    def flush():
+        for n, v in street_commit.items():
+            if n in invested:
+                invested[n] += v
+        street_commit.clear()
+
+    for line in text.split("\n"):
+        line = line.rstrip()
+        # A new street resets per-street commitments; HOLE CARDS is still preflop.
+        if line.startswith("***"):
+            if "HOLE CARDS" not in line:
+                flush()
+            continue
+        m = _ANTE_RE.match(line)
+        if m:
+            # Antes are separate from street commitment — a later "raises to $total"
+            # is the blind/bet total and must NOT absorb the ante.
+            if m.group(1) in invested:
+                invested[m.group(1)] += int(m.group(2))
+            continue
+        m = _BLIND_RE.match(line)
+        if m:
+            street_commit[m.group(1)] = street_commit.get(m.group(1), 0) + int(m.group(2))
+            continue
+        m = _RAISE_RE.match(line)
+        if m:
+            street_commit[m.group(1)] = int(m.group(2))   # absolute street total
+            continue
+        m = _CALL_RE.match(line)
+        if m:
+            street_commit[m.group(1)] = street_commit.get(m.group(1), 0) + int(m.group(2))
+            continue
+        m = _BET_RE.match(line)
+        if m:
+            street_commit[m.group(1)] = street_commit.get(m.group(1), 0) + int(m.group(2))
+            continue
+        # Winnings — only the body lines (the SUMMARY repeats start with "Seat ").
+        if not line.startswith("Seat "):
+            m = _COLLECT_RE.match(line)
+            if m and m.group(1) in collected:
+                collected[m.group(1)] += int(m.group(2))
+                continue
+        m = _UNCALLED_RE.match(line)
+        if m and m.group(2).strip() in collected:
+            collected[m.group(2).strip()] += int(m.group(1))  # returned to stack
+    flush()
+
+    players = []
+    for name, info in seats.items():
+        end = info["startStack"] - invested[name] + collected[name]
+        players.append({"name": name, "seat": info["seat"],
+                        "startStack": info["startStack"], "endStack": end})
+    players.sort(key=lambda p: p["seat"])
+
+    # Next button = clockwise to the next seat that still has chips (else any seat).
+    live_seats = [p["seat"] for p in players if p["endStack"] > 0] or [p["seat"] for p in players]
+    next_button = _next_occupied_seat(button_seat, live_seats)
+
+    # YouTube URL + timestamp from the Table line.
+    tm = _TABLE_RE.search(text)
+    table_name = tm.group(1).strip() if tm else ""
+    vid = _video_id_from(table_name, text) if table_name else ""
+    ts = 0
+    pm = _T_PARAM_RE.search(table_name) or _T_PARAM_RE.search(text)
+    if pm:
+        ts = int(pm.group(1))
+    else:
+        hm = _HCL_TS_RE.search(table_name)
+        if hm:
+            ts = int(hm.group(1)) * 60 + int(hm.group(2))
+    if table_name.lower().startswith("http"):
+        youtube_url = table_name
+    elif vid:
+        youtube_url = f"https://youtu.be/{vid}" + (f"?t={ts}" if ts else "")
+    else:
+        youtube_url = ""
+
+    return {
+        "players": players,
+        "buttonSeat": button_seat,
+        "nextButtonSeat": next_button,
+        "youtubeUrl": youtube_url,
+        "timestamp": ts,
+    }
+
+
+def snapshot_to_next_state(snap):
+    """Adapt a parse_pt4_snapshot() result into the frontend's next_state shape
+    ({ roster:[{seat,name,stack}], buttonSeat }). Busted players (<=0 chips) are
+    stood up (name cleared) so they're not dealt the next hand."""
+    if not snap or not snap.get("players"):
+        return None
+    roster = []
+    for p in snap["players"]:
+        end = p["endStack"]
+        if end <= 0:
+            roster.append({"seat": p["seat"], "name": "", "stack": 0})
+        else:
+            roster.append({"seat": p["seat"], "name": p["name"], "stack": end})
+    return {"roster": roster, "buttonSeat": snap["nextButtonSeat"]}
+
+
+def next_state_from_pt4(pt4_text):
+    """Convenience: PT4 text -> stored next_state snapshot (or None)."""
+    return snapshot_to_next_state(parse_pt4_snapshot(pt4_text))
+
+
 def rewrite_header(text, new_date=None, new_time=None):
     """Rewrite the header's date and/or time. new_date is 'YYYY-MM-DD' or
     'YYYY/MM/DD'; new_time is 'HH:MM:SS'. A None component is left untouched.
