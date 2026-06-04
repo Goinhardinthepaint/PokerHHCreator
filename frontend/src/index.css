@@ -25,3 +25,19 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* Empty YouTube-link field: pulse an amber border to prompt a fresh link. */
+@keyframes ytFlash {
+  0%,
+  100% {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+  }
+}
+.yt-empty-flash {
+  animation: ytFlash 1.4s ease-in-out infinite;
+}

@@ -676,6 +676,9 @@ function HandBuilder({ me, refreshMe }) {
   });
   const [videoDate, setVideoDate] = useState(() => pick("videoDate", TODAY_ISO)); // session's YouTube video date
   const [sessionLabel, setSessionLabel] = useState(() => pick("sessionLabel", "")); // stream name, e.g. "HCL Stream"
+  // {videoId, startSec} of the LAST recorded hand — used to reject re-pasting the
+  // exact same timestamp (every hand needs its own). Same video, different time is fine.
+  const [lastHandKey, setLastHandKey] = useState(() => pick("lastHandKey", null));
 
   // ── Side game mode ─────────────────────────────────────────────────────────
   // A simplified flow for non-standard side games (Squid Game, Bounty Game, …):
@@ -724,6 +727,16 @@ function HandBuilder({ me, refreshMe }) {
     const l = youtubeLink.trim();
     return /youtube\.com|youtu\.be/i.test(l) && /[?&](?:t|start)=/.test(l) && !!extractVideoId(l);
   }, [youtubeLink]);
+
+  // The pasted link is a DUPLICATE of the last recorded hand when it's the same
+  // video AND the same timestamp. Same video with a new timestamp is allowed.
+  const ytDuplicate = useMemo(() => {
+    if (!ytReady || !lastHandKey) return false;
+    const { id, startSec } = parseYouTube(youtubeLink);
+    return !!id && id === lastHandKey.videoId && (startSec || 0) === (lastHandKey.startSec || 0);
+  }, [ytReady, youtubeLink, lastHandKey]);
+  // The deal button only lights up for a valid, NON-duplicate timestamped link.
+  const canDeal = ytReady && !ytDuplicate;
 
   // ── Server-stored hands (for the Hand Manager + timeline) ──────────────────
   // {hands:[...], stream:{...}|null, last_timestamp:int|null}. Scoped to the
@@ -1007,13 +1020,13 @@ function HandBuilder({ me, refreshMe }) {
           stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
-          sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive,
+          sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey]);
 
 
   // Board cards required to deal the next street
@@ -1127,6 +1140,10 @@ function HandBuilder({ me, refreshMe }) {
       setError("Paste a timestamped YouTube link to deal.");
       return;
     }
+    if (ytDuplicate) {
+      setError("This is the same timestamp as the last hand. Each hand needs its own timestamp.");
+      return;
+    }
     if (named.length < 2) {
       setError("Add at least 2 players in the sidebar.");
       setSidebarOpen(true);
@@ -1231,6 +1248,7 @@ function HandBuilder({ me, refreshMe }) {
         if (refreshMe) refreshMe();
       } catch { /* offline — the local record still stands */ }
     }
+    if (videoId) setLastHandKey({ videoId, startSec }); // block re-using this exact timestamp
     setFlash(`7-2 side game — ${holder?.name || "?"} VPIPed with ${cardsStr || "7-2"} · +$${SIDE_GAME_RATE.toFixed(2)}`);
     setTimeout(() => setFlash(""), 2800);
     advanceToNextHand();
@@ -1331,6 +1349,7 @@ function HandBuilder({ me, refreshMe }) {
         ].sort((a, b) => a.n - b.n)
       );
       setHandPanelOpen(true); // surface the new card in the Hand Manager
+      setLastHandKey({ videoId, startSec }); // block re-using this exact timestamp
       if (refreshMe) refreshMe();
       fetchHands();
 
@@ -1427,6 +1446,7 @@ function HandBuilder({ me, refreshMe }) {
     setSevenTwoDetect(null);
     setSevenTwoVpip(null);
     setSevenTwoHandled(false);
+    setLastHandKey(null);
     setPhase("setup");
   }
 
@@ -1905,23 +1925,34 @@ function HandBuilder({ me, refreshMe }) {
       <main style={styles.main}>
         <div style={styles.topBar}>
           <div style={styles.logo}><span style={styles.chip}>♠</span> POKER TABLE</div>
-          <div style={styles.ytWrap} data-tour="youtube">
-            <span style={styles.ytIcon}>📺</span>
-            <input
-              style={styles.ytInput}
-              value={youtubeLink}
-              onChange={(e) => setYoutubeLink(e.target.value)}
-              placeholder="Paste timestamped YouTube link for this hand…"
-            />
-            {(() => {
-              const { url, id, startSec } = parseYouTube(youtubeLink);
-              if (!url) return null;
-              return (
-                <a href={url} target="_blank" rel="noreferrer" style={styles.ytParsed} title={url}>
-                  {(id || "link")}{startSec > 0 ? ` @ ${secsToHMS(startSec)}` : ""} ↗
-                </a>
-              );
-            })()}
+          <div style={styles.ytField}>
+            <div
+              style={{ ...styles.ytWrap, ...(ytDuplicate ? styles.ytWrapDup : {}) }}
+              className={!youtubeLink.trim() ? "yt-empty-flash" : undefined}
+              data-tour="youtube"
+            >
+              <span style={styles.ytIcon}>📺</span>
+              <input
+                style={styles.ytInput}
+                value={youtubeLink}
+                onChange={(e) => setYoutubeLink(e.target.value)}
+                placeholder="Paste timestamped YouTube link for this hand…"
+              />
+              {(() => {
+                const { url, id, startSec } = parseYouTube(youtubeLink);
+                if (!url) return null;
+                return (
+                  <a href={url} target="_blank" rel="noreferrer" style={styles.ytParsed} title={url}>
+                    {(id || "link")}{startSec > 0 ? ` @ ${secsToHMS(startSec)}` : ""} ↗
+                  </a>
+                );
+              })()}
+            </div>
+            {!youtubeLink.trim() ? (
+              <div style={styles.ytHelp}>Paste a new timestamped YouTube link to continue</div>
+            ) : ytDuplicate ? (
+              <div style={styles.ytWarn}>⚠ Same timestamp as the last hand — each hand needs its own.</div>
+            ) : null}
           </div>
           <div style={styles.topMeta}>
             <div style={styles.statTracker} data-tour="earnings">
@@ -2128,15 +2159,19 @@ function HandBuilder({ me, refreshMe }) {
 
           {!sideGameMode && phase === "setup" && (
             <div style={styles.barCenter}>
-              <div style={{ ...styles.barHint, color: ytReady ? "#94a3b8" : "#fbbf24" }}>
-                {ytReady ? `${named.length} players seated · button on Seat ${buttonSeat}` : "⚠ Paste a timestamped YouTube link to deal"}
+              <div style={{ ...styles.barHint, color: canDeal ? "#94a3b8" : "#fbbf24" }}>
+                {ytDuplicate
+                  ? "⚠ This is the same timestamp as the last hand. Each hand needs its own timestamp."
+                  : !ytReady
+                  ? "⚠ Paste a new timestamped YouTube link to deal"
+                  : `${named.length} players seated · button on Seat ${buttonSeat}`}
               </div>
               <button
-                style={{ ...styles.dealBtn, opacity: ytReady ? 1 : 0.4, cursor: ytReady ? "pointer" : "not-allowed", boxShadow: ytReady ? styles.dealBtn.boxShadow : "none" }}
-                disabled={!ytReady}
+                style={{ ...styles.dealBtn, opacity: canDeal ? 1 : 0.4, cursor: canDeal ? "pointer" : "not-allowed", boxShadow: canDeal ? styles.dealBtn.boxShadow : "none" }}
+                disabled={!canDeal}
                 onClick={dealHand}
                 data-tour="deal"
-                title={ytReady ? undefined : "Paste a timestamped YouTube link first"}
+                title={canDeal ? undefined : ytDuplicate ? "Paste a link with a new timestamp" : "Paste a timestamped YouTube link first"}
               >♠ DEAL HAND</button>
             </div>
           )}
@@ -2429,7 +2464,11 @@ const styles = {
   topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 22px 12px 34px", borderBottom: "1px solid #141e2e" },
   logo: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, letterSpacing: 2, fontSize: 16 },
   chip: { display: "inline-flex", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 16 },
-  ytWrap: { display: "flex", alignItems: "center", gap: 8, flex: 1, maxWidth: 460, margin: "0 18px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 10px" },
+  ytField: { display: "flex", flexDirection: "column", gap: 3, flex: 1, maxWidth: 460, margin: "0 18px" },
+  ytWrap: { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 10px", boxSizing: "border-box" },
+  ytWrapDup: { borderColor: "#ef4444", background: "#1f1113" },
+  ytHelp: { fontSize: 10.5, color: "#fbbf24", paddingLeft: 4, fontWeight: 600 },
+  ytWarn: { fontSize: 10.5, color: "#fca5a5", paddingLeft: 4, fontWeight: 700 },
   ytIcon: { fontSize: 14, opacity: 0.8 },
   ytInput: { flex: 1, background: "transparent", border: "none", outline: "none", color: "#e2e8f0", fontSize: 12.5, fontFamily: "inherit", minWidth: 0 },
   ytParsed: { fontSize: 10.5, color: "#4ade80", whiteSpace: "nowrap", fontWeight: 600, textDecoration: "none", cursor: "pointer" },
