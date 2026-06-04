@@ -633,7 +633,6 @@ function HandBuilder({ me, refreshMe }) {
   // Drag-and-drop reorder state (UI only): the row being dragged + the insertion slot.
   const [dragIdx, setDragIdx] = useState(null);
   const [dropIdx, setDropIdx] = useState(null);
-  const [dragArmed, setDragArmed] = useState(false); // true only while the ≡ handle is held
 
   // Hand state
   const [phase, setPhase] = useState(() => pick("phase", "setup")); // setup | holecards | betting | complete
@@ -1656,20 +1655,31 @@ function HandBuilder({ me, refreshMe }) {
                 {dragIdx != null && dropIdx === i && <div style={styles.dropLine} />}
                 <div
                   style={{ ...styles.rosterRow, ...(dragIdx === i ? styles.rosterRowDragging : {}) }}
-                  draggable={dragArmed && !locked}
-                  onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = "move"; }}
-                  onDragEnd={() => { setDragIdx(null); setDropIdx(null); setDragArmed(false); }}
+                  draggable={!locked}
+                  onDragStart={(e) => {
+                    // The row is draggable, but a drag that starts inside the
+                    // name/stack/seat inputs (or the buttons) is cancelled so text
+                    // editing/selection still works — only the ≡ handle or the row
+                    // chrome begins a reorder.
+                    if (locked || ["INPUT", "BUTTON", "SELECT"].includes(e.target.tagName)) {
+                      e.preventDefault();
+                      return;
+                    }
+                    setDragIdx(i);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(i));
+                  }}
+                  onDragEnd={() => { setDragIdx(null); setDropIdx(null); }}
                   onDragOver={(e) => {
                     if (dragIdx == null) return;
                     e.preventDefault();
                     const rect = e.currentTarget.getBoundingClientRect();
                     setDropIdx(e.clientY - rect.top > rect.height / 2 ? i + 1 : i);
                   }}
-                  onDrop={(e) => { e.preventDefault(); moveRosterRow(dragIdx, dropIdx); setDragIdx(null); setDropIdx(null); setDragArmed(false); }}
+                  onDrop={(e) => { e.preventDefault(); moveRosterRow(dragIdx, dropIdx); setDragIdx(null); setDropIdx(null); }}
                 >
                   {!locked && (
-                    <span style={styles.dragHandle} title="Drag to reorder"
-                      onMouseDown={() => setDragArmed(true)} onMouseUp={() => setDragArmed(false)}>≡</span>
+                    <span style={styles.dragHandle} title="Drag to reorder">≡</span>
                   )}
                   <input
                     style={{ ...styles.seatNumInput, ...(autoNumber ? styles.seatNumAuto : {}) }}
