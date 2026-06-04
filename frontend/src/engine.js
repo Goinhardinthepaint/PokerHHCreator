@@ -212,6 +212,13 @@ function nextActorSeat(state, lastSeat) {
 function settleActor(state, candidate) {
   // If everyone but one has folded, the hand is over — no option to give out.
   if (state.players.filter((x) => !x.folded).length <= 1) return closeStreet(state);
+  // Effectively all-in: no one can still bet (all all-in), or the single player
+  // with chips has nothing left to call. Skip the action phase and run the board
+  // out instead of asking that player to check down each remaining street.
+  const canAct = state.players.filter((x) => !x.folded && !x.allIn);
+  if (canAct.length === 0 || (canAct.length === 1 && canAct[0].committedStreet >= state.currentBet)) {
+    return closeStreet(state);
+  }
   const p = state.players.find((x) => x.seat === candidate);
   if (p && needsToAct(p, state.currentBet)) {
     state.actorSeat = candidate;

@@ -826,37 +826,14 @@ def export_stream_text(stream_id):
 
 
 def export_all_text():
-    """The entire database as one human-readable .txt (hands grouped by user)."""
+    """Every stored hand as RAW PT4 text -- hand after hand, two blank lines
+    between, with no headers, metadata, or indentation, so the .txt imports
+    directly via PokerTracker's File -> Import Hand Histories."""
     conn = get_db()
-    lines = []
-    lines.append("=" * 70)
-    lines.append("POKER HAND BUILDER — FULL DATABASE EXPORT")
-    lines.append(f"Generated: {now_iso()}")
-    lines.append("=" * 70)
-    for u in conn.execute("SELECT * FROM users ORDER BY id").fetchall():
-        bd = _earnings_breakdown(conn, u["id"])
-        lines.append("")
-        lines.append(f"USER #{u['id']}  {u['username']}" + ("  [ADMIN]" if u["is_admin"] else ""))
-        lines.append(f"  email: {u['email'] or '-'}   joined: {u['created_at']}")
-        lines.append(f"  hands: {bd['hands']}   base: ${bd['base']:.2f}   "
-                     f"stream bonus: ${bd['stream_bonus']:.2f}   total: ${bd['total']:.2f}")
-        lines.append(f"  paid: ${bd['paid']:.2f}   owed: ${bd['owed']:.2f}")
-        pays = conn.execute(
-            "SELECT amount, date, note FROM payments WHERE user_id = ? ORDER BY id", (u["id"],)
-        ).fetchall()
-        for p in pays:
-            lines.append(f"    payment ${p['amount']:.2f} on {p['date']} — {p['note'] or ''}")
-        hands = conn.execute(
-            "SELECT * FROM hands WHERE user_id = ? ORDER BY id", (u["id"],)
-        ).fetchall()
-        for h in hands:
-            lines.append("")
-            lines.append(f"  --- hand #{h['id']}  stream={h['stream_id']}  "
-                         f"t={h['timestamp_seconds']}s  {h['created_at']} ---")
-            if h["youtube_url"]:
-                lines.append(f"  {h['youtube_url']}")
-            if h["pt4_text"]:
-                for ln in h["pt4_text"].splitlines():
-                    lines.append("  " + ln)
+    rows = conn.execute(
+        "SELECT pt4_text FROM hands WHERE COALESCE(type,'hand') = 'hand' "
+        "AND pt4_text IS NOT NULL AND pt4_text != '' "
+        "ORDER BY stream_id, timestamp_seconds, id"
+    ).fetchall()
     conn.close()
-    return "\n".join(lines) + "\n"
+    return "\n\n\n".join(r["pt4_text"].strip() for r in rows) + "\n"

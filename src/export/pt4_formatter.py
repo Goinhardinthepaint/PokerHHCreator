@@ -355,10 +355,15 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
     _p = stakes.split("/")
     sb_amount, bb_amount = int(_p[0]), int(_p[1])
 
+    # Header date/time = the YouTube stream's date + the time derived from the
+    # link's ?t= seconds (timestamp_start, "HH:MM:SS"). NOT the current clock.
     timestamp_str = hand.get("timestamp_start", "00:00:00")
     hand_id = generate_hand_id(stream_url, timestamp_str, hand_index)
-    now = datetime.now()
-    dt_str = now.strftime("%Y/%m/%d %H:%M:%S") + " ET"
+    try:
+        date_part = datetime.strptime((hand.get("video_date") or "").strip(), "%Y-%m-%d").strftime("%Y/%m/%d")
+    except (ValueError, TypeError):
+        date_part = datetime.now().strftime("%Y/%m/%d")  # fallback when no stream date
+    dt_str = f"{date_part} {timestamp_str} ET"
 
     # ── Header ────────────────────────────────────────────────────────────────
     lines.append(

@@ -1103,6 +1103,7 @@ function HandBuilder({ me, refreshMe }) {
       const { url, startSec, id: videoId } = parseYouTube(link);
       if (startSec > 0) hand.timestamp_start = secsToHMS(startSec);
       if (url) hand.table_name = url; // timestamped link → PT4 table name
+      if (videoDate) hand.video_date = videoDate; // stream date → PT4 header date
 
       const n = handNumber;
       const { cards, actions } = handPieces;
@@ -1254,7 +1255,7 @@ function HandBuilder({ me, refreshMe }) {
   function computeNextHandState() {
     let newRoster = roster;
     if (eng) {
-      const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || phase === "complete";
+      const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || numRuns >= 2 || phase === "complete";
       if (resolved) {
         const ends = computeEndStacks(eng, { numRuns, runWinners, winner: autoEval ? autoEval.winner : winner, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
         newRoster = roster.map((p) => {
@@ -1312,7 +1313,9 @@ function HandBuilder({ me, refreshMe }) {
     let newRoster = roster;
     if (eng) {
       const survList = eng.players.filter((p) => !p.folded);
-      const resolved = survList.length === 1 || phase === "complete";
+      // The hand reached a result whenever it's uncontested, ran to the river,
+      // was an all-in run-out (incl. multi-run), or was explicitly completed.
+      const resolved = survList.length === 1 || eng.handOver || eng.street === "river" || numRuns >= 2 || phase === "complete";
       if (resolved) {
         const ends = computeEndStacks(eng, { numRuns, runWinners, winner: autoEval ? autoEval.winner : winner, winners: autoEval ? autoEval.winners : winner ? [winner] : [], holeCards, board });
         newRoster = roster.map((p) => {
