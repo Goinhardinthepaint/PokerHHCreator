@@ -707,6 +707,31 @@ def api_admin_export():
                     headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
+@app.route("/api/admin/import-hands", methods=["POST"])
+@admin_required
+def api_admin_import_hands():
+    """Import raw PT4 hand-history text, from uploaded .txt file(s) and/or a
+    pasted-text body, under the admin's user id."""
+    chunks = []
+    for f in request.files.getlist("files"):
+        try:
+            chunks.append(f.read().decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+    pasted = (request.form.get("text") if request.form else None)
+    if pasted is None and request.is_json:
+        pasted = (request.json or {}).get("text")
+    if pasted:
+        chunks.append(pasted)
+
+    raw = "\n\n\n".join(c for c in chunks if c and c.strip())
+    if not raw.strip():
+        return jsonify({"error": "No hand-history text provided (upload a .txt file or paste text)."}), 400
+
+    result = auth_db.import_hands(raw, session["user_id"])
+    return jsonify(result)
+
+
 # ── Serve the built React frontend (single server, one port) ─────────────────
 _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
 

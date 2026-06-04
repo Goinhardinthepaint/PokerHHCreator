@@ -67,6 +67,8 @@ export default function Admin() {
         <Stat label="Payments made" value={fmtMoney(p.paid)} accent="#4ade80" />
       </div>
 
+      <ImportHands onImported={loadOverview} />
+
       <div style={st.tabs}>
         <button style={{ ...st.tab, ...(tab === "users" ? st.tabOn : {}) }} onClick={() => setTab("users")}>Users</button>
         <button style={{ ...st.tab, ...(tab === "streams" ? st.tabOn : {}) }} onClick={() => setTab("streams")}>Streams</button>
@@ -150,6 +152,70 @@ export default function Admin() {
           onPaid={(updated) => { setDetail(updated); loadOverview(); }}
         />
       )}
+    </div>
+  );
+}
+
+// Import raw PT4 hand histories: upload .txt file(s) and/or paste text, then
+// POST to /api/admin/import-hands (multipart — bypasses the JSON api() helper).
+function ImportHands({ onImported }) {
+  const [files, setFiles] = useState([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  const canImport = files.length > 0 || text.trim().length > 0;
+
+  const doImport = async () => {
+    setBusy(true); setError(""); setResult(null);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      if (text.trim()) fd.append("text", text);
+      const res = await fetch("/api/admin/import-hands", { method: "POST", credentials: "include", body: fd });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error) || `Import failed (${res.status})`);
+      setResult(data);
+      setFiles([]); setText("");
+      onImported && onImported();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const nStreams = result ? Object.keys(result.streams || {}).length : 0;
+
+  return (
+    <div style={st.importPanel}>
+      <div style={st.section}>Import Hands</div>
+      <div style={st.importRow}>
+        <label style={st.fileBtn}>
+          📁 Choose .txt file(s)
+          <input type="file" accept=".txt,text/plain" multiple style={{ display: "none" }}
+            onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+        </label>
+        {files.length > 0 && <span style={st.dim}>{files.map((f) => f.name).join(", ")}</span>}
+      </div>
+      <textarea style={st.importArea} placeholder="Or paste hand histories here…"
+        value={text} onChange={(e) => setText(e.target.value)} />
+      <div style={st.importRow}>
+        <button style={{ ...st.payBtn, opacity: canImport && !busy ? 1 : 0.5 }}
+          disabled={!canImport || busy} onClick={doImport}>
+          {busy ? "Importing…" : "Import"}
+        </button>
+        {result && (
+          <span style={st.importResult}>
+            ✓ Imported <strong>{result.imported}</strong> hands, skipped{" "}
+            <strong>{result.skipped}</strong> duplicates, <strong>{result.errors}</strong> errors
+            {nStreams > 0 ? ` · ${nStreams} stream${nStreams === 1 ? "" : "s"} updated` : ""}
+          </span>
+        )}
+      </div>
+      {result && result.error_details && result.error_details.length > 0 && (
+        <div style={st.importErrList}>
+          {result.error_details.map((d, i) => <div key={i}>• {d}</div>)}
+        </div>
+      )}
+      {error && <div style={st.err}>⚠ {error}</div>}
     </div>
   );
 }
@@ -357,6 +423,12 @@ const st = {
   tr: { cursor: "pointer", borderBottom: "1px solid #141e2e" },
   td: { padding: "9px 10px", fontSize: 13 },
   adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 800, color: "#0a0e17", background: "#f59e0b", borderRadius: 6, padding: "1px 5px" },
+  importPanel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: "12px 16px", marginBottom: 16 },
+  importRow: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "8px 0" },
+  fileBtn: { display: "inline-block", padding: "8px 14px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  importArea: { width: "100%", minHeight: 110, boxSizing: "border-box", padding: "10px 11px", background: "#06090f", border: "1px solid #1e293b", borderRadius: 8, color: "#a5d6a7", fontSize: 11.5, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.5, resize: "vertical", outline: "none" },
+  importResult: { fontSize: 13, color: "#cbd5e1" },
+  importErrList: { marginTop: 8, fontSize: 11.5, color: "#fbbf24", background: "#241a06", border: "1px solid #5a4410", borderRadius: 8, padding: "8px 10px", maxHeight: 140, overflowY: "auto" },
   rowActions: { display: "flex", gap: 6 },
   resetBtn: { padding: "5px 9px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 6, color: "#cbd5e1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   delBtn: { padding: "5px 9px", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 6, color: "#fca5a5", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },

@@ -185,6 +185,7 @@ def init_db():
     _add_column(conn, "users", "error_count INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "users", "tutorial_completed INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "hands", "type TEXT NOT NULL DEFAULT 'hand'")  # 'hand' | 'tutorial_bonus'
+    _add_column(conn, "hands", "hand_number TEXT")        # PokerStars Hand # (import dedup)
     conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
@@ -426,6 +427,101 @@ def delete_hand(hand_id, user_id):
     deleted = cur.rowcount
     conn.close()
     return deleted > 0
+
+
+def import_hands(raw_text, user_id):
+    """Bulk-import raw PT4 hand-history text under `user_id` (the admin).
+
+    For each hand: parse it, dedupe (by Hand # or by video-id+timestamp), look up
+    the stream (auto-creating one from the URL if absent), rewrite the header's
+    date (and time, when a timestamp is known) from the stream's date, score
+    earnings, and insert. Returns a summary dict:
+        { imported, skipped, errors, error_details, streams: {vid: count} }."""
+    import hand_import  # local import avoids a circular import at module load
+
+    blocks = hand_import.split_hands(raw_text)
+    imported = skipped = errors = 0
+    error_details = []
+    affected = set()
+    conn = get_db()
+    try:
+        for block in blocks:
+            try:
+                p = hand_import.parse_hand(block)
+            except Exception as e:
+                errors += 1
+                error_details.append(str(e))
+                continue
+
+            hand_number = p["hand_number"]
+            vid = p["video_id"]
+            ts = p["timestamp_seconds"]
+
+            # ── Duplicate detection ───────────────────────────────────────────
+            dup = False
+            if hand_number and conn.execute(
+                "SELECT 1 FROM hands WHERE hand_number = ? LIMIT 1", (hand_number,)
+            ).fetchone():
+                dup = True
+            # Same video + same (non-zero) timestamp is the same hand. ts==0 means
+            # "no timestamp", so we don't dedupe distinct Livestream hands on it.
+            if not dup and vid and ts > 0 and conn.execute(
+                "SELECT 1 FROM hands WHERE stream_id = ? AND timestamp_seconds = ? "
+                "AND COALESCE(type,'hand') = 'hand' LIMIT 1", (vid, ts)
+            ).fetchone():
+                dup = True
+            if dup:
+                skipped += 1
+                continue
+
+            # ── Stream lookup / auto-create ───────────────────────────────────
+            stream_date = None
+            if vid:
+                srow = conn.execute("SELECT date FROM streams WHERE id = ?", (vid,)).fetchone()
+                if srow:
+                    stream_date = srow["date"]
+                else:
+                    conn.execute(
+                        "INSERT INTO streams (id, youtube_url, is_complete) VALUES (?,?,0) "
+                        "ON CONFLICT DO NOTHING", (vid, p["youtube_url"] or None),
+                    )
+                affected.add(vid)
+
+            # ── Date/time rewrite (only when the stream date is known) ────────
+            text = p["text"]
+            if stream_date:
+                new_time = hand_import.secs_to_hms(ts) if p["has_timestamp"] else None
+                text = hand_import.rewrite_header(text, new_date=stream_date, new_time=new_time)
+
+            # ── Earnings + insert ─────────────────────────────────────────────
+            cards, actions = p["cards_count"], p["actions_count"]
+            earnings = _hand_earnings(cards, actions)
+            conn.execute(
+                "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, "
+                "pt4_text, cards_count, actions_count, earnings, type, hand_number, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (user_id, vid or "", p["youtube_url"] or None, ts, text,
+                 cards, actions, earnings, "hand", hand_number, now_iso()),
+            )
+            imported += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    # Recalculate per-stream hand counts (derived) for the affected streams.
+    streams = {}
+    for vid in affected:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM hands WHERE stream_id = ? AND COALESCE(type,'hand') = 'hand'",
+            (vid,),
+        ).fetchone()
+        streams[vid] = row["n"]
+    conn.close()
+    return {
+        "imported": imported, "skipped": skipped, "errors": errors,
+        "error_details": error_details[:20], "streams": streams,
+    }
 
 
 def stream_meta(stream_id):
