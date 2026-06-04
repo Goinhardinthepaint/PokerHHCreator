@@ -27,6 +27,27 @@ export default function Admin() {
     catch (e) { setError(e.message); }
   };
 
+  const resetPassword = async (u) => {
+    const pw = window.prompt(`Set a new password for "${u.username}":`);
+    if (pw == null) return;            // cancelled
+    if (!pw.trim()) { setError("Password can't be empty."); return; }
+    try {
+      await api(`/api/admin/user/${u.id}/password`, { method: "POST", body: { password: pw } });
+      setError("");
+      window.alert(`Password updated for ${u.username}.`);
+    } catch (e) { setError(e.message); }
+  };
+
+  const deleteUser = async (u) => {
+    if (!window.confirm(`Delete "${u.username}"? This permanently removes their account, hands, and payments. This cannot be undone.`)) return;
+    try {
+      await api(`/api/admin/user/${u.id}`, { method: "DELETE" });
+      setError("");
+      if (detail && detail.user && detail.user.id === u.id) setDetail(null);
+      loadOverview();
+    } catch (e) { setError(e.message); }
+  };
+
   if (error) return <div style={st.page}><div style={st.err}>⚠ {error}</div></div>;
   if (!overview) return <div style={st.page}>Loading…</div>;
   const p = overview.platform;
@@ -60,6 +81,7 @@ export default function Admin() {
                 <th style={st.th}>User</th><th style={st.th}>Month</th><th style={st.th}>Hands</th>
                 <th style={st.th}>Errors</th><th style={st.th}>Earned</th>
                 <th style={st.th}>Owed</th><th style={st.th}>Last active</th>
+                <th style={st.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -74,6 +96,14 @@ export default function Admin() {
                     <td style={{ ...st.td, color: "#4ade80" }}>{fmtMoney(u.earnings)}</td>
                     <td style={{ ...st.td, color: u.owed > 0 ? "#fbbf24" : "#64748b" }}>{fmtMoney(u.owed)}</td>
                     <td style={{ ...st.td, color: "#64748b" }}>{(u.last_active || "").slice(0, 10)}</td>
+                    <td style={st.td}>
+                      <div style={st.rowActions}>
+                        <button style={st.resetBtn} title="Set a new password for this user"
+                          onClick={(e) => { e.stopPropagation(); resetPassword(u); }}>Reset PW</button>
+                        <button style={st.delBtn} title="Delete this user"
+                          onClick={(e) => { e.stopPropagation(); deleteUser(u); }}>Delete</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -327,6 +357,9 @@ const st = {
   tr: { cursor: "pointer", borderBottom: "1px solid #141e2e" },
   td: { padding: "9px 10px", fontSize: 13 },
   adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 800, color: "#0a0e17", background: "#f59e0b", borderRadius: 6, padding: "1px 5px" },
+  rowActions: { display: "flex", gap: 6 },
+  resetBtn: { padding: "5px 9px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 6, color: "#cbd5e1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  delBtn: { padding: "5px 9px", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 6, color: "#fca5a5", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
   streamRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid #141e2e" },
   monthRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "12px 10px", borderBottom: "1px solid #141e2e", flexWrap: "wrap" },
   monthTitle: { fontSize: 14, fontWeight: 800, color: "#f1f5f9", display: "flex", alignItems: "center", gap: 8, marginBottom: 3 },

@@ -243,7 +243,7 @@ def create_user(username, email, password):
         return get_user(row["id"])
     except _INTEGRITY_ERRORS:
         conn.rollback()
-        raise ValueError("That username is already taken.")
+        raise ValueError("Username taken — try logging in, or contact admin to reset your password.")
     finally:
         conn.close()
 
@@ -255,6 +255,54 @@ def verify_user(username, password):
     if row and check_password_hash(row["password_hash"], password or ""):
         return dict(row)
     return None
+
+
+def login_check(username, password):
+    """Authenticate, distinguishing the two failure modes so the UI can show a
+    specific message. Returns (status, user) where status is one of
+    'ok' | 'no_user' | 'bad_password'."""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM users WHERE username = ?", ((username or "").strip(),)).fetchone()
+    conn.close()
+    if not row:
+        return "no_user", None
+    if not check_password_hash(row["password_hash"], password or ""):
+        return "bad_password", None
+    return "ok", dict(row)
+
+
+def set_user_password(user_id, new_password):
+    """Admin-driven password reset. Returns True if a user row was updated."""
+    if not (new_password or "").strip():
+        raise ValueError("New password is required.")
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(new_password), user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount
+    conn.close()
+    return bool(updated)
+
+
+def delete_user(user_id):
+    """Remove a user and everything they own (hands, payments). Month
+    assignments owned by the user are unassigned rather than deleted so the
+    month row survives. Returns True if a user was deleted."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM hands WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE month_assignments SET user_id = NULL WHERE user_id = ?", (user_id,))
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return bool(cur.rowcount)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_user(user_id):

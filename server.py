@@ -444,9 +444,11 @@ def api_register():
 @app.route("/api/login", methods=["POST"])
 def api_login():
     d = request.json or {}
-    u = auth_db.verify_user(d.get("username"), d.get("password"))
-    if not u:
-        return jsonify({"error": "Invalid username or password."}), 401
+    status, u = auth_db.login_check(d.get("username"), d.get("password"))
+    if status == "no_user":
+        return jsonify({"error": "No account with that username — register first."}), 401
+    if status != "ok":
+        return jsonify({"error": "Wrong password."}), 401
     session["user_id"] = u["id"]
     session.permanent = True
     return jsonify(_me_payload(u["id"]))
@@ -622,6 +624,29 @@ def api_admin_user(uid):
     if not det:
         return jsonify({"error": "No such user."}), 404
     return jsonify(det)
+
+
+@app.route("/api/admin/user/<int:uid>/password", methods=["POST"])
+@admin_required
+def api_admin_reset_password(uid):
+    d = request.json or {}
+    try:
+        ok = auth_db.set_user_password(uid, d.get("password"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if not ok:
+        return jsonify({"error": "No such user."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/user/<int:uid>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_user(uid):
+    if uid == session.get("user_id"):
+        return jsonify({"error": "You can't delete your own account."}), 400
+    if not auth_db.delete_user(uid):
+        return jsonify({"error": "No such user."}), 404
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admin/payment", methods=["POST"])
