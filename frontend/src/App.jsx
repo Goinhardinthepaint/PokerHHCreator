@@ -629,6 +629,11 @@ function HandBuilder({ me, refreshMe }) {
   const [buyButton, setBuyButton] = useState(() => pick("buyButton", null)); // {seat, type:'btn'|'str'}
   const [buyMenuSeat, setBuyMenuSeat] = useState(null); // seat whose buy-the-button menu is open
   const [roster, setRoster] = useState(() => (pendingResume?.roster?.length ? pendingResume.roster : pick("roster", DEFAULT_ROSTER)));
+  const [autoNumber, setAutoNumber] = useState(() => pick("autoNumber", true)); // drag renumbers seats 1..n
+  // Drag-and-drop reorder state (UI only): the row being dragged + the insertion slot.
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dropIdx, setDropIdx] = useState(null);
+  const [dragArmed, setDragArmed] = useState(false); // true only while the ≡ handle is held
 
   // Hand state
   const [phase, setPhase] = useState(() => pick("phase", "setup")); // setup | holecards | betting | complete
@@ -931,7 +936,7 @@ function HandBuilder({ me, refreshMe }) {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster,
+          stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands,
@@ -940,7 +945,7 @@ function HandBuilder({ me, refreshMe }) {
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands]);
 
 
   // Board cards required to deal the next street
@@ -952,18 +957,43 @@ function HandBuilder({ me, refreshMe }) {
   }
 
   // ── Roster editing ────────────────────────────────────────────────────────
+  // Roster is now ordered TOP-TO-BOTTOM by array position (no longer sorted by
+  // seat at render). With "Auto-number seats" on, seats are kept as 1..n by
+  // position; with it off, seats are whatever the user typed (gaps allowed).
+  const renumber = (arr) => arr.map((p, i) => ({ ...p, seat: i + 1 }));
+  const applyAuto = (arr) => (autoNumber ? renumber(arr) : arr);
+
+  // By-seat edit (used by the poker-table sit/stack menus, which key off seat).
   const updateRoster = (seat, patch) =>
     setRoster((r) => r.map((p) => (p.seat === seat ? { ...p, ...patch } : p)));
+  // By-index edits for the roster PANEL rows (display order == array order).
+  const updateRosterAt = (index, patch) =>
+    setRoster((r) => r.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  const emptySeatAt = (index) => updateRosterAt(index, { name: "" });
+  const removeSeatAt = (index) =>
+    setRoster((r) => applyAuto(r.filter((_, i) => i !== index)));
+
   const addSeat = () => {
-    const used = new Set(roster.map((p) => p.seat));
-    let s = 1;
-    while (used.has(s) && s <= 9) s++;
-    if (s > 9) return;
-    setRoster((r) => [...r, { seat: s, name: "", stack: 10000 }]); // empty seat at the table
+    if (roster.length >= 9) return;
+    setRoster((r) => {
+      const used = new Set(r.map((p) => p.seat));
+      let s = 1;
+      while (used.has(s) && s <= 9) s++;
+      return applyAuto([...r, { seat: s, name: "", stack: 10000 }]); // appended at the bottom
+    });
   };
-  const removeSeat = (seat) => setRoster((r) => r.filter((p) => p.seat !== seat));
-  // Stand a player up: keep the physical seat at the table, just empty it.
-  const emptySeat = (seat) => updateRoster(seat, { name: "" });
+
+  // Move the dragged row to an insertion slot (0..length), then renumber if auto.
+  const moveRosterRow = (from, to) => {
+    if (from == null || to == null) return;
+    setRoster((r) => {
+      const arr = [...r];
+      const [item] = arr.splice(from, 1);
+      const dest = from < to ? to - 1 : to; // removing an earlier row shifts the target
+      arr.splice(dest, 0, item);
+      return applyAuto(arr);
+    });
+  };
 
   // ── Card editing ──────────────────────────────────────────────────────────
   // The picker steps through a group of slots: hole cards [0,1], the flop
@@ -1614,16 +1644,52 @@ function HandBuilder({ me, refreshMe }) {
             )}
 
             <div style={{ ...styles.sideHead, marginTop: 16 }} data-tour="roster">ROSTER <span style={styles.sideHint}>· blank name = empty seat</span></div>
-            {[...roster].sort((a, b) => a.seat - b.seat).map((p) => (
-              <div key={p.seat} style={styles.rosterRow}>
-                <span style={styles.seatTag}>{p.seat}</span>
-                <span style={{ ...styles.diffDot, opacity: defaultDiffers.has(p.seat) ? 1 : 0 }} title="Differs from default lineup">●</span>
-                <input style={{ ...styles.input, flex: 1 }} value={p.name} placeholder="(empty)" onChange={(e) => updateRoster(p.seat, { name: e.target.value })} disabled={locked} />
-                <input style={{ ...styles.input, width: 74 }} type="number" value={p.stack} onChange={(e) => updateRoster(p.seat, { stack: Number(e.target.value) })} disabled={locked} />
-                {!locked && p.name.trim() && <button style={styles.miniX} title="Stand up (keep seat)" onClick={() => emptySeat(p.seat)}>⏏</button>}
-                {!locked && <button style={styles.miniX} title="Remove seat from table" onClick={() => removeSeat(p.seat)}>✕</button>}
+            {!locked && (
+              <label style={styles.autoNumRow} title="When on, dragging renumbers seats 1,2,3… top-to-bottom. When off, dragging reorders rows but keeps your typed seat numbers.">
+                <input type="checkbox" checked={autoNumber} onChange={(e) => setAutoNumber(e.target.checked)} />
+                Auto-number seats
+              </label>
+            )}
+            {roster.map((p, i) => (
+              <div key={i}>
+                {/* Blue insertion line shown above the row the drag will drop before. */}
+                {dragIdx != null && dropIdx === i && <div style={styles.dropLine} />}
+                <div
+                  style={{ ...styles.rosterRow, ...(dragIdx === i ? styles.rosterRowDragging : {}) }}
+                  draggable={dragArmed && !locked}
+                  onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => { setDragIdx(null); setDropIdx(null); setDragArmed(false); }}
+                  onDragOver={(e) => {
+                    if (dragIdx == null) return;
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setDropIdx(e.clientY - rect.top > rect.height / 2 ? i + 1 : i);
+                  }}
+                  onDrop={(e) => { e.preventDefault(); moveRosterRow(dragIdx, dropIdx); setDragIdx(null); setDropIdx(null); setDragArmed(false); }}
+                >
+                  {!locked && (
+                    <span style={styles.dragHandle} title="Drag to reorder"
+                      onMouseDown={() => setDragArmed(true)} onMouseUp={() => setDragArmed(false)}>≡</span>
+                  )}
+                  <input
+                    style={{ ...styles.seatNumInput, ...(autoNumber ? styles.seatNumAuto : {}) }}
+                    type="number" min={1} max={9} value={p.seat}
+                    title={autoNumber ? "Auto-numbered by position — turn off Auto-number to edit" : "Type any seat number"}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(9, Number(e.target.value) || 1));
+                      updateRosterAt(i, { seat: v });
+                    }}
+                    disabled={locked || autoNumber} />
+                  <span style={{ ...styles.diffDot, opacity: defaultDiffers.has(p.seat) ? 1 : 0 }} title="Differs from default lineup">●</span>
+                  <input style={{ ...styles.input, flex: 1 }} value={p.name} placeholder="(empty)" onChange={(e) => updateRosterAt(i, { name: e.target.value })} disabled={locked} />
+                  <input style={{ ...styles.input, width: 74 }} type="number" value={p.stack} onChange={(e) => updateRosterAt(i, { stack: Number(e.target.value) })} disabled={locked} />
+                  {!locked && p.name.trim() && <button style={styles.miniX} title="Stand up (keep seat)" onClick={() => emptySeatAt(i)}>⏏</button>}
+                  {!locked && <button style={styles.miniX} title="Remove seat from table" onClick={() => removeSeatAt(i)}>✕</button>}
+                </div>
               </div>
             ))}
+            {/* Insertion line for dropping at the very bottom. */}
+            {dragIdx != null && dropIdx === roster.length && <div style={styles.dropLine} />}
             {!locked && roster.length < 9 && (
               <button style={styles.addBtn} onClick={addSeat}>+ Add seat</button>
             )}
@@ -2137,9 +2203,15 @@ const styles = {
   col: { flex: 1, display: "flex", flexDirection: "column", gap: 4 },
   label: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: "#64748b" },
   input: { padding: "7px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%" },
-  rosterRow: { display: "flex", gap: 6, alignItems: "center" },
+  rosterRow: { display: "flex", gap: 6, alignItems: "center", padding: "2px 0", background: "#0d1320" },
+  rosterRowDragging: { opacity: 0.5, boxShadow: "0 6px 16px rgba(0,0,0,.5)", borderRadius: 6 },
   diffDot: { color: "#fbbf24", fontSize: 9, width: 8, transition: "opacity .15s" },
   seatTag: { width: 20, textAlign: "center", fontSize: 11, color: "#64748b", fontWeight: 700 },
+  dragHandle: { cursor: "grab", color: "#475569", fontSize: 15, lineHeight: 1, padding: "0 2px", userSelect: "none", touchAction: "none" },
+  seatNumInput: { width: 30, textAlign: "center", padding: "8px 2px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 12, fontWeight: 700, outline: "none", boxSizing: "border-box" },
+  seatNumAuto: { color: "#64748b", background: "#0d1320", borderColor: "#162132" },
+  dropLine: { height: 2, background: "#3b82f6", borderRadius: 2, margin: "2px 0", boxShadow: "0 0 6px rgba(59,130,246,.7)" },
+  autoNumRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#94a3b8", margin: "2px 0 6px", cursor: "pointer", userSelect: "none" },
   miniX: { width: 24, height: 24, background: "#1e293b", border: "none", borderRadius: 5, color: "#94a3b8", cursor: "pointer", fontSize: 11 },
   addBtn: { marginTop: 4, padding: "7px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
   lockNote: { marginTop: 8, fontSize: 11, color: "#64748b", fontStyle: "italic" },
