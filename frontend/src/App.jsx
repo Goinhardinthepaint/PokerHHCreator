@@ -386,7 +386,7 @@ function parsePt4Summary(pt4) {
 // card, grouped by video and sorted date→timestamp, with range/toggle selection
 // (like a file explorer), bulk + per-card delete, and drag-to-export plus
 // Export Selected / Export All buttons. Hands live in App state (→ localStorage).
-function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onRestore, onDeleteLocal, onDeleteServer, onExportHands, isAdmin }) {
+function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId, streamUrl, onResumeFrom, onRestore, onDeleteLocal, onDeleteServer, onExportHands, onFinishStream, streamComplete, isAdmin }) {
   const [selected, setSelected] = useState(() => new Set());
   const [anchor, setAnchor] = useState(null); // last single-clicked card (range pivot)
   const [dragOver, setDragOver] = useState(false);
@@ -532,6 +532,19 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
           ) : (
             <div style={styles.hmTimelineFoot}><span style={{ color: "#64748b" }}>No completed hands on this stream yet.</span></div>
           )}
+          {/* Finish the stream → awards the $0.05/hand stream bonus to contributors. */}
+          <div style={styles.hmFinishRow}>
+            {streamComplete ? (
+              <span style={styles.hmCompleteTag}>✓ Stream complete — bonus awarded</span>
+            ) : (
+              <button
+                style={{ ...styles.hmFinishBtn, opacity: sorted.length ? 1 : 0.45 }}
+                disabled={!sorted.length}
+                onClick={onFinishStream}
+                title="Mark this stream finished and award the $0.05/hand stream bonus"
+              >🏁 Finish Stream</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -771,6 +784,28 @@ function HandBuilder({ me, refreshMe }) {
     );
     return streamHands.length + localExtra.length;
   }, [currentStreamId, streamHands, sessionHands]);
+
+  const streamComplete = !!(streamMeta && streamMeta.is_complete);
+
+  // Mark the active stream finished — flips is_complete, which awards the derived
+  // $0.05/hand stream bonus to every contributor. Shows this worker's share.
+  async function finishStream() {
+    if (!currentStreamId || streamComplete) return;
+    try {
+      const resp = await api("/api/streams/complete", {
+        method: "POST",
+        body: { id: currentStreamId, complete: true, youtubeUrl: streamUrl, date: videoDate, title: sessionLabel || undefined },
+      });
+      const mine = (resp.shares || []).find((s) => s.user_id === (me.user && me.user.id));
+      const amt = mine ? mine.bonus : 0;
+      setFlash(`🏁 Stream finished — stream bonus awarded${amt ? `: +$${amt.toFixed(2)}` : ""}`);
+      setTimeout(() => setFlash(""), 3200);
+      if (refreshMe) refreshMe();
+      fetchHands();
+    } catch (e) {
+      setError(`Could not finish the stream: ${e.message}`);
+    }
+  }
 
   useEffect(() => {
     try { localStorage.setItem(DEFAULTS_KEY, JSON.stringify(defaultLineups)); } catch { /* ignore */ }
@@ -2322,6 +2357,8 @@ function HandBuilder({ me, refreshMe }) {
             onDeleteLocal={deleteLocalHand}
             onDeleteServer={deleteServerHand}
             onExportHands={downloadHands}
+            onFinishStream={finishStream}
+            streamComplete={streamComplete}
             isAdmin={!!(me.user && me.user.is_admin)}
           />
         )}
@@ -2517,6 +2554,9 @@ const styles = {
   hmMarker: { position: "absolute", top: 3, width: 4, height: 16, borderRadius: 2, transform: "translateX(-50%)", cursor: "pointer", boxShadow: "0 0 3px rgba(0,0,0,.5)" },
   hmTimelineFoot: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#94a3b8", marginTop: 6, gap: 8 },
   hmResumeBtn: { padding: "5px 10px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
+  hmFinishRow: { display: "flex", justifyContent: "center", marginTop: 8 },
+  hmFinishBtn: { width: "100%", padding: "8px 12px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 8, color: "#eafff1", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  hmCompleteTag: { width: "100%", textAlign: "center", padding: "7px 12px", background: "#0e2a18", border: "1px solid #16a34a", borderRadius: 8, color: "#4ade80", fontSize: 12, fontWeight: 800 },
   // Detail modal
   hmDetailOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.7)", zIndex: 140, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
   hmDetailBox: { width: 560, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto", background: "#0d1320", border: "1px solid #334155", borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
