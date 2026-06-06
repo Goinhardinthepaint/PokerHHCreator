@@ -249,6 +249,49 @@ function CardPicker({ used, onPick, onClose, title }) {
   );
 }
 
+// ── Custom-straddle popup: pick any position + any amount ────────────────────
+function StraddleMenu({ seats, positions, defaultSeat, defaultAmount, onConfirm, onClose }) {
+  const [seat, setSeat] = useState(defaultSeat ?? (seats[0] ? seats[0].seat : 1));
+  const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : "");
+  const amt = Math.max(0, Math.round(Number(amount) || 0));
+  const ok = amt > 0 && seats.length > 0;
+  return (
+    <div style={styles.pickerOverlay} onClick={onClose}>
+      <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.confirmTitle}>Custom straddle</div>
+        <div style={styles.confirmBody}>
+          Straddle from any position for any amount — independent of the UTG 2× BB straddle.
+        </div>
+        <label style={styles.label}>Position</label>
+        <select style={styles.input} value={seat} onChange={(e) => setSeat(Number(e.target.value))}>
+          {seats.map((s) => (
+            <option key={s.seat} value={s.seat}>
+              {(s.name || `Seat ${s.seat}`)}{positions[s.seat] ? ` — ${positions[s.seat]}` : ` — Seat ${s.seat}`}
+            </option>
+          ))}
+        </select>
+        <label style={styles.label}>Straddle amount ($)</label>
+        <input
+          style={styles.input}
+          type="number"
+          min={1}
+          value={amount}
+          placeholder="e.g. 300"
+          autoFocus
+          onChange={(e) => setAmount(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && ok) onConfirm(seat, amt); }}
+        />
+        <div style={styles.confirmBtnRow}>
+          <button style={{ ...styles.confirmYes, opacity: ok ? 1 : 0.5 }} disabled={!ok} onClick={() => onConfirm(seat, amt)}>
+            Set straddle
+          </button>
+          <button style={styles.confirmNo} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Player seat ─────────────────────────────────────────────────────────────
 function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
   const posStyle = { ...styles.seat, left: `${pos.left}%`, top: `${pos.top}%` };
@@ -656,6 +699,10 @@ function HandBuilder({ me, refreshMe }) {
   const [anteAmount, setAnteAmount] = useState(() => pick("anteAmount", 25));
   const [buyButton, setBuyButton] = useState(() => pick("buyButton", null)); // {seat, type:'btn'|'str'}
   const [buyMenuSeat, setBuyMenuSeat] = useState(null); // seat whose buy-the-button menu is open
+  // A one-off straddle from ANY position for ANY amount (distinct from the UTG
+  // 2× BB straddle). {seat, amount} | null. Cleared when advancing to next hand.
+  const [customStraddle, setCustomStraddle] = useState(() => pick("customStraddle", null));
+  const [straddleMenuOpen, setStraddleMenuOpen] = useState(false); // custom-straddle popup
   const [roster, setRoster] = useState(() => (pendingResume?.roster?.length ? pendingResume.roster : pick("roster", DEFAULT_ROSTER)));
   const [autoNumber, setAutoNumber] = useState(() => pick("autoNumber", true)); // drag renumbers seats 1..n
   // Drag-and-drop reorder state (UI only): the row being dragged + the insertion slot.
@@ -896,11 +943,16 @@ function HandBuilder({ me, refreshMe }) {
   // The straddles actually posted this hand.
   const activeStraddles = useMemo(() => {
     if (anteGame) return anteStraddles || [];
+    // A custom straddle (any position, any amount) takes precedence over the
+    // UTG-style straddle and is the sole straddle for the hand.
+    if (customStraddle && customStraddle.amount > 0 && named.some((p) => p.seat === customStraddle.seat)) {
+      return [{ seat: customStraddle.seat, amount: customStraddle.amount }];
+    }
     if (!tripleBlind) return straddleList;
     const count = straddleCount > 0 ? 2 : 1;
     const seats = utgStraddles(named, buttonSeat, bb, count); // reuse seat selection
     return seats.map((st, i) => ({ seat: st.seat, amount: i === 0 ? mandatoryStraddle : 2 * mandatoryStraddle }));
-  }, [anteGame, anteStraddles, tripleBlind, straddleCount, straddleList, named, buttonSeat, bb, mandatoryStraddle]);
+  }, [anteGame, anteStraddles, customStraddle, tripleBlind, straddleCount, straddleList, named, buttonSeat, bb, mandatoryStraddle]);
 
   // Every roster row is a physical seat at the table; a blank name = an empty
   // seat that still occupies its spot. Returns all seats sorted by seat number,
@@ -1052,7 +1104,7 @@ function HandBuilder({ me, refreshMe }) {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber,
+          stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
@@ -1061,7 +1113,7 @@ function HandBuilder({ me, refreshMe }) {
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey]);
 
 
   // Board cards required to deal the next street
@@ -1255,7 +1307,7 @@ function HandBuilder({ me, refreshMe }) {
     setEng(null); setEngHistory([]); setHoleCards({});
     setBoard(["", "", "", "", ""]); setNumRuns(1); setRunsChosen(false);
     setExtraBoards([]); setRunWinners([]); setWinner(""); setPreview("");
-    setError(""); setYoutubeLink(""); setBuyButton(null); setBuyMenuSeat(null); setSevenTwoHandled(false);
+    setError(""); setYoutubeLink(""); setBuyButton(null); setBuyMenuSeat(null); setCustomStraddle(null); setSevenTwoHandled(false);
     setPhase("setup");
     setHandNumber((h) => h + 1);
   }
@@ -1454,6 +1506,7 @@ function HandBuilder({ me, refreshMe }) {
     setAnteGame(false);
     setAnteAmount(25);
     setBuyButton(null);
+    setCustomStraddle(null);
     setRoster(DEFAULT_ROSTER);
     setEng(null);
     setEngHistory([]);
@@ -1535,7 +1588,7 @@ function HandBuilder({ me, refreshMe }) {
     setEng(null); setEngHistory([]); setHoleCards({});
     setBoard(["", "", "", "", ""]);
     setNumRuns(1); setRunsChosen(false); setExtraBoards([]); setRunWinners([]);
-    setWinner(""); setPreview(""); setError(""); setBuyButton(null); setBuyMenuSeat(null);
+    setWinner(""); setPreview(""); setError(""); setBuyButton(null); setBuyMenuSeat(null); setCustomStraddle(null);
     setPhase("setup");
     // Live hands carry a session hand number; imported/parsed snapshots don't —
     // fall back to the local hand # or the timestamp for the confirmation label.
@@ -1591,6 +1644,7 @@ function HandBuilder({ me, refreshMe }) {
     setYoutubeLink("");
     setBuyButton(null);
     setBuyMenuSeat(null);
+    setCustomStraddle(null);
     setPhase("setup");
     setHandNumber((h) => h + 1);
   }
@@ -1809,7 +1863,7 @@ function HandBuilder({ me, refreshMe }) {
 
             {!anteGame && (
             <label style={{ ...styles.checkRow, marginTop: 4 }}>
-              <input type="checkbox" checked={straddleCount > 0} disabled={locked} onChange={(e) => setStraddleCount(e.target.checked ? 1 : 0)} />
+              <input type="checkbox" checked={straddleCount > 0} disabled={locked} onChange={(e) => { setStraddleCount(e.target.checked ? 1 : 0); if (e.target.checked) setCustomStraddle(null); }} />
               <span>{tripleBlind ? `Voluntary double straddle (2× mandatory = $${2 * mandatoryStraddle})` : "UTG straddle (2× BB)"}</span>
             </label>
             )}
@@ -1846,6 +1900,30 @@ function HandBuilder({ me, refreshMe }) {
                   const nm = named.find((p) => p.seat === st.seat)?.name || `Seat ${st.seat}`;
                   return `UTG ${nm}: $${st.amount}`;
                 }).join("  ·  ")}
+              </div>
+            )}
+
+            {!anteGame && (
+              <div style={{ marginTop: 6 }}>
+                {customStraddle ? (
+                  <div style={styles.straddleBox}>
+                    <div style={styles.straddleRow}>
+                      <span style={{ ...styles.straddlePreview, color: "#c4b5fd" }}>
+                        🎯 Custom straddle: <strong>{named.find((p) => p.seat === customStraddle.seat)?.name || `Seat ${customStraddle.seat}`}</strong> posts ${customStraddle.amount}
+                      </span>
+                      {!locked && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button style={styles.stepBtn} title="Edit" onClick={() => setStraddleMenuOpen(true)}>✎</button>
+                          <button style={styles.stepBtn} title="Clear" onClick={() => setCustomStraddle(null)}>✕</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button style={styles.addBtn} disabled={locked} onClick={() => setStraddleMenuOpen(true)}>
+                    + Custom straddle <span style={styles.sideHint}>· any position, any amount</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -2427,6 +2505,18 @@ function HandBuilder({ me, refreshMe }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Custom straddle popup */}
+      {straddleMenuOpen && (
+        <StraddleMenu
+          seats={named}
+          positions={positions}
+          defaultSeat={customStraddle ? customStraddle.seat : (named[0] && named[0].seat)}
+          defaultAmount={customStraddle ? customStraddle.amount : 2 * bb}
+          onConfirm={(seat, amount) => { setCustomStraddle({ seat, amount }); setStraddleCount(0); setBuyButton(null); setStraddleMenuOpen(false); }}
+          onClose={() => setStraddleMenuOpen(false)}
+        />
       )}
 
       {/* Buy-the-button menu */}
