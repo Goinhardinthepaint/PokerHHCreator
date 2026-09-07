@@ -29,8 +29,15 @@ Filter kept:  duration > 7200s (2h+)  AND  upload_date >= 20240601.
 Hands estimate:  duration_minutes / 3  (~one hand every 3 minutes).
 
 Usage:
-  python scripts/scrape_hcl_streams.py          # full run (~hundreds of videos)
-  python scripts/scrape_hcl_streams.py --limit 10   # quick test (first 10 enriched)
+  python scripts/scrape_hcl_streams.py                      # full run (~hundreds of videos)
+  python scripts/scrape_hcl_streams.py --limit 10           # quick test (first 10 enriched)
+  python scripts/scrape_hcl_streams.py --since 20260530 --merge   # top up with what's new
+
+A full run re-enriches every video in the tab, which is slow and re-fetches data
+we already have. `--since` raises the date floor so pass 2 stops as soon as it
+reaches streams we've already got, and `--merge` folds the result into the
+existing JSON/CSV instead of replacing them — so the historical rows survive even
+if an old video has since been deleted from the channel.
 """
 
 import csv
@@ -95,7 +102,7 @@ def make_extractor():
     return yt_dlp.YoutubeDL(opts)
 
 
-def scrape(limit=None):
+def scrape(limit=None, floor=FLOOR_DATE):
     log(f"Pass 1: flat-listing {CHANNEL_STREAMS} …")
     candidates = flat_list_ids(CHANNEL_STREAMS)
     log(f"  {len(candidates)} entries in the streams tab (newest first).")
@@ -105,7 +112,7 @@ def scrape(limit=None):
     seen_real = 0
     consecutive_old = 0
 
-    log(f"Pass 2: enriching with duration/date until upload_date < {FLOOR_DATE} …")
+    log(f"Pass 2: enriching with duration/date until upload_date < {floor} …")
     for i, c in enumerate(candidates):
         if limit is not None and seen_real >= limit:
             log(f"  --limit {limit} reached; stopping enrichment.")
@@ -128,10 +135,10 @@ def scrape(limit=None):
             continue  # can't place it on the calendar without a date
 
         # The tab is reverse-chronological: once we hit the floor we're done.
-        if upload_date < FLOOR_DATE:
+        if upload_date < floor:
             consecutive_old += 1
             if consecutive_old >= 3:                 # small tolerance for ordering quirks
-                log(f"  Crossed the 2-year floor at {upload_date}; stopping.")
+                log(f"  Crossed the date floor at {upload_date}; stopping.")
                 break
             continue
         consecutive_old = 0
@@ -175,6 +182,30 @@ def write_json(streams):
         json.dump(streams, f, indent=2, ensure_ascii=False)
 
 
+def load_existing():
+    """Previously scraped streams, or [] if there's no snapshot yet."""
+    if not os.path.exists(JSON_PATH):
+        return []
+    try:
+        with open(JSON_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        log(f"  [warn] couldn't read {JSON_PATH} ({e}); treating as empty.")
+        return []
+
+
+def merge_streams(existing, fresh):
+    """Fresh rows win on metadata; everything previously scraped is kept."""
+    by_id = {s["id"]: s for s in existing}
+    added = 0
+    for s in fresh:
+        if s["id"] not in by_id:
+            added += 1
+        by_id[s["id"]] = {**by_id.get(s["id"], {}), **s}
+    out = sorted(by_id.values(), key=lambda s: s["date"], reverse=True)
+    return out, added
+
+
 def main():
     limit = None
     if "--limit" in sys.argv:
@@ -183,7 +214,22 @@ def main():
         except (IndexError, ValueError):
             sys.exit("--limit requires an integer, e.g. --limit 10")
 
-    streams = scrape(limit=limit)
+    floor = FLOOR_DATE
+    if "--since" in sys.argv:
+        try:
+            floor = sys.argv[sys.argv.index("--since") + 1]
+        except IndexError:
+            sys.exit("--since requires a date, e.g. --since 20260530")
+        if not (len(floor) == 8 and floor.isdigit()):
+            sys.exit(f"--since wants YYYYMMDD, got {floor!r}")
+
+    streams = scrape(limit=limit, floor=floor)
+
+    if "--merge" in sys.argv:
+        existing = load_existing()
+        streams, added = merge_streams(existing, streams)
+        log(f"Merged: {len(existing)} existing + {added} new = {len(streams)} streams")
+
     write_csv(streams)
     write_json(streams)
 

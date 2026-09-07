@@ -198,24 +198,38 @@ def init_db():
         )
         conn.commit()
 
-    # Seed the stream catalog from the committed scrape into the DB (once); from
-    # then on the database is the source of truth.
-    have = conn.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"]
-    if have == 0 and os.path.exists(SEED_JSON):
+    # Top up the stream catalog from the committed scrape on every boot. This used
+    # to run only when the table was empty, which meant a refreshed scrape could
+    # never reach an already-populated database — new HCL streams simply never
+    # appeared. Existing rows are never overwritten: DO UPDATE only fills columns
+    # that are still NULL, so completion state, saved lineups and hand-edited
+    # estimates all survive, and the dateless placeholder rows written by
+    # set_default_lineup / set_resume_state get their metadata backfilled.
+    if os.path.exists(SEED_JSON):
         try:
             with open(SEED_JSON, encoding="utf-8") as f:
                 rows = json.load(f)
+            before = conn.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"]
             for s in rows:
                 conn.execute(
                     "INSERT INTO streams "
                     "(id, youtube_url, title, date, duration_minutes, hands_estimated, is_complete) "
-                    "VALUES (?,?,?,?,?,?,0) ON CONFLICT DO NOTHING",
+                    "VALUES (?,?,?,?,?,?,0) ON CONFLICT (id) DO UPDATE SET "
+                    "youtube_url = COALESCE(streams.youtube_url, excluded.youtube_url), "
+                    "title = COALESCE(streams.title, excluded.title), "
+                    "date = COALESCE(streams.date, excluded.date), "
+                    "duration_minutes = COALESCE(streams.duration_minutes, excluded.duration_minutes), "
+                    "hands_estimated = COALESCE(streams.hands_estimated, excluded.hands_estimated)",
                     (s.get("id"), s.get("youtubeUrl"), s.get("title"), s.get("date"),
                      s.get("durationMinutes"), s.get("handsEstimated")),
                 )
             conn.commit()
-        except Exception:
+            added = conn.execute("SELECT COUNT(*) AS n FROM streams").fetchone()["n"] - before
+            if added:
+                print(f"Stream catalog: +{added} new stream(s) from the committed scrape", flush=True)
+        except Exception as e:
             conn.rollback()  # seeding is best-effort; don't poison the connection
+            print(f"stream seed skipped: {e}", flush=True)
 
     # Backfill post-hand snapshots for older hands that predate next_state, so
     # clicking them in the sidebar restores the table (esp. imported hands).
@@ -577,6 +591,38 @@ def stream_meta(stream_id):
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def _stream_row(r):
+    """DB row -> the calendar's camelCase stream shape."""
+    return {
+        "id": r["id"],
+        "youtubeUrl": r["youtube_url"] or "",
+        "title": r["title"] or "HCL Stream",
+        "date": r["date"] or "",
+        "durationMinutes": r["duration_minutes"] or 0,
+        "handsCompleted": 0,          # overlaid client-side from stream_state()
+        "handsEstimated": r["hands_estimated"] or 0,
+        "isComplete": bool(r["is_complete"]),
+        "addedAt": "",
+    }
+
+
+def list_streams():
+    """The whole stream catalog, newest last, in calendar shape.
+
+    Rows without a date are skipped: set_default_lineup / set_resume_state /
+    set_stream_complete insert bare `(id, is_complete)` placeholder rows for
+    streams typed straight into the builder, and those would otherwise show up
+    on the calendar as undated blanks.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, youtube_url, title, date, duration_minutes, hands_estimated, is_complete "
+        "FROM streams WHERE date IS NOT NULL AND date <> '' ORDER BY date"
+    ).fetchall()
+    conn.close()
+    return [_stream_row(r) for r in rows]
 
 
 def last_stream_timestamp(stream_id):

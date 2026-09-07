@@ -598,6 +598,16 @@ def api_set_default_lineup(sid):
     return jsonify({"ok": True, "lineup": auth_db.get_default_lineup(sid)})
 
 
+@app.route("/api/streams", methods=["GET"])
+@login_required
+def api_streams_list():
+    """The shared stream catalog. The calendar used to keep its own copy in
+    localStorage seeded from the bundled scrape, so every worker drifted apart
+    and new streams never reached an already-seeded browser. The DB is the
+    source of truth; this is how clients read it."""
+    return jsonify({"streams": auth_db.list_streams()})
+
+
 @app.route("/api/streams", methods=["POST"])
 @login_required
 def api_streams_add():

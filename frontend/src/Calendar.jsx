@@ -3,14 +3,16 @@ import { api } from "./api.js";
 import SEED_STREAMS from "./data/hcl_streams.json";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calendar / Stream Manager — a monthly grid of HCL streams, tracked locally.
-// Streams persist in localStorage (migrate to the server later). Each day cell
-// shows its streams with a status colour; clicking a day opens a side panel to
-// add streams, edit progress, mark complete, or jump into the Hand Builder.
+// Calendar / Stream Manager — a monthly grid of HCL streams. Each day cell shows
+// its streams with a status colour; clicking a day opens a side panel to add
+// streams, edit progress, mark complete, or jump into the Hand Builder.
 //
-// First run is seeded from the bundled HCL scrape (scripts/scrape_hcl_streams.py
-// → src/data/hcl_streams.json). Once a client has been seeded it's never re-seeded,
-// so deleting streams sticks.
+// The server (GET /api/streams) is the source of truth for which streams exist,
+// so a stream added once reaches every worker. localStorage is a cache: it paints
+// instantly and keeps working offline, and the bundled scrape
+// (scripts/scrape_hcl_streams.py → src/data/hcl_streams.json) only seeds a client
+// that has never talked to the server. Deletions are local and stick — they're
+// remembered by id so the server merge can't resurrect them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = "pokerStreams.v1";
@@ -38,6 +40,47 @@ function loadStreams() {
   } catch {
     return seedStreams();
   }
+}
+
+// Ids the user deleted here. Kept so merging the server catalog back in doesn't
+// resurrect them (deleting used to stick only because we never re-read the seed).
+function loadDeleted() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    return Array.isArray(data.deleted) ? data.deleted : [];
+  } catch {
+    return [];
+  }
+}
+
+// Fold the server catalog into the local list. Server rows win on metadata (it's
+// the shared truth), locally-added streams that never reached the server survive,
+// and deleted ids stay gone. That includes handsEstimated, which is why
+// updateStream mirrors manual estimate edits up — the server row has to already
+// carry them or this would hand back the scraped guess on the next load.
+function mergeCatalog(local, serverRows, deleted) {
+  const gone = new Set(deleted);
+  const byId = new Map(local.map((s) => [s.id, s]));
+  for (const row of serverRows) {
+    if (gone.has(row.id)) continue;
+    const prev = byId.get(row.id);
+    byId.set(row.id, prev ? { ...prev, ...row, addedAt: prev.addedAt || row.addedAt } : row);
+  }
+  return [...byId.values()];
+}
+
+// Debounced metadata upsert. The estimate input fires on every keystroke, and
+// each one would otherwise be its own request.
+const mirrorTimers = new Map();
+function mirrorEstimate(stream) {
+  clearTimeout(mirrorTimers.get(stream.id));
+  mirrorTimers.set(
+    stream.id,
+    setTimeout(() => {
+      mirrorTimers.delete(stream.id);
+      api("/api/streams", { method: "POST", body: stream }).catch(() => {});
+    }, 600),
+  );
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────
@@ -106,6 +149,7 @@ function parseCSV(text) {
 // ── Calendar page ─────────────────────────────────────────────────────────
 export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshMe }) {
   const [streams, setStreams] = useState(loadStreams);
+  const [deletedIds, setDeletedIds] = useState(loadDeleted);
   // Server truth for per-stream { handsCompleted, isComplete }, overlaid below.
   const [serverState, setServerState] = useState({});
   const [monthsMap, setMonthsMap] = useState({}); // "YYYY-MM" -> { owner, progress, … }
@@ -117,11 +161,25 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
   // Mirror every change to localStorage. `seeded: true` is recorded so a client
   // that later deletes all streams isn't re-seeded from the bundle.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ streams, seeded: true })); } catch { /* ignore */ }
-  }, [streams]);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ streams, seeded: true, deleted: deletedIds }));
+    } catch { /* ignore */ }
+  }, [streams, deletedIds]);
 
   const fetchState = () => api("/api/streams/state").then((d) => setServerState(d.states || {})).catch(() => {});
   useEffect(() => { fetchState(); }, []);
+
+  // Shared catalog → local cache. Runs once on mount; deletions are read straight
+  // from storage so a stream the user removed earlier doesn't come back. A failure
+  // here (offline, logged out) just leaves the cached list in place.
+  useEffect(() => {
+    api("/api/streams")
+      .then((d) => {
+        const rows = Array.isArray(d.streams) ? d.streams : [];
+        if (rows.length) setStreams((local) => mergeCatalog(local, rows, loadDeleted()));
+      })
+      .catch(() => {});
+  }, []);
 
   // Month ownership + progress (who's responsible for each month).
   useEffect(() => {
@@ -180,8 +238,20 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
     setStreams((arr) => [...arr, s]);
     api("/api/streams", { method: "POST", body: s }).catch(() => {}); // mirror to server catalog
   };
-  const updateStream = (id, patch) => setStreams((arr) => arr.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  const removeStream = (id) => setStreams((arr) => arr.filter((s) => s.id !== id));
+  const updateStream = (id, patch) => {
+    setStreams((arr) => arr.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    // handsEstimated is a manual override. It only lived in localStorage before,
+    // so the server merge would reset it on the next load — push it up instead.
+    // Debounced: this fires on every keystroke in the number input.
+    if ("handsEstimated" in patch) {
+      const prev = streams.find((s) => s.id === id);
+      if (prev) mirrorEstimate({ ...prev, ...patch });
+    }
+  };
+  const removeStream = (id) => {
+    setStreams((arr) => arr.filter((s) => s.id !== id));
+    setDeletedIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+  };
 
   // Mark a stream complete: optimistic locally, authoritative on the server
   // (which awards the $0.05/hand stream bonus to the worker(s) who built it).
