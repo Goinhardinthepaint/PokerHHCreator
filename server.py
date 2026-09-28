@@ -72,10 +72,13 @@ def refresh_stream_catalog():
         auth_db.upsert_stream(s)
     if rep["blocked"]:
         print("Stream refresh: YouTube is blocking this server (bot check), nothing "
-              "fetched — switch the refresher to a YouTube API key.", flush=True)
+              "fetched — set YOUTUBE_API_KEY to use the Data API instead.", flush=True)
+    elif not streams and rep["errors"]:
+        # A rejected key or an exhausted quota would otherwise read as "+0 new".
+        print(f"Stream refresh ({rep['via']}) failed: {rep['errors'][0][:300]}", flush=True)
     else:
         newest = max((s["date"] for s in streams), default=None)
-        print(f"Stream refresh: +{len(streams)} new (scanned {rep['scanned']}, "
+        print(f"Stream refresh ({rep['via']}): +{len(streams)} new (scanned {rep['scanned']}, "
               f"extracted {rep['extracted']}, not ready {rep['not_ready']})"
               + (f", newest {newest}" if newest else ""), flush=True)
     return streams, rep

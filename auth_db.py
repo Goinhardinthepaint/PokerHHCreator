@@ -891,11 +891,16 @@ def upsert_stream(stream):
     conn = get_db()
     conn.execute(
         "INSERT INTO streams (id, youtube_url, title, date, duration_minutes, hands_estimated) "
+        # The existing row's columns MUST be qualified with the table name here:
+        # unqualified, Postgres reads "youtube_url" as ambiguous between the row
+        # being inserted and the row being updated and rejects the whole
+        # statement — so on Postgres this used to raise every time it ran, taking
+        # Add Stream, Import and Mark Complete (via set_stream_complete) with it.
         "VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
-        "youtube_url=COALESCE(excluded.youtube_url, youtube_url), "
-        "title=COALESCE(excluded.title, title), date=COALESCE(excluded.date, date), "
-        "duration_minutes=COALESCE(excluded.duration_minutes, duration_minutes), "
-        "hands_estimated=COALESCE(excluded.hands_estimated, hands_estimated)",
+        "youtube_url=COALESCE(excluded.youtube_url, streams.youtube_url), "
+        "title=COALESCE(excluded.title, streams.title), date=COALESCE(excluded.date, streams.date), "
+        "duration_minutes=COALESCE(excluded.duration_minutes, streams.duration_minutes), "
+        "hands_estimated=COALESCE(excluded.hands_estimated, streams.hands_estimated)",
         (stream.get("id"), stream.get("youtubeUrl"), stream.get("title"), stream.get("date"),
          stream.get("durationMinutes"), stream.get("handsEstimated")),
     )
