@@ -39,6 +39,7 @@ import {
   survivors,
   STREETS,
 } from "./engine.js";
+import { applyBountyNames, advanceStreaks, handWinners } from "./bounty.js";
 import Calendar from "./Calendar.jsx";
 
 // When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
@@ -93,7 +94,9 @@ function isVpipAction(action) {
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
 // special server pricing is needed; these constants drive the live counter only.
 const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
-const SIDE_GAME_TYPES = ["Squid Game", "Bounty Game", "Other"];
+// Bounty Game used to be listed here. Its hands are now transcribed in full with
+// the streak written into each name (see bounty.js), so it's not a side game.
+const SIDE_GAME_TYPES = ["Squid Game", "Other"];
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
 
@@ -293,7 +296,7 @@ function StraddleMenu({ seats, positions, defaultSeat, defaultAmount, onConfirm,
 }
 
 // ── Player seat ─────────────────────────────────────────────────────────────
-function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
+function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, bounty, onBounty, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
   const posStyle = { ...styles.seat, left: `${pos.left}%`, top: `${pos.top}%` };
 
   if (empty) {
@@ -337,6 +340,13 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
         </div>
         <div style={{ ...styles.seatName, cursor: onNameClick ? "pointer" : "default" }} onClick={onNameClick} title={onNameClick ? "Buy the button / straddle" : undefined}>{p.name}</div>
         {bought && <div style={styles.boughtTag}>BOUGHT {bought === "str" ? "STR" : "BTN"}</div>}
+        {bounty != null && (
+          <div style={styles.bountyRow} title="Win streak going into this hand — written into the PT4 name">
+            <button style={styles.bountyBtn} disabled={bounty <= 0} onClick={() => onBounty(-1)}>−</button>
+            <span style={{ ...styles.bountyTag, opacity: bounty > 0 ? 1 : 0.45 }}>{bounty > 0 ? `${bounty}bounty` : "no streak"}</span>
+            <button style={styles.bountyBtn} onClick={() => onBounty(1)}>+</button>
+          </div>
+        )}
         {editingStack ? (
           <input
             autoFocus
@@ -741,13 +751,16 @@ function HandBuilder({ me, refreshMe }) {
   const [lastHandKey, setLastHandKey] = useState(() => pick("lastHandKey", null));
 
   // ── Side game mode ─────────────────────────────────────────────────────────
-  // A simplified flow for non-standard side games (Squid Game, Bounty Game, …):
+  // A simplified flow for non-standard side games (Squid Game, …):
   // no hole cards / actions / board — just count hands as positions rotate. Each
   // counted hand is submitted as a 0-piece hand so it pays $0.10 (+$0.05 on
   // stream completion) and counts toward the stream's handsCompleted, but it
   // generates no PT4 text.
   const [sideGameMode, setSideGameMode] = useState(() => pick("sideGameMode", false));
-  const [sideGameType, setSideGameType] = useState(() => pick("sideGameType", "Squid Game"));
+  const [sideGameType, setSideGameType] = useState(() => {
+    const t = pick("sideGameType", "Squid Game");
+    return SIDE_GAME_TYPES.includes(t) ? t : "Squid Game";
+  });
   const [sideGameOther, setSideGameOther] = useState(() => pick("sideGameOther", ""));
   const [sideGameHands, setSideGameHands] = useState(() => pick("sideGameHands", [])); // [{type,gameType,timestamp,handNumber,videoId}]
   const [endingSideGame, setEndingSideGame] = useState(false); // showing the adjust-stacks prompt
@@ -759,6 +772,23 @@ function HandBuilder({ me, refreshMe }) {
   const [sevenTwoDetect, setSevenTwoDetect] = useState(null); // {seat,name,cards} — "enable?" popup
   const [sevenTwoVpip, setSevenTwoVpip] = useState(null);     // {name,cards,src} — "convert?" popup
   const [sevenTwoHandled, setSevenTwoHandled] = useState(false); // VPIP prompt already answered this hand
+
+  // Bounty game: each player's win streak going into the hand is written into
+  // their PT4 name (raver2bounty). Keyed by base name, advanced on every saved
+  // hand, and carried in next_state so restoring or resuming a stream picks up
+  // the streaks as they stood after that hand.
+  const [bountyActive, setBountyActive] = useState(() =>
+    pendingResume?.bountyActive != null ? !!pendingResume.bountyActive : pick("bountyActive", false));
+  const [bountyStreaks, setBountyStreaks] = useState(() =>
+    pendingResume?.bountyStreaks ? pendingResume.bountyStreaks : pick("bountyStreaks", {}));
+  const setBountyStreak = (name, delta) =>
+    setBountyStreaks((s) => {
+      const n = Math.max(0, (s[name] || 0) + delta);
+      const next = { ...s };
+      if (n > 0) next[name] = n;
+      else delete next[name];
+      return next;
+    });
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1108,12 +1138,13 @@ function HandBuilder({ me, refreshMe }) {
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
+          bountyActive, bountyStreaks,
         })
       );
     } catch {
       /* localStorage full or unavailable — ignore */
     }
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey, bountyActive, bountyStreaks]);
 
 
   // Board cards required to deal the next street
@@ -1386,6 +1417,14 @@ function HandBuilder({ me, refreshMe }) {
       if (url) hand.table_name = url; // timestamped link → PT4 table name
       if (videoDate) hand.video_date = videoDate; // video date → PT4 header date
 
+      // Bounty game: the PT4 text gets each player's streak in their name, and the
+      // next hand starts with winners/choppers up one and everyone else at zero.
+      // The roster keeps base names; only the submitted dict is renamed.
+      const nextStreaks = bountyActive
+        ? advanceStreaks(bountyStreaks, eng.players.map((p) => p.name), handWinners(hand))
+        : bountyStreaks;
+      const outHand = bountyActive ? applyBountyNames(hand, bountyStreaks) : hand;
+
       const n = handNumber;
       const { cards, actions } = handPieces;
 
@@ -1417,9 +1456,9 @@ function HandBuilder({ me, refreshMe }) {
         resp = await api("/api/hands/submit", {
           method: "POST",
           body: {
-            hand, hand_index: n - 1, stream_url: url, start_sec: startSec, end_sec: startSec,
+            hand: outHand, hand_index: n - 1, stream_url: url, start_sec: startSec, end_sec: startSec,
             stream_id: videoId, youtube_url: url, timestamp_seconds: startSec,
-            cards_count: cards, actions_count: actions, next_state: computeNextHandState(),
+            cards_count: cards, actions_count: actions, next_state: computeNextHandState(nextStreaks),
           },
         });
       } catch (ex) {
@@ -1446,6 +1485,7 @@ function HandBuilder({ me, refreshMe }) {
       const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
       setFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`);
       setTimeout(() => setFlash(""), 2800);
+      if (bountyActive) setBountyStreaks(nextStreaks);
       nextHand(); // carries over stacks, rotates button, clears, increments hand #
     } catch (e) {
       setError(`Could not reach server: ${e.message}. Is server.py running on :8000?`);
@@ -1540,7 +1580,7 @@ function HandBuilder({ me, refreshMe }) {
 
   // Snapshot of the table for the NEXT hand (ending stacks carried over, button
   // rotated, hand # bumped) — used as the stream's server-side resume point.
-  function computeNextHandState() {
+  function computeNextHandState(nextStreaks = bountyStreaks) {
     let newRoster = roster;
     if (eng) {
       const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || numRuns >= 2 || phase === "complete";
@@ -1563,6 +1603,8 @@ function HandBuilder({ me, refreshMe }) {
       roster: newRoster.map(({ seat, name, stack }) => ({ seat, name, stack })),
       buttonSeat: nextSeat,
       handNumber: handNumber + 1,
+      bountyActive,
+      bountyStreaks: nextStreaks,
     };
   }
 
@@ -1580,6 +1622,8 @@ function HandBuilder({ me, refreshMe }) {
     setRoster(snap.roster.map((p) => ({ seat: p.seat, name: p.name || "", stack: p.stack || 0 })));
     if (snap.buttonSeat != null) setButtonSeat(snap.buttonSeat);
     if (snap.handNumber != null) setHandNumber(snap.handNumber);
+    if (snap.bountyActive != null) setBountyActive(!!snap.bountyActive);
+    setBountyStreaks(snap.bountyStreaks || {});
     // YouTube link at this hand's timestamp (the stored url already carries ?t=).
     let link = card.youtubeUrl || "";
     if (card.startSec > 0 && !/[?&]t=/.test(link)) link += (link.includes("?") ? "&" : "?") + "t=" + card.startSec;
@@ -1871,6 +1915,10 @@ function HandBuilder({ me, refreshMe }) {
             <label style={{ ...styles.checkRow, marginTop: 4 }} title="When on, a player who voluntarily plays 7-2 converts the hand into a side game.">
               <input type="checkbox" checked={sevenTwoActive} onChange={(e) => setSevenTwoActive(e.target.checked)} />
               <span>7-2 Game Active <span style={styles.sideHint}>· VPIP with 7-2 → side game</span></span>
+            </label>
+            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's win streak going into the hand into their PT4 name, e.g. raver2bounty. Winners and choppers go up one after every hand; everyone else resets.">
+              <input type="checkbox" checked={bountyActive} onChange={(e) => setBountyActive(e.target.checked)} />
+              <span>Bounty Game <span style={styles.sideHint}>· streak → raver2bounty</span></span>
             </label>
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
@@ -2197,6 +2245,8 @@ function HandBuilder({ me, refreshMe }) {
                 desc={autoEval?.descriptions?.[p.name]}
                 isWinner={autoEval && autoEval.winners.includes(p.name)}
                 bought={buyButton && buyButton.seat === p.seat ? buyButton.type : null}
+                bounty={bountyActive && !p.empty && p.name.trim() ? bountyStreaks[p.name] || 0 : null}
+                onBounty={(d) => setBountyStreak(p.name, d)}
                 onNameClick={!locked && !p.empty ? () => setBuyMenuSeat(p.seat) : undefined}
                 phase={phase}
                 sitting={sitSeat === p.seat}
@@ -2705,6 +2755,9 @@ const styles = {
   seatStack: { fontSize: 13, fontWeight: 700, color: "#4ade80", cursor: "pointer", marginTop: 1 },
   handDesc: { fontSize: 10, fontWeight: 600, marginTop: 3, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   boughtTag: { marginTop: 3, fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 8, padding: "1px 6px", display: "inline-block" },
+  bountyRow: { marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
+  bountyTag: { fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#fecaca", background: "#7f1d1d", borderRadius: 8, padding: "1px 6px" },
+  bountyBtn: { width: 16, height: 16, padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#cbd5e1", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1 },
   buyBox: { background: "#0e1626", border: "1px solid #334155", borderRadius: 12, padding: 18, maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,.6)" },
   buyNote: { fontSize: 11, color: "#94a3b8", marginBottom: 12, lineHeight: 1.4 },
   buyBtn: { flex: 1, padding: "12px 10px", border: "none", borderRadius: 9, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", letterSpacing: 0.5 },

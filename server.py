@@ -23,8 +23,9 @@ from flask_cors import CORS
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Only the hand-builder formatter/evaluator are imported eagerly — they're
-# stdlib-only. The heavy scraper deps (opencv, yt-dlp, …) are imported lazily
-# inside the pipeline functions so the deployed app needs only flask/flask-cors.
+# stdlib-only. The heavy scraper deps (opencv, …) are imported lazily inside the
+# pipeline functions. yt-dlp is the one deployed extra: the stream refresher
+# below uses it, also imported lazily.
 from src.export.pt4_formatter import format_hand, HandValidationError
 from src.export.hand_evaluator import evaluate_best_hand
 import auth_db
@@ -41,6 +42,57 @@ CORS(app, supports_credentials=True)
 
 # Create tables, bootstrap the admin account, seed the stream catalog.
 auth_db.init_db()
+
+
+# ── Stream catalog auto-refresh ──────────────────────────────────────────────
+# New HCL streams are picked up by a background thread instead of someone
+# re-running scripts/scrape_hcl_streams.py by hand. Every STREAM_REFRESH_HOURS it
+# checks the top of the channel's /streams tab and upserts anything new, so a
+# stream reaches the calendar within a few hours of its VOD finishing. On by
+# default on Railway; locally it only runs with STREAM_REFRESH=1, so dev servers
+# and tests don't hit YouTube.
+STREAM_REFRESH_HOURS = float(os.environ.get("STREAM_REFRESH_HOURS", "3"))
+
+
+def _refresh_enabled():
+    flag = os.environ.get("STREAM_REFRESH")
+    if flag is not None:
+        return flag.strip().lower() not in ("", "0", "false", "no")
+    return bool(os.environ.get("RAILWAY_ENVIRONMENT"))
+
+
+def refresh_stream_catalog():
+    """One pass: fetch streams the catalog doesn't have yet and upsert them.
+    Dateless placeholder rows (a stream typed into the builder before it reached
+    the catalog) don't count as known, so they get their date and title filled."""
+    from src.ingest.hcl_catalog import fetch_new_streams
+    known = {s["id"] for s in auth_db.list_streams()}
+    streams, rep = fetch_new_streams(known)
+    for s in streams:
+        auth_db.upsert_stream(s)
+    if rep["blocked"]:
+        print("Stream refresh: YouTube is blocking this server (bot check), nothing "
+              "fetched — switch the refresher to a YouTube API key.", flush=True)
+    else:
+        newest = max((s["date"] for s in streams), default=None)
+        print(f"Stream refresh: +{len(streams)} new (scanned {rep['scanned']}, "
+              f"extracted {rep['extracted']}, not ready {rep['not_ready']})"
+              + (f", newest {newest}" if newest else ""), flush=True)
+    return streams, rep
+
+
+def _stream_refresher():
+    time.sleep(60)  # let the app finish booting and start serving first
+    while True:
+        try:
+            refresh_stream_catalog()
+        except Exception as e:  # a YouTube hiccup must never kill the thread
+            print(f"Stream refresh failed: {type(e).__name__}: {e}", flush=True)
+        time.sleep(max(0.25, STREAM_REFRESH_HOURS) * 3600)
+
+
+if _refresh_enabled():
+    threading.Thread(target=_stream_refresher, name="stream-refresh", daemon=True).start()
 
 
 # ── Auth helpers ─────────────────────────────────────────────────────────────

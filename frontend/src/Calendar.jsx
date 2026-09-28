@@ -282,6 +282,8 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
         roster: r.resume_state?.roster,
         buttonSeat: r.resume_state?.buttonSeat,
         handNumber: r.resume_state?.handNumber,
+        bountyActive: r.resume_state?.bountyActive,
+        bountyStreaks: r.resume_state?.bountyStreaks,
       };
     } catch { /* fall back to just the URL */ }
     onResumeStream(payload);
