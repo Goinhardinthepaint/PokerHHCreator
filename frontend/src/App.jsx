@@ -4,6 +4,7 @@ import Auth from "./Auth.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Admin from "./Admin.jsx";
 import TutorialOverlay from "./TutorialOverlay.jsx";
+import { switchUi } from "./uiSwitch.js";
 
 // Onboarding tour — each step points at an element tagged with data-tour.
 // Order follows the real workflow: set up the table → paste link → deal → cards
@@ -155,9 +156,11 @@ function secsToHMS(s) {
   return [h, m, sec].map((x) => String(x).padStart(2, "0")).join(":");
 }
 
-// Today's date as YYYY-MM-DD, used as the default video date for a fresh session.
+// Today's LOCAL date as YYYY-MM-DD, the default video date for a fresh session.
+// (toISOString is UTC, which is already tomorrow on a US evening.)
 const TODAY_ISO = (() => {
-  try { return new Date().toISOString().slice(0, 10); } catch { return ""; }
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 })();
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Compact clock for a hand's timestamp: "33:20" (m:ss) or "1:02:03" (h:mm:ss).
@@ -396,8 +399,18 @@ function loadSession() {
     return {};
   }
 }
-const SAVED = loadSession();
-const pick = (key, fallback) => (SAVED[key] !== undefined ? SAVED[key] : fallback);
+// Write the session back. Session hands are already on the server (they're only
+// recorded after a successful submit), so the local copy keeps the latest 200 and
+// stores each hand's PT4 text once (it used to be stored twice, as text + pt4Text).
+// If storage is still full, keep fewer rather than silently saving nothing.
+function saveSession(snapshot) {
+  const hands = (snapshot.sessionHands || []).slice(-200).map(({ text, ...h }) => ({ ...h, pt4Text: h.pt4Text || text || "" }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...snapshot, sessionHands: hands }));
+  } catch {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...snapshot, sessionHands: hands.slice(-30) })); } catch { /* unavailable */ }
+  }
+}
 
 // Per-stream default lineups (seat → name), keyed by video id. Mirrored to the
 // server too, but cached locally so they survive offline / reloads.
@@ -420,10 +433,13 @@ function parsePt4Pot(pt4) {
 }
 function parsePt4Players(pt4) {
   if (!pt4) return [];
+  // Only the seat list at the top: the SUMMARY repeats every "Seat N:" line,
+  // which counted each player twice ("6 players" for a 3-handed hand).
+  const head = pt4.split("*** HOLE CARDS ***")[0];
   const out = [];
   const re = /^Seat \d+: (.+?)(?= \(| folded| showed| mucked| collected| won| lost|$)/gm;
   let m;
-  while ((m = re.exec(pt4))) { const nm = m[1].trim(); if (nm) out.push(nm); }
+  while ((m = re.exec(head))) { const nm = m[1].trim(); if (nm) out.push(nm); }
   return out;
 }
 function parsePt4Summary(pt4) {
@@ -696,6 +712,11 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
 
 // ── Hand Builder (the poker table workspace) ─────────────────────────────────
 function HandBuilder({ me, refreshMe }) {
+  // The saved session is read fresh on every mount. It used to be read once at
+  // page load, so coming back from the Calendar or Dashboard rebuilt the table
+  // from that stale snapshot — and then saved it over the newer session.
+  const [saved] = useState(loadSession);
+  const pick = (key, fallback) => (saved[key] !== undefined ? saved[key] : fallback);
   // A "Resume" handoff from the Calendar, consumed once on mount.
   const [pendingResume] = useState(() => readAndClearPendingResume());
 
@@ -804,8 +825,30 @@ function HandBuilder({ me, refreshMe }) {
   const [sessionHands, setSessionHands] = useState(() => pick("sessionHands", [])); // [{n, text}] accumulated PT4 hands
   const [configDraft, setConfigDraft] = useState(""); // save/restore session JSON
   const [flash, setFlash] = useState(""); // transient green "Hand #N saved" toast
+  // One timer for the toast: separate timers let an older toast's timeout
+  // clear a newer message early.
+  const flashTimer = useRef(null);
+  const showFlash = (msg, ms = 2800) => {
+    clearTimeout(flashTimer.current);
+    setFlash(msg);
+    flashTimer.current = setTimeout(() => setFlash(""), ms);
+  };
 
   const named = useMemo(() => roster.filter((p) => p.name.trim()), [roster]);
+  // The engine keys players by name and by seat, so two seats sharing either
+  // silently scramble winners, showdowns and side pots. Caught before dealing.
+  const rosterProblem = () => {
+    const names = new Set();
+    const seats = new Set();
+    for (const p of named) {
+      const key = p.name.trim().toLowerCase();
+      if (names.has(key)) return `Two seats are both named "${p.name.trim()}" — every player needs a different name.`;
+      names.add(key);
+      if (seats.has(p.seat)) return `Seat ${p.seat} is used twice — fix the seat numbers in the roster.`;
+      seats.add(p.seat);
+    }
+    return null;
+  };
 
   // ── Per-stream default lineup ──────────────────────────────────────────────
   const [defaultLineups, setDefaultLineups] = useState(loadDefaultLineups);
@@ -875,8 +918,7 @@ function HandBuilder({ me, refreshMe }) {
       });
       const mine = (resp.shares || []).find((s) => s.user_id === (me.user && me.user.id));
       const amt = mine ? mine.bonus : 0;
-      setFlash(`🏁 Stream finished — stream bonus awarded${amt ? `: +$${amt.toFixed(2)}` : ""}`);
-      setTimeout(() => setFlash(""), 3200);
+      showFlash(`🏁 Stream finished — stream bonus awarded${amt ? `: +$${amt.toFixed(2)}` : ""}`, 3200);
       if (refreshMe) refreshMe();
       fetchHands();
     } catch (e) {
@@ -1128,23 +1170,32 @@ function HandBuilder({ me, refreshMe }) {
   // Fresh evaluation matching the current cards/board (else null).
   const autoEval = showdownEval && evalResult && evalResult.key === showdownEval.key ? evalResult : null;
 
-  // ── Auto-persist the full session on every change ─────────────────────────
+  // ── Auto-persist the full session ─────────────────────────────────────────
+  // Debounced: serialising the whole session (engine history, saved hands) on
+  // every keystroke made typing lag. The latest snapshot is flushed when the tab
+  // hides or closes and when the builder unmounts, so nothing is lost.
+  const persistRef = useRef(null);
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
+    persistRef.current = {
           stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
           bountyActive, bountyStreaks,
-        })
-      );
-    } catch {
-      /* localStorage full or unavailable — ignore */
-    }
+    };
+    const t = setTimeout(() => saveSession(persistRef.current), 400);
+    return () => clearTimeout(t);
   }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey, bountyActive, bountyStreaks]);
+  useEffect(() => {
+    const flush = () => { if (persistRef.current) saveSession(persistRef.current); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      flush();
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, []);
 
 
   // Board cards required to deal the next street
@@ -1267,6 +1318,12 @@ function HandBuilder({ me, refreshMe }) {
       setSidebarOpen(true);
       return;
     }
+    const problem = rosterProblem();
+    if (problem) {
+      setError(problem);
+      setSidebarOpen(true);
+      return;
+    }
     if (!named.some((p) => p.seat === Number(buttonSeat))) {
       setError("Button seat must be an occupied seat.");
       return;
@@ -1289,6 +1346,12 @@ function HandBuilder({ me, refreshMe }) {
       setError("Add at least 2 players in the sidebar.");
       return;
     }
+    const problem = rosterProblem();
+    if (problem) {
+      setError(problem);
+      setSidebarOpen(true);
+      return;
+    }
     if (!named.some((p) => p.seat === Number(buttonSeat))) {
       setError("Button seat must be an occupied seat.");
       setSidebarOpen(true);
@@ -1302,7 +1365,13 @@ function HandBuilder({ me, refreshMe }) {
   }
 
   // Each engine transition snapshots the prior state so it can be undone.
+  // A double-click would apply a second action — to the NEXT player, since the
+  // same button now belongs to them — so presses within 200ms are ignored.
+  const lastActAt = useRef(0);
   const act = (type, amount) => {
+    const now = Date.now();
+    if (now - lastActAt.current < 200) return;
+    lastActAt.current = now;
     setEngHistory((h) => [...h, eng]);
     setEng((s) => applyAction(s, { type, amount }));
   };
@@ -1367,8 +1436,7 @@ function HandBuilder({ me, refreshMe }) {
       } catch { /* offline — the local record still stands */ }
     }
     if (videoId) setLastHandKey({ videoId, startSec }); // block re-using this exact timestamp
-    setFlash(`7-2 side game — ${holder?.name || "?"} VPIPed with ${cardsStr || "7-2"} · +$${SIDE_GAME_RATE.toFixed(2)}`);
-    setTimeout(() => setFlash(""), 2800);
+    showFlash(`7-2 side game — ${holder?.name || "?"} VPIPed with ${cardsStr || "7-2"} · +$${SIDE_GAME_RATE.toFixed(2)}`, 2800);
     advanceToNextHand();
   }
 
@@ -1383,9 +1451,14 @@ function HandBuilder({ me, refreshMe }) {
   // the session, flash confirmation, and advance to the next hand. If the 7-2
   // game is on and the 7-2 holder VPIPed (hand ended preflop), offer to convert
   // to a side game first.
+  // A second click while the first save is in flight would submit (and pay
+  // for) the same hand twice.
+  const submittingRef = useRef(false);
   async function completeHand() {
+    if (submittingRef.current) return;
     if (trySevenTwoVpip("complete")) return;
-    await runCompleteHand();
+    submittingRef.current = true;
+    try { await runCompleteHand(); } finally { submittingRef.current = false; }
   }
   async function runCompleteHand() {
     setError("");
@@ -1483,12 +1556,11 @@ function HandBuilder({ me, refreshMe }) {
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
       const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
-      setFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`);
-      setTimeout(() => setFlash(""), 2800);
+      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`, 2800);
       if (bountyActive) setBountyStreaks(nextStreaks);
       nextHand(); // carries over stacks, rotates button, clears, increments hand #
     } catch (e) {
-      setError(`Could not reach server: ${e.message}. Is server.py running on :8000?`);
+      setError(`Couldn't save the hand: ${e.message}`);
     }
   }
 
@@ -1641,8 +1713,7 @@ function HandBuilder({ me, refreshMe }) {
         : card.n ? `Hand #${card.n}`
         : card.timestamp ? `the hand at ${card.timestamp}`
         : "that hand";
-    setFlash(`Restored to after ${afterLabel} — ready for next hand`);
-    setTimeout(() => setFlash(""), 3200);
+    showFlash(`Restored to after ${afterLabel} — ready for next hand`, 3200);
   }
 
   function nextHand() {
@@ -1711,6 +1782,7 @@ function HandBuilder({ me, refreshMe }) {
   // pays + counts toward the stream but makes no PT4 text), record it locally,
   // rotate the button, and bump the hand number.
   async function nextSideGameHand() {
+    if (submittingRef.current) return;
     setError("");
     const link = youtubeLink.trim();
     if (!link) return setError("Paste the timestamped YouTube link for the side game's first hand.");
@@ -1726,6 +1798,7 @@ function HandBuilder({ me, refreshMe }) {
 
     // 0-piece submission → $0.10 base (+$0.05 on stream completion), counts toward
     // the stream's handsCompleted, no PT4 text.
+    submittingRef.current = true;
     try {
       await api("/api/hands/submit", {
         method: "POST",
@@ -1742,6 +1815,7 @@ function HandBuilder({ me, refreshMe }) {
       });
       if (refreshMe) refreshMe();
     } catch { /* offline — the local counter still advances */ }
+    finally { submittingRef.current = false; }
 
     // Positions auto-rotate: move the button to the next occupied seat.
     const occ = named.slice().sort((a, b) => a.seat - b.seat);
@@ -1751,8 +1825,7 @@ function HandBuilder({ me, refreshMe }) {
       setButtonSeat(nextSeat);
     }
     setHandNumber((h) => h + 1);
-    setFlash(`Side game hand #${n} recorded · +$${SIDE_GAME_RATE.toFixed(2)}`);
-    setTimeout(() => setFlash(""), 1800);
+    showFlash(`Side game hand #${n} recorded · +$${SIDE_GAME_RATE.toFixed(2)}`, 1800);
   }
 
   // Begin ending the side game — surface the stack-adjust prompt seeded with
@@ -1800,8 +1873,12 @@ function HandBuilder({ me, refreshMe }) {
     const a = document.createElement("a");
     a.href = url;
     a.download = `hands_${ordered.length}.txt`;
+    // Firefox only downloads from an anchor that's in the document, and revoking
+    // the URL in the same tick can cancel the download before it starts.
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // Remove hands by number; the persistence effect mirrors the change to storage.
@@ -2025,7 +2102,7 @@ function HandBuilder({ me, refreshMe }) {
                     disabled={locked || autoNumber} />
                   <span style={{ ...styles.diffDot, opacity: defaultDiffers.has(p.seat) ? 1 : 0 }} title="Differs from default lineup">●</span>
                   <input style={{ ...styles.input, flex: 1 }} value={p.name} placeholder="(empty)" onChange={(e) => updateRosterAt(i, { name: e.target.value })} disabled={locked} />
-                  <input style={{ ...styles.input, width: 74 }} type="number" value={p.stack} onChange={(e) => updateRosterAt(i, { stack: Number(e.target.value) })} disabled={locked} />
+                  <input style={{ ...styles.input, width: 74 }} type="number" value={p.stack} onChange={(e) => updateRosterAt(i, { stack: Math.max(0, Number(e.target.value) || 0) })} disabled={locked} />
                   {!locked && p.name.trim() && <button style={styles.miniX} title="Stand up (keep seat)" onClick={() => emptySeatAt(i)}>⏏</button>}
                   {!locked && <button style={styles.miniX} title="Remove seat from table" onClick={() => removeSeatAt(i)}>✕</button>}
                 </div>
@@ -2271,7 +2348,7 @@ function HandBuilder({ me, refreshMe }) {
                 stackValue={stackDraft}
                 onStackChange={setStackDraft}
                 onStackCommit={() => {
-                  updateRoster(p.seat, { stack: Number(stackDraft) || 0 });
+                  updateRoster(p.seat, { stack: Math.max(0, Number(stackDraft) || 0) });
                   setEditingStack(null);
                 }}
               />
@@ -2373,7 +2450,7 @@ function HandBuilder({ me, refreshMe }) {
                     ) : (
                       <>
                         <button style={styles.sizeBtn} onClick={() => setBetTo(legal.minRaiseTo)}>min</button>
-                        <button style={styles.sizeBtn} onClick={() => setBetTo(Math.min(legal.maxTo, legal.facing + potTotal(eng)))}>pot</button>
+                        <button style={styles.sizeBtn} onClick={() => setBetTo(Math.min(legal.maxTo, legal.facing + potTotal(eng) + legal.toCall))}>pot</button>
                       </>
                     )}
                   </div>
@@ -2560,9 +2637,11 @@ function HandBuilder({ me, refreshMe }) {
       {/* Custom straddle popup */}
       {straddleMenuOpen && (
         <StraddleMenu
-          seats={named}
+          // The blinds already have a forced bet in; a blind "straddling" posts
+          // twice, which the formatter rejects. Offer every other seat.
+          seats={named.filter((p) => !["SB", "BB", "BTN/SB"].includes(positions[p.seat]))}
           positions={positions}
-          defaultSeat={customStraddle ? customStraddle.seat : (named[0] && named[0].seat)}
+          defaultSeat={customStraddle ? customStraddle.seat : undefined}
           defaultAmount={customStraddle ? customStraddle.amount : 2 * bb}
           onConfirm={(seat, amount) => { setCustomStraddle({ seat, amount }); setStraddleCount(0); setBuyButton(null); setStraddleMenuOpen(false); }}
           onClose={() => setStraddleMenuOpen(false)}
@@ -2848,6 +2927,7 @@ function NavBar({ route, navigate, me, onLogout, onRedoTutorial }) {
         {me.user.is_admin && (
           <NavItem to="/admin" label="Admin" icon="🛡" active={route === "admin"} navigate={navigate} />
         )}
+        <button style={navStyles.logout} title="Switch to the original site" onClick={() => switchUi("classic")}>Classic view</button>
         <span style={navStyles.user}>{me.user.username}</span>
         <button style={navStyles.help} title="Redo the tutorial" onClick={onRedoTutorial}>?</button>
         <button style={navStyles.logout} onClick={onLogout}>Log out</button>
@@ -2876,21 +2956,30 @@ export default function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // Initial session check.
-  useEffect(() => {
-    api("/api/me").then(setMe).catch(() => setMe(false));
+  // Initial session check. Only a 401 means "logged out": a network blip or a
+  // server restart used to drop the user on the login screen mid-session.
+  const [offline, setOffline] = useState(false);
+  const checkSession = useCallback(() => {
+    return api("/api/me")
+      .then((m) => { setOffline(false); setMe(m); })
+      .catch((e) => { if (e.status === 401) setMe(false); else setOffline(true); });
   }, []);
+  useEffect(() => { checkSession(); }, [checkSession]);
 
   const refreshMe = useCallback(async () => {
     try { const m = await api("/api/me"); setMe(m); return m; }
-    catch { setMe(false); return null; }
+    catch (e) { if (e.status === 401) setMe(false); return null; }
   }, []);
+
 
   const navigate = (path) => {
     try {
       if (window.location.pathname !== path) window.history.pushState({}, "", path);
     } catch { /* ignore */ }
     setRoute(pathToRoute(path));
+    // The Dashboard renders the cached /api/me payload; refresh it on the way in
+    // so payments or bonuses recorded since are shown.
+    if (pathToRoute(path) === "dashboard") refreshMe();
   };
 
   // Hand a YouTube URL to the Hand Builder, then switch to it.
@@ -2928,7 +3017,14 @@ export default function App() {
     navigate("/");
   };
 
-  if (me === null) return <div style={navStyles.loading}>Loading…</div>;
+  if (me === null) {
+    return offline ? (
+      <div style={navStyles.loading}>
+        Can't reach the server.&nbsp;
+        <button style={navStyles.logout} onClick={checkSession}>Retry</button>
+      </div>
+    ) : <div style={navStyles.loading}>Loading…</div>;
+  }
   if (!me) return <Auth onAuthed={(m) => { setMe(m); navigate("/"); }} />;
 
   let view;

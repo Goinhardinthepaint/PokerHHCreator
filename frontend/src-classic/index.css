@@ -1,0 +1,43 @@
+/* Full-viewport reset — the app (App.jsx) owns all layout and styling. */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+}
+
+body {
+  background: #070b12;
+  color: #e2e8f0;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty YouTube-link field: pulse an amber border to prompt a fresh link. */
+@keyframes ytFlash {
+  0%,
+  100% {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+  }
+}
+.yt-empty-flash {
+  animation: ytFlash 1.4s ease-in-out infinite;
+}

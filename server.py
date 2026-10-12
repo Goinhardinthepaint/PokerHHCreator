@@ -825,19 +825,42 @@ def api_admin_import_hands():
 _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
 
 
+# Two UIs ship in one build: index.html (the redesign) and classic.html (the
+# original UI). The `ui` cookie, set by the switch in either UI's nav, picks one;
+# UI_DEFAULT decides for browsers that haven't chosen.
+UI_DEFAULT = os.environ.get("UI_DEFAULT", "new")
+
+
+def _ui_page():
+    choice = request.cookies.get("ui") or UI_DEFAULT
+    page = "classic.html" if choice == "classic" else "index.html"
+    if not os.path.isfile(os.path.join(_DIST, page)):  # a build without the classic page
+        page = "index.html"
+    # The same URL serves different pages per cookie, so it must never be cached:
+    # a cached copy would ignore the switch until the cache expired.
+    resp = send_from_directory(_DIST, page)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Vary"] = "Cookie"
+    return resp
+
+
 @app.route("/")
 def serve_frontend():
-    return send_from_directory(_DIST, "index.html")
+    return _ui_page()
 
 
 @app.route("/<path:path>")
 def serve_static(path):
-    # Serve the requested asset if it exists, else fall back to index.html
+    # An unknown API path is an error, not the app: falling through to the SPA
+    # returned index.html with a 200, which callers then failed to parse as JSON.
+    if path == "api" or path.startswith("api/"):
+        return jsonify({"error": "Not found."}), 404
+    # Serve the requested asset if it exists, else fall back to the app page
     # (so refreshes / deep links still load the app).
     full = os.path.join(_DIST, path)
     if os.path.isfile(full):
         return send_from_directory(_DIST, path)
-    return send_from_directory(_DIST, "index.html")
+    return _ui_page()
 
 
 if __name__ == "__main__":
