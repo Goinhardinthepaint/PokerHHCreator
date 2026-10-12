@@ -48,8 +48,18 @@ export default function Admin() {
     } catch (e) { setError(e.message); }
   };
 
-  if (error) return <div style={st.page}><div style={st.err}>⚠ {error}</div></div>;
-  if (!overview) return <div style={st.page}>Loading…</div>;
+  if (!overview) {
+    return (
+      <div style={st.page}>
+        {error ? (
+          <div style={st.err}>
+            ⚠ {error}{" "}
+            <button style={st.resetBtn} onClick={() => { setError(""); loadOverview(); }}>Retry</button>
+          </div>
+        ) : "Loading…"}
+      </div>
+    );
+  }
   const p = overview.platform;
 
   return (
@@ -58,6 +68,14 @@ export default function Admin() {
         <h1 style={st.h1}>Admin</h1>
         <a style={st.exportBtn} href="/api/admin/export" target="_blank" rel="noreferrer">⬇ Download All Hands (.txt)</a>
       </div>
+
+      {/* A failed action shows here and can be dismissed; the page stays usable. */}
+      {error && (
+        <div style={{ ...st.err, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span>⚠ {error}</span>
+          <button style={st.resetBtn} onClick={() => setError("")}>Dismiss</button>
+        </div>
+      )}
 
       {/* Platform stats */}
       <div style={st.cards}>
@@ -263,6 +281,22 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
   const [openHand, setOpenHand] = useState(null);
+  // A worker's hand list carries no PT4 text (thousands of hands made every open
+  // a multi-MB response); a hand's text is fetched when it's expanded. Hands are
+  // rendered 100 at a time for the same reason.
+  const [texts, setTexts] = useState({});
+  const [shown, setShown] = useState(100);
+  const toggleHand = async (id) => {
+    const next = openHand === id ? null : id;
+    setOpenHand(next);
+    if (next == null || texts[id] !== undefined) return;
+    try {
+      const h = await api(`/api/admin/hand/${id}`);
+      setTexts((t) => ({ ...t, [id]: h.pt4_text || "" }));
+    } catch (e) {
+      setTexts((t) => ({ ...t, [id]: `(couldn't load this hand: ${e.message})` }));
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [errCount, setErrCount] = useState("");
@@ -374,9 +408,9 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                   >⬇ Download All Hands</a>
                 )}
               </div>
-              {detail.hands.map((h) => (
+              {detail.hands.slice(0, shown).map((h) => (
                 <div key={h.id} style={st.handBlock}>
-                  <div style={st.handRow} onClick={() => setOpenHand(openHand === h.id ? null : h.id)}>
+                  <div style={st.handRow} onClick={() => toggleHand(h.id)}>
                     <span>#{h.id} · {h.stream_id || "—"} · t={h.timestamp_seconds}s</span>
                     <span style={st.dim}>{fmtMoney(h.earnings)} {openHand === h.id ? "▾" : "▸"}</span>
                   </div>
@@ -385,11 +419,16 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                       {h.youtube_url && (
                         <a style={st.link} href={`${h.youtube_url}${h.youtube_url.includes("?") ? "&" : "?"}t=${h.timestamp_seconds || 0}`} target="_blank" rel="noreferrer">▶ open at timestamp ↗</a>
                       )}
-                      <pre style={st.pre}>{h.pt4_text || "(no PT4 text)"}</pre>
+                      <pre style={st.pre}>{texts[h.id] === undefined ? "Loading…" : (texts[h.id] || "(no PT4 text)")}</pre>
                     </div>
                   )}
                 </div>
               ))}
+              {detail.hands.length > shown && (
+                <button style={{ ...st.resetBtn, width: "100%", marginTop: 8 }} onClick={() => setShown((n) => n + 200)}>
+                  Show {Math.min(200, detail.hands.length - shown)} more ({detail.hands.length - shown} not shown)
+                </button>
+              )}
             </div>
           </>
         )}

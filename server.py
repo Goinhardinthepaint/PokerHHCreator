@@ -38,7 +38,9 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,  # 30 days
 )
 # supports_credentials so the session cookie rides along with fetch(credentials).
-CORS(app, supports_credentials=True)
+# The app is served same-origin. CORS with credentials used to reflect ANY
+# origin; it's now limited to the Vite dev server.
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", "http://127.0.0.1:3000"])
 
 # Create tables, bootstrap the admin account, seed the stream catalog.
 auth_db.init_db()
@@ -328,7 +330,10 @@ def _run_pipeline(params):
 
 
 @app.route("/api/run", methods=["POST"])
+@admin_required
 def api_run():
+    # Admin-only: this starts the video-scraping pipeline in a background thread
+    # and was callable by anyone on the internet, logged in or not.
     global _running
     if _running:
         return jsonify({"error": "Pipeline already running"}), 409
@@ -357,12 +362,14 @@ def api_run():
 
 
 @app.route("/api/stop", methods=["POST"])
+@admin_required
 def api_stop():
     _stop_flag.set()
     return jsonify({"status": "stopping"})
 
 
 @app.route("/api/download", methods=["GET"])
+@admin_required
 def api_download():
     path = "output/hands.txt"
     if os.path.exists(path):
@@ -417,6 +424,37 @@ def _autofill_showdown(hand):
             _s, desc = evaluate_best_hand(cards, b)
             if desc and "insufficient" not in desc:
                 sd["hand_description"] = desc
+
+
+_POSTS = {"posts_sb", "posts_bb", "posts_ante", "posts_straddle"}
+
+
+def _piece_caps(hand):
+    """The most cards and actions a hand can honestly be paid for.
+
+    Pay is (cards + actions) x piece rate, and the counts come from the browser.
+    They're capped here rather than recomputed, so honest submissions are paid
+    exactly as before. (The builder counts each run of a run-it-twice board as a
+    full five cards, shared cards included; recounting server-side would quietly
+    pay less for those hands.)
+    """
+    players = hand.get("players") or []
+    board = hand.get("board") or {}
+    runs = max(1, len(board.get("runs") or []), int(hand.get("num_runs") or 1))
+    max_cards = 2 * len(players) + 5 * runs
+    actions = sum(
+        1 for street in (hand.get("action") or {}).values()
+        for a in (street or []) if a.get("action") not in _POSTS
+    )
+    return max_cards, actions
+
+
+def _clamp_count(value, cap):
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return max(0, min(n, cap))
 
 
 def _format_hand_or_error(data):
@@ -479,6 +517,7 @@ def api_evaluate():
 
 
 @app.route("/api/status", methods=["GET"])
+@admin_required
 def api_status():
     return jsonify({"running": _running})
 
@@ -549,26 +588,34 @@ def api_hands_submit():
     # The PT4 text is generated HERE (server-side) so a worker's browser never
     # receives the raw hand history. Accepts a hand dict (preferred) and formats
     # it; falls back to a pre-supplied pt4_text for back-compat.
+    u = current_user()
+    is_admin = bool(u and u["is_admin"])
     if d.get("hand") is not None:
         text, err = _format_hand_or_error(d)
         if err:
             return err
+        max_cards, max_actions = _piece_caps(d["hand"])
+        cards = _clamp_count(d.get("cards_count"), max_cards)
+        actions = _clamp_count(d.get("actions_count"), max_actions)
     else:
-        text = d.get("pt4_text") or ""
+        # A hand without a hand dict is a side-game / 7-2 record: no hand
+        # history and no pieces, by design. A worker can't attach raw PT4 text
+        # (it would flow into the exports) or claim pieces for it.
+        text = (d.get("pt4_text") or "") if is_admin else ""
+        cards = actions = 0
     next_state = d.get("next_state")
     hand_id, earnings = auth_db.insert_hand(
         uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
-        text, d.get("cards_count"), d.get("actions_count"),
+        text, cards, actions,
         next_state=next_state,
     )
     # Also snapshot the stream's latest state so the calendar's Resume works.
     sid = d.get("stream_id") or d.get("youtube_url")
     if next_state and sid:
         auth_db.set_resume_state(sid, next_state)
-    u = current_user()
     return jsonify({"hand_id": hand_id, "earnings": earnings,
                     "dashboard": auth_db.user_dashboard(uid),
-                    "pt4_text": text if (u and u["is_admin"]) else None})
+                    "pt4_text": text if is_admin else None})
 
 
 @app.route("/api/hands", methods=["GET"])
@@ -701,6 +748,17 @@ def api_admin_user(uid):
     return jsonify(det)
 
 
+@app.route("/api/admin/hand/<int:hand_id>", methods=["GET"])
+@admin_required
+def api_admin_hand(hand_id):
+    """One hand's PT4 text. The user-detail list no longer carries every hand's
+    text (thousands of hands made it several MB per open)."""
+    h = auth_db.admin_hand(hand_id)
+    if not h:
+        return jsonify({"error": "No such hand."}), 404
+    return jsonify(h)
+
+
 @app.route("/api/admin/user/<int:uid>/export", methods=["GET"])
 @admin_required
 def api_admin_user_export(uid):
@@ -746,9 +804,14 @@ def api_admin_payment():
     if not uid or amount is None:
         return jsonify({"error": "user_id and amount required"}), 400
     try:
-        auth_db.record_payment(uid, amount, d.get("date"), d.get("note"))
+        amount = float(amount)
     except (TypeError, ValueError):
         return jsonify({"error": "amount must be a number"}), 400
+    if amount != amount or amount in (float("inf"), float("-inf")):  # NaN / inf
+        return jsonify({"error": "amount must be a number"}), 400
+    if not auth_db.get_user(uid):
+        return jsonify({"error": "No such user."}), 404
+    auth_db.record_payment(uid, amount, d.get("date"), d.get("note"))
     return jsonify(auth_db.admin_user_detail(uid))
 
 

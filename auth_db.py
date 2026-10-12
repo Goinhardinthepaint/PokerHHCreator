@@ -839,7 +839,8 @@ def user_dashboard(user_id):
         "SELECT h.stream_id AS stream_id, COALESCE(s.title, h.stream_id) AS title, "
         "MAX(s.is_complete) AS is_complete, COUNT(*) AS hands "
         "FROM hands h LEFT JOIN streams s ON h.stream_id = s.id "
-        "WHERE h.user_id = ? GROUP BY h.stream_id, s.title ORDER BY hands DESC",
+        "WHERE h.user_id = ? AND COALESCE(h.type,'hand') = 'hand' "
+        "GROUP BY h.stream_id, s.title ORDER BY hands DESC",
         (user_id,),
     ).fetchall()
     bd["streams_worked"] = [dict(r) for r in bd["streams_worked"]]
@@ -938,10 +939,22 @@ def set_default_lineup(stream_id, lineup):
 
 def set_stream_complete(stream_id, complete=True, meta=None):
     """Mark a stream complete (upserting it first if needed). Returns bonus info."""
-    if meta:
-        meta = {**meta, "id": stream_id}
-        upsert_stream(meta)
     conn = get_db()
+    if meta:
+        # Fill missing catalog fields only. This used the overwriting upsert, so
+        # finishing a stream from the builder replaced the catalog's date and
+        # title with whatever the builder had (e.g. a stale "Video Date").
+        conn.execute(
+            "INSERT INTO streams (id, youtube_url, title, date, duration_minutes, hands_estimated) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
+            "youtube_url = COALESCE(streams.youtube_url, excluded.youtube_url), "
+            "title = COALESCE(streams.title, excluded.title), "
+            "date = COALESCE(streams.date, excluded.date), "
+            "duration_minutes = COALESCE(streams.duration_minutes, excluded.duration_minutes), "
+            "hands_estimated = COALESCE(streams.hands_estimated, excluded.hands_estimated)",
+            (stream_id, meta.get("youtubeUrl"), meta.get("title"), meta.get("date"),
+             meta.get("durationMinutes"), meta.get("handsEstimated")),
+        )
     conn.execute("INSERT INTO streams (id, is_complete) VALUES (?,0) ON CONFLICT DO NOTHING", (stream_id,))
     conn.execute(
         "UPDATE streams SET is_complete = ?, completed_at = ? WHERE id = ?",
@@ -1021,9 +1034,14 @@ def admin_user_detail(user_id):
         return None
     conn = get_db()
     bd = _earnings_breakdown(conn, user_id)
+    # No pt4_text in the list: with thousands of hands it made every open (and
+    # every payment saved from the drawer) a multi-MB response. The UI fetches a
+    # hand's text from /api/admin/hand/<id> when it's expanded.
     hands = conn.execute(
-        "SELECT id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, "
-        "actions_count, earnings, created_at FROM hands WHERE user_id = ? "
+        "SELECT id, stream_id, youtube_url, timestamp_seconds, cards_count, "
+        "actions_count, earnings, created_at, "
+        "CASE WHEN pt4_text IS NULL OR pt4_text = '' THEN 0 ELSE 1 END AS has_text "
+        "FROM hands WHERE user_id = ? "
         "AND COALESCE(type,'hand') = 'hand' ORDER BY id DESC",
         (user_id,),
     ).fetchall()
@@ -1039,6 +1057,16 @@ def admin_user_detail(user_id):
         "hands": [dict(h) for h in hands],
         "payments": [dict(p) for p in pays],
     }
+
+
+def admin_hand(hand_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, user_id, stream_id, youtube_url, timestamp_seconds, pt4_text FROM hands WHERE id = ?",
+        (hand_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def record_payment(user_id, amount, date, note):

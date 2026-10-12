@@ -87,6 +87,15 @@ function mirrorEstimate(stream) {
 const pad2 = (n) => String(n).padStart(2, "0");
 const ymd = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`; // m is 0-based
 const genId = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+// A stream's id must be its YouTube video id: hands are filed under it, so a
+// random id meant a hand-added stream never showed any progress. Random ids are
+// only a fallback for a stream added without a link.
+const videoIdOf = (url) => {
+  const s = String(url || "").trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+  const m = s.match(/(?:[?&]v=|youtu\.be\/|\/live\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : "";
+};
 const nowISO = () => { try { return new Date().toISOString(); } catch { return ""; } };
 
 function fmtDateLong(dateStr) {
@@ -225,7 +234,7 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
   // ── Stream mutations ──────────────────────────────────────────────────────
   const addStream = ({ date, youtubeUrl, title, durationMinutes, handsEstimated }) => {
     const s = {
-      id: genId(),
+      id: videoIdOf(youtubeUrl) || genId(),
       youtubeUrl: youtubeUrl || "",
       title: (title || "").trim() || "HCL Stream",
       date,
@@ -235,7 +244,10 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
       isComplete: false,
       addedAt: nowISO(),
     };
-    setStreams((arr) => [...arr, s]);
+    // Adding a stream the catalog already has (same video) updates it in place
+    // rather than creating a duplicate, and undoes an earlier delete of it.
+    setStreams((arr) => (arr.some((x) => x.id === s.id) ? arr.map((x) => (x.id === s.id ? { ...x, ...s } : x)) : [...arr, s]));
+    setDeletedIds((ids) => ids.filter((x) => x !== s.id));
     api("/api/streams", { method: "POST", body: s }).catch(() => {}); // mirror to server catalog
   };
   const updateStream = (id, patch) => {
@@ -267,7 +279,12 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
       });
       fetchState();
       if (refreshMe) refreshMe();
-    } catch { /* keep the optimistic local toggle */ }
+    } catch (e) {
+      // Undo the optimistic toggle and say so. Swallowing this is how streams
+      // showed ✓ Complete for months while the server was rejecting every save.
+      updateStream(stream.id, { isComplete: !complete });
+      window.alert(`Couldn't ${complete ? "mark" : "unmark"} "${stream.title || stream.id}" complete: ${e.message}`);
+    }
   };
 
   // Resume a stream: pull the last hand's saved table + timestamp from the
@@ -291,14 +308,16 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
 
   const importStreams = (rows) => {
     // De-dupe against existing (date + url) so re-imports don't pile up.
-    const seen = new Set(streams.map((s) => `${s.date}|${s.youtubeUrl}`));
+    const seen = new Set(streams.flatMap((s) => [`${s.date}|${s.youtubeUrl}`, s.id]));
     const fresh = [];
     for (const r of rows) {
       const key = `${r.date}|${r.youtubeUrl}`;
-      if (seen.has(key)) continue;
+      const id = videoIdOf(r.youtubeUrl) || genId();
+      if (seen.has(key) || seen.has(id)) continue;
       seen.add(key);
+      seen.add(id);
       fresh.push({
-        id: genId(),
+        id,
         youtubeUrl: r.youtubeUrl,
         title: r.title || "HCL Stream",
         date: r.date,
