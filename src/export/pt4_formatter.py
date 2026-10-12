@@ -150,9 +150,10 @@ def _preprocess_hand(hand: dict) -> dict:
         preflop_commitments[key] = preflop_commitments.get(key, 0) + (a.get("amount") or 0)
 
     # Multiple straddles double up (UTG 2bb, UTG+1 4bb, …); the facing bet is the
-    # highest straddle.
+    # highest straddle — but never below the big blind: a short stack can straddle
+    # all-in for less than the BB, and everyone else still owes the full BB.
     straddle_amts = [a["amount"] for a in blind_acts if a["action"] == "posts_straddle"]
-    preflop_facing = max(straddle_amts) if straddle_amts else bb
+    preflop_facing = max([bb, *straddle_amts])
 
     # ── Per-street voluntary action validation ────────────────────────────────
     final_street_commitments: dict[str, int] = {}
@@ -416,16 +417,25 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
     # ── Blind / ante / straddle postings ─────────────────────────────────────
     blind_acts = sorted(blind_acts, key=_blind_sort_key)  # antes→SB→BB→straddle
     if blind_acts:
+        # A short stack can be put all-in by its own forced posts (a $60 stack in
+        # the $100 BB). PokerStars marks that post "and is all-in"; without it a
+        # reader of the history thinks the player still has chips to act with.
+        starting = {p["name"]: p.get("stack") for p in players}
+        posted: dict[str, int] = {}
         for a in blind_acts:
             act, amt = a["action"], a["amount"]
+            name = a["player"]
+            posted[name] = posted.get(name, 0) + (amt or 0)
+            stack = starting.get(name)
+            allin = " and is all-in" if stack and posted[name] >= stack else ""
             if act == "posts_ante":
-                lines.append(f"{a['player']}: posts the ante ${amt}")
+                lines.append(f"{name}: posts the ante ${amt}{allin}")
             elif act == "posts_sb":
-                lines.append(f"{a['player']}: posts small blind ${amt}")
+                lines.append(f"{name}: posts small blind ${amt}{allin}")
             elif act == "posts_bb":
-                lines.append(f"{a['player']}: posts big blind ${amt}")
+                lines.append(f"{name}: posts big blind ${amt}{allin}")
             elif act == "posts_straddle":
-                lines.append(f"{a['player']}: posts straddle ${amt}")
+                lines.append(f"{name}: posts straddle ${amt}{allin}")
     else:
         for player in players:
             pos = player.get("position", "")
@@ -450,7 +460,7 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
         preflop_commitments[pkey] = preflop_commitments.get(pkey, 0) + a["amount"]
 
     straddle_amts = [a["amount"] for a in blind_acts if a["action"] == "posts_straddle"]
-    facing_bet_preflop = max(straddle_amts) if straddle_amts else bb_amount
+    facing_bet_preflop = max([bb_amount, *straddle_amts])  # see preflop_facing above
 
     non_blind_preflop = [a for a in preflop_actions if a["action"] not in _BLIND_ACTIONS]
     lines.extend(_format_street_actions(

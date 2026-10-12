@@ -13,6 +13,21 @@ from src.transcript.parser import parse_vtt, chunk_by_hands, segments_to_text
 from src.validate.validator import validate_hand, validate_session
 from src.export.pt4_formatter import format_hand, format_session
 
+import pytest
+
+# The sample transcript was never committed (.gitignore excludes *.vtt), so these
+# two scraper-pipeline tests can't run from a fresh clone. Skip them, saying why,
+# instead of failing every run and hiding real regressions in the noise.
+_VTT = "tests/sample_transcript.vtt"
+_needs_vtt = pytest.mark.skipif(
+    not os.path.exists(_VTT), reason="tests/sample_transcript.vtt is not in the repo (*.vtt is gitignored)"
+)
+
+
+@pytest.fixture
+def segments():
+    return parse_vtt(_VTT)
+
 
 # ─────────────────────────────────────────────
 # Mock data: what Claude API SHOULD return for our sample transcript
@@ -200,6 +215,7 @@ MOCK_PARSED_HANDS = [
 ]
 
 
+@_needs_vtt
 def test_vtt_parsing():
     """Test that VTT file is correctly parsed into segments."""
     print("TEST: VTT Parsing")
@@ -212,6 +228,7 @@ def test_vtt_parsing():
     return segments
 
 
+@_needs_vtt
 def test_hand_chunking(segments):
     """Test that segments are correctly split by hand boundaries."""
     print("TEST: Hand Boundary Detection")

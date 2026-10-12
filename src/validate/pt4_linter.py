@@ -213,7 +213,8 @@ def lint_hand(block: str, hand_num: int) -> LintResult:
             flat.append(c)
 
     # ── Rule 8: Every hand has a winner (collected line) ─────────────────────
-    collected_re = re.compile(r"collected \$\d+ from pot")
+    # Side-pot hands collect "from main pot" / "from side pot" (PokerStars format).
+    collected_re = re.compile(r"collected \$\d+ from (?:main |side )?pot")
     if not any(collected_re.search(line) for line in lines):
         res.fail("R8: no 'collected $X from pot' line found")
 
@@ -418,7 +419,9 @@ def lint_hand(block: str, hand_num: int) -> LintResult:
         return s
 
     _folds_pf  = _folds_of(preflop_lines)
-    _allins_pf = _allins_of(preflop_lines)
+    # A short stack can go all-in on its blind/ante post, before HOLE CARDS.
+    _posts_allin = _allins_of([_l for _l in lines if ": posts " in _l])
+    _allins_pf = _allins_of(preflop_lines) | _posts_allin
     _active_fl = seated_cf - _folds_pf  - _allins_pf
     _active_tu = _active_fl - _folds_of(_fl_acts) - _allins_of(_fl_acts)
     _active_ri = _active_tu - _folds_of(_tu_acts) - _allins_of(_tu_acts)
@@ -435,9 +438,15 @@ def lint_hand(block: str, hand_num: int) -> LintResult:
                 res.fail(_v21)
 
     # ── Rule 22: Preflop action order — BTN acts before SB in non-HU ──────────
+    # Not when the button straddles: a button straddle acts last preflop, so the
+    # small blind correctly opens the action (common 3-handed, where UTG = BTN).
+    _btn_straddled = bool(btn_player) and any(
+        _l.casefold().startswith(f"{btn_player.casefold()}: posts straddle") for _l in lines
+    )
     if (btn_player and sb_player
             and btn_player.casefold() != sb_player.casefold()
-            and len(seat_players) > 2):
+            and len(seat_players) > 2
+            and not _btn_straddled):
         _act22_re = re.compile(
             r"^([A-Za-z][A-Za-z0-9 _\-']+?): (?:folds|checks|calls|bets|raises)"
         )

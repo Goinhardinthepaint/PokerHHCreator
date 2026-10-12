@@ -121,7 +121,9 @@ export function initHand({ players, buttonSeat, sb, bb, ante, straddleSeat, stra
     if (a <= 0) return;
     p.stack -= a;
     p.committedTotal += a;
-    if (live) p.committedStreet = a; // live blinds count toward the street
+    // Live blinds count toward the street. Added, not assigned: a seat that posts
+    // twice (a blind that also straddles) has both amounts in front of it.
+    if (live) p.committedStreet += a;
     else p.dead += a; // antes are dead money
     preflop.push({ player: p.name, action, amount: a });
   };
@@ -297,14 +299,7 @@ export function applyAction(state, act) {
   const log = state.actionsByStreet[state.street];
   const toCall = Math.max(0, state.currentBet - p.committedStreet);
 
-  if (act.type === "fold") {
-    p.folded = true;
-    p.acted = true;
-    log.push({ player: p.name, action: "folds" });
-  } else if (act.type === "check") {
-    p.acted = true;
-    log.push({ player: p.name, action: "checks" });
-  } else if (act.type === "call") {
+  const call = () => {
     const inc = Math.min(toCall, p.stack);
     p.stack -= inc;
     p.committedStreet += inc;
@@ -316,12 +311,30 @@ export function applyAction(state, act) {
     } else {
       log.push({ player: p.name, action: "calls" });
     }
+  };
+
+  if (act.type === "fold") {
+    p.folded = true;
+    p.acted = true;
+    log.push({ player: p.name, action: "folds" });
+  } else if (act.type === "check") {
+    p.acted = true;
+    log.push({ player: p.name, action: "checks" });
+  } else if (act.type === "call") {
+    call();
   } else {
     // bet / raise / allin — amount is the "to" total for the street
     const wasBet = state.currentBet === 0;
     const maxTo = p.committedStreet + p.stack;
     let to = act.type === "allin" ? maxTo : Math.min(act.amount || 0, maxTo);
     if (to <= p.committedStreet) to = maxTo; // guard against degenerate input
+    // Going all-in for no more than the bet already facing you is a CALL, not a
+    // raise. Logging it as "all_in" printed "raises … to $X" with X at or below
+    // the current bet — an impossible line that breaks the hand history.
+    if (!wasBet && to <= state.currentBet) {
+      call();
+      return settleActor(state, state.actorSeat);
+    }
     const inc = to - p.committedStreet;
     p.stack -= inc;
     p.committedTotal += inc;
