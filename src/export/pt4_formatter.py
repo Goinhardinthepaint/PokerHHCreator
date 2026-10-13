@@ -10,6 +10,8 @@ import hashlib
 from datetime import datetime
 from typing import Optional
 
+from src.export.side_game import side_game_lines
+
 
 _BLIND_ACTIONS = {"posts_sb", "posts_bb", "posts_ante", "posts_straddle"}
 _VOLUNTARY_ACTIONS = {"calls", "calls_allin", "bets", "bets_allin", "raises", "all_in"}
@@ -345,6 +347,7 @@ def _pots_summary_line(pots: list) -> str:
 
 def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
                 start_sec: int = 0, end_sec: int = 0) -> str:
+    side_game = (hand or {}).get("side_game")
     hand = _preprocess_hand(hand)
 
     lines = []
@@ -759,6 +762,9 @@ def format_hand(hand: dict, stream_url: str = "", hand_index: int = 0,
 
     for player in players:
         player.pop("_seat", None)
+
+    # Bounty / squid games: one extra section, always last (docs/SIDE_GAME_HH_FORMAT.md).
+    lines.extend(side_game_lines(side_game))
 
     lines.append("")
     lines.append("")

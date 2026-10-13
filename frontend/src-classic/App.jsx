@@ -40,7 +40,11 @@ import {
   survivors,
   STREETS,
 } from "../src/engine.js";
-import { applyBountyNames, advanceStreaks, handWinners } from "../src/bounty.js";
+import {
+  applySideGameNames, mainPotWinners, settleBounty, settleSquid, sideGameDeltas, sideGamePayload,
+  DEFAULT_BOUNTY, DEFAULT_SQUID,
+} from "../src/sideGames.js";
+import SideGamePanel from "../src/SideGamePanel.jsx";
 import Calendar from "./Calendar.jsx";
 
 // When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
@@ -95,9 +99,10 @@ function isVpipAction(action) {
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
 // special server pricing is needed; these constants drive the live counter only.
 const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
-// Bounty Game used to be listed here. Its hands are now transcribed in full with
-// the streak written into each name (see bounty.js), so it's not a side game.
-const SIDE_GAME_TYPES = ["Squid Game", "Other"];
+// Bounty and Squid used to be listed here. Both are now transcribed in full —
+// holdings in each name plus a SIDE GAME block (sideGames.js) — so the quick
+// counter is only for other, untranscribed games.
+const SIDE_GAME_TYPES = ["Other"];
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
 
@@ -299,7 +304,7 @@ function StraddleMenu({ seats, positions, defaultSeat, defaultAmount, onConfirm,
 }
 
 // ── Player seat ─────────────────────────────────────────────────────────────
-function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, bounty, onBounty, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
+function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, cards, desc, isWinner, bought, bounty, onBounty, squid, onSquid, phase, sitting, sitValue, onSit, onSitChange, onSitCommit, onNameClick, onCardClick, onStackClick, editingStack, stackValue, onStackChange, onStackCommit, dataTour }) {
   const posStyle = { ...styles.seat, left: `${pos.left}%`, top: `${pos.top}%` };
 
   if (empty) {
@@ -348,6 +353,13 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
             <button style={styles.bountyBtn} disabled={bounty <= 0} onClick={() => onBounty(-1)}>−</button>
             <span style={{ ...styles.bountyTag, opacity: bounty > 0 ? 1 : 0.45 }}>{bounty > 0 ? `${bounty}bounty` : "no streak"}</span>
             <button style={styles.bountyBtn} onClick={() => onBounty(1)}>+</button>
+          </div>
+        )}
+        {squid != null && (
+          <div style={styles.bountyRow} title="Squid buttons held going into this hand — written into the PT4 name">
+            <button style={styles.bountyBtn} disabled={squid <= 0} onClick={() => onSquid(-1)}>−</button>
+            <span style={{ ...styles.squidTag, opacity: squid > 0 ? 1 : 0.45 }}>{squid > 0 ? `${squid}squid` : "no buttons"}</span>
+            <button style={styles.bountyBtn} onClick={() => onSquid(1)}>+</button>
           </div>
         )}
         {editingStack ? (
@@ -779,8 +791,8 @@ function HandBuilder({ me, refreshMe }) {
   // generates no PT4 text.
   const [sideGameMode, setSideGameMode] = useState(() => pick("sideGameMode", false));
   const [sideGameType, setSideGameType] = useState(() => {
-    const t = pick("sideGameType", "Squid Game");
-    return SIDE_GAME_TYPES.includes(t) ? t : "Squid Game";
+    const t = pick("sideGameType", "Other");
+    return SIDE_GAME_TYPES.includes(t) ? t : "Other";
   });
   const [sideGameOther, setSideGameOther] = useState(() => pick("sideGameOther", ""));
   const [sideGameHands, setSideGameHands] = useState(() => pick("sideGameHands", [])); // [{type,gameType,timestamp,handNumber,videoId}]
@@ -810,6 +822,51 @@ function HandBuilder({ me, refreshMe }) {
       else delete next[name];
       return next;
     });
+  const [bountySchedule, setBountySchedule] = useState(() =>
+    pendingResume?.bountySchedule || pick("bountySchedule", DEFAULT_BOUNTY));
+
+  // Squid game: buttons held per player (base name, seated or not), the round,
+  // and how many buttons are still to be won. Invariant: held + left = total.
+  const [squidActive, setSquidActive] = useState(() =>
+    pendingResume?.squidActive != null ? !!pendingResume.squidActive : pick("squidActive", false));
+  const [squidConfig, setSquidConfigState] = useState(() =>
+    pendingResume?.squidConfig || pick("squidConfig", DEFAULT_SQUID));
+  const [squidRound, setSquidRound] = useState(() => pendingResume?.squidRound ?? pick("squidRound", 1));
+  const [squidButtons, setSquidButtons] = useState(() => pendingResume?.squidButtons || pick("squidButtons", {}));
+  const [squidLeft, setSquidLeft] = useState(() => {
+    const saved = pendingResume?.squidLeft ?? pick("squidLeft", null);
+    if (saved != null) return saved;
+    const cfg = pendingResume?.squidConfig || pick("squidConfig", DEFAULT_SQUID);
+    const held = Object.values(pendingResume?.squidButtons || pick("squidButtons", {})).reduce((a, n) => a + n, 0);
+    return Math.max(0, cfg.total - held);
+  });
+  const squidHeld = Object.values(squidButtons).reduce((a, n) => a + n, 0);
+  // Changing the button count mid-round keeps everything already won.
+  const setSquidConfig = (cfg) => {
+    setSquidConfigState(cfg);
+    setSquidLeft(Math.max(0, cfg.total - squidHeld));
+  };
+  // Manual correction of one player's buttons; buttons left moves the other way.
+  const setSquidButton = (name, delta) => {
+    const cur = squidButtons[name] || 0;
+    const n = Math.max(0, cur + delta);
+    const change = n - cur;
+    if (change > 0 && squidLeft < change) return; // none left to hand out
+    setSquidButtons((b) => {
+      const next = { ...b };
+      if (n > 0) next[name] = n;
+      else delete next[name];
+      return next;
+    });
+    setSquidLeft((l) => l - change);
+  };
+  const newSquidRound = () => {
+    setSquidButtons({});
+    setSquidRound((r) => r + 1);
+    setSquidLeft(squidConfig.total);
+  };
+  // Last saved hand's side-game results, for the panel.
+  const [lastSideGame, setLastSideGame] = useState(() => pick("lastSideGame", null));
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1181,11 +1238,12 @@ function HandBuilder({ me, refreshMe }) {
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
           sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
-          bountyActive, bountyStreaks,
+          bountyActive, bountyStreaks, bountySchedule,
+          squidActive, squidConfig, squidRound, squidLeft, squidButtons, lastSideGame,
     };
     const t = setTimeout(() => saveSession(persistRef.current), 400);
     return () => clearTimeout(t);
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey, bountyActive, bountyStreaks]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey, bountyActive, bountyStreaks, bountySchedule, squidActive, squidConfig, squidRound, squidLeft, squidButtons, lastSideGame]);
   useEffect(() => {
     const flush = () => { if (persistRef.current) saveSession(persistRef.current); };
     window.addEventListener("pagehide", flush);
@@ -1490,13 +1548,25 @@ function HandBuilder({ me, refreshMe }) {
       if (url) hand.table_name = url; // timestamped link → PT4 table name
       if (videoDate) hand.video_date = videoDate; // video date → PT4 header date
 
-      // Bounty game: the PT4 text gets each player's streak in their name, and the
-      // next hand starts with winners/choppers up one and everyone else at zero.
+      // Bounty / squid: who won the hand (main pot, first board), what each game
+      // pays, the names the hand history carries (holdings ENTERING the hand),
+      // and the state the next hand starts from — payouts included in stacks.
       // The roster keeps base names; only the submitted dict is renamed.
-      const nextStreaks = bountyActive
-        ? advanceStreaks(bountyStreaks, eng.players.map((p) => p.name), handWinners(hand))
-        : bountyStreaks;
-      const outHand = bountyActive ? applyBountyNames(hand, bountyStreaks) : hand;
+      const dealtIn = [...eng.players].sort((a, b) => a.seat - b.seat).map((p) => ({ seat: p.seat, name: p.name }));
+      const won = mainPotWinners(hand);
+      const bountyRes = bountyActive ? settleBounty({ dealtIn, streaks: bountyStreaks, schedule: bountySchedule, winners: won }) : null;
+      const squidRes = squidActive
+        ? settleSquid({ dealtIn, buttons: squidButtons, config: squidConfig, round: squidRound, left: squidLeft, winners: won })
+        : null;
+      const outHand = applySideGameNames(hand, bountyActive ? bountyStreaks : {}, squidActive ? squidButtons : {});
+      if (bountyRes || squidRes) {
+        outHand.side_game = sideGamePayload({ bounty: bountyRes, bountySchedule, squid: squidRes, squidConfig, squidRound });
+      }
+      const side = {
+        streaks: bountyRes ? bountyRes.nextStreaks : bountyStreaks,
+        squid: squidRes ? squidRes.next : null,
+        deltas: sideGameDeltas(bountyRes?.payouts, squidRes?.payouts),
+      };
 
       const n = handNumber;
       const { cards, actions } = handPieces;
@@ -1531,7 +1601,7 @@ function HandBuilder({ me, refreshMe }) {
           body: {
             hand: outHand, hand_index: n - 1, stream_url: url, start_sec: startSec, end_sec: startSec,
             stream_id: videoId, youtube_url: url, timestamp_seconds: startSec,
-            cards_count: cards, actions_count: actions, next_state: computeNextHandState(nextStreaks),
+            cards_count: cards, actions_count: actions, next_state: computeNextHandState(side),
           },
         });
       } catch (ex) {
@@ -1556,9 +1626,23 @@ function HandBuilder({ me, refreshMe }) {
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
       const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
-      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`, 2800);
-      if (bountyActive) setBountyStreaks(nextStreaks);
-      nextHand(); // carries over stacks, rotates button, clears, increments hand #
+      const sidePaid = [...(bountyRes?.payouts || []), ...(squidRes?.payouts || [])].reduce((a, p) => a + p.amount, 0);
+      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`
+        + (sidePaid ? ` · side games moved $${sidePaid.toLocaleString()} (in the next stacks)` : ""), sidePaid ? 4200 : 2800);
+      if (bountyRes) setBountyStreaks(bountyRes.nextStreaks);
+      if (squidRes) {
+        setSquidButtons(squidRes.next.buttons);
+        setSquidRound(squidRes.next.round);
+        setSquidLeft(squidRes.next.left);
+      }
+      if (bountyRes || squidRes) {
+        setLastSideGame({
+          hand: n,
+          bounty: bountyRes && { payouts: bountyRes.payouts },
+          squid: squidRes && { payouts: squidRes.payouts, settled: squidRes.settled },
+        });
+      }
+      nextHand(side.deltas); // carries over stacks (+ side-game money), rotates button, clears, increments hand #
     } catch (e) {
       setError(`Couldn't save the hand: ${e.message}`);
     }
@@ -1647,12 +1731,27 @@ function HandBuilder({ me, refreshMe }) {
     setSevenTwoVpip(null);
     setSevenTwoHandled(false);
     setLastHandKey(null);
+    setBountyActive(false);
+    setBountyStreaks({});
+    setSquidActive(false);
+    setSquidButtons({});
+    setSquidRound(1);
+    setSquidLeft(squidConfig.total);
+    setLastSideGame(null);
     setPhase("setup");
   }
 
   // Snapshot of the table for the NEXT hand (ending stacks carried over, button
   // rotated, hand # bumped) — used as the stream's server-side resume point.
-  function computeNextHandState(nextStreaks = bountyStreaks) {
+  // Side-game payouts move chips between hands: add them to the carried-over
+  // stacks (never below 0 — a player short of what they owe tops up from their
+  // pocket). Applied after busts, so paying a side game never stands anyone up.
+  const applyDeltas = (rows, deltas) =>
+    deltas && Object.keys(deltas).length
+      ? rows.map((p) => (p.name.trim() && deltas[p.name] ? { ...p, stack: Math.max(0, p.stack + deltas[p.name]) } : p))
+      : rows;
+
+  function computeNextHandState(side = {}) {
     let newRoster = roster;
     if (eng) {
       const resolved = eng.players.filter((p) => !p.folded).length === 1 || eng.handOver || eng.street === "river" || numRuns >= 2 || phase === "complete";
@@ -1665,6 +1764,7 @@ function HandBuilder({ me, refreshMe }) {
         });
       }
     }
+    newRoster = applyDeltas(newRoster, side.deltas);
     const occ = newRoster.filter((p) => p.name.trim()).sort((a, b) => a.seat - b.seat);
     let nextSeat = Number(buttonSeat);
     if (occ.length) {
@@ -1676,7 +1776,13 @@ function HandBuilder({ me, refreshMe }) {
       buttonSeat: nextSeat,
       handNumber: handNumber + 1,
       bountyActive,
-      bountyStreaks: nextStreaks,
+      bountyStreaks: side.streaks ?? bountyStreaks,
+      bountySchedule,
+      squidActive,
+      squidConfig,
+      squidRound: side.squid ? side.squid.round : squidRound,
+      squidLeft: side.squid ? side.squid.left : squidLeft,
+      squidButtons: side.squid ? side.squid.buttons : squidButtons,
     };
   }
 
@@ -1696,6 +1802,15 @@ function HandBuilder({ me, refreshMe }) {
     if (snap.handNumber != null) setHandNumber(snap.handNumber);
     if (snap.bountyActive != null) setBountyActive(!!snap.bountyActive);
     setBountyStreaks(snap.bountyStreaks || {});
+    if (snap.bountySchedule) setBountySchedule(snap.bountySchedule);
+    // A snapshot without squid data (older, or imported) means no buttons held.
+    if (snap.squidActive != null) setSquidActive(!!snap.squidActive);
+    const cfg = snap.squidConfig || squidConfig;
+    const btns = snap.squidButtons || {};
+    setSquidConfigState(cfg);
+    setSquidButtons(btns);
+    if (snap.squidRound != null) setSquidRound(snap.squidRound);
+    setSquidLeft(snap.squidLeft ?? Math.max(0, cfg.total - Object.values(btns).reduce((a, n) => a + n, 0)));
     // YouTube link at this hand's timestamp (the stored url already carries ?t=).
     let link = card.youtubeUrl || "";
     if (card.startSec > 0 && !/[?&]t=/.test(link)) link += (link.includes("?") ? "&" : "?") + "t=" + card.startSec;
@@ -1716,7 +1831,7 @@ function HandBuilder({ me, refreshMe }) {
     showFlash(`Restored to after ${afterLabel} — ready for next hand`, 3200);
   }
 
-  function nextHand() {
+  function nextHand(deltas) {
     // Carry over ending stacks when the hand reached a result; players who bust
     // (≤ 0 chips) are stood up but their seat stays at the table.
     let newRoster = roster;
@@ -1734,6 +1849,7 @@ function HandBuilder({ me, refreshMe }) {
         });
       }
     }
+    newRoster = applyDeltas(newRoster, deltas);
     setRoster(newRoster);
 
     // Rotate the button to the next occupied seat of the (post-bust) roster.
@@ -1997,6 +2113,29 @@ function HandBuilder({ me, refreshMe }) {
               <input type="checkbox" checked={bountyActive} onChange={(e) => setBountyActive(e.target.checked)} />
               <span>Bounty Game <span style={styles.sideHint}>· streak → raver2bounty</span></span>
             </label>
+            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's buttons going into the hand into their PT4 name, e.g. raver2squid. The sole winner of each hand takes a button; when the last goes, everyone without one pays every holder.">
+              <input type="checkbox" checked={squidActive} onChange={(e) => setSquidActive(e.target.checked)} />
+              <span>Squid Game <span style={styles.sideHint}>· buttons → raver2squid</span></span>
+            </label>
+            {(bountyActive || squidActive) && (
+              <SideGamePanel
+                ui={SIDE_PANEL_UI}
+                seatedNames={named.map((p) => p.name)}
+                bountyActive={bountyActive}
+                bountySchedule={bountySchedule}
+                setBountySchedule={setBountySchedule}
+                bountyStreaks={bountyStreaks}
+                squidActive={squidActive}
+                squidConfig={squidConfig}
+                setSquidConfig={setSquidConfig}
+                squidRound={squidRound}
+                squidLeft={squidLeft}
+                squidButtons={squidButtons}
+                onSquidButton={setSquidButton}
+                onNewSquidRound={newSquidRound}
+                lastSideGame={lastSideGame}
+              />
+            )}
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
@@ -2245,7 +2384,7 @@ function HandBuilder({ me, refreshMe }) {
             {!sideGameMode && phase !== "setup" && (
               <>
                 <button style={styles.topBtn} title="Restart this hand (same players & stacks)" onClick={resetHand}>↺ Reset Hand</button>
-                <button style={styles.topBtn} title="Next hand (carry over stacks, rotate button)" onClick={nextHand}>Next Hand ↻</button>
+                <button style={styles.topBtn} title="Next hand (carry over stacks, rotate button)" onClick={() => nextHand()}>Next Hand ↻</button>
               </>
             )}
             {streamHandCount > 0 && (
@@ -2324,6 +2463,8 @@ function HandBuilder({ me, refreshMe }) {
                 bought={buyButton && buyButton.seat === p.seat ? buyButton.type : null}
                 bounty={bountyActive && !p.empty && p.name.trim() ? bountyStreaks[p.name] || 0 : null}
                 onBounty={(d) => setBountyStreak(p.name, d)}
+                squid={squidActive && !p.empty && p.name.trim() ? squidButtons[p.name] || 0 : null}
+                onSquid={(d) => setSquidButton(p.name, d)}
                 onNameClick={!locked && !p.empty ? () => setBuyMenuSeat(p.seat) : undefined}
                 phase={phase}
                 sitting={sitSeat === p.seat}
@@ -2684,6 +2825,10 @@ function HandBuilder({ me, refreshMe }) {
   );
 }
 
+// The side-game panel's look in this UI (SideGamePanel falls back to the
+// classic styling for anything not given here).
+const SIDE_PANEL_UI = {};
+
 // ── Styles ──────────────────────────────────────────────────────────────────
 const FELT = "radial-gradient(ellipse at center, #1b6b43 0%, #0f4d2f 70%, #0a3a23 100%)";
 const styles = {
@@ -2834,6 +2979,7 @@ const styles = {
   seatStack: { fontSize: 13, fontWeight: 700, color: "#4ade80", cursor: "pointer", marginTop: 1 },
   handDesc: { fontSize: 10, fontWeight: 600, marginTop: 3, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   boughtTag: { marginTop: 3, fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 8, padding: "1px 6px", display: "inline-block" },
+  squidTag: { fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#ddd6fe", background: "#4c1d95", borderRadius: 8, padding: "1px 6px" },
   bountyRow: { marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
   bountyTag: { fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#fecaca", background: "#7f1d1d", borderRadius: 8, padding: "1px 6px" },
   bountyBtn: { width: 16, height: 16, padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#cbd5e1", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1 },

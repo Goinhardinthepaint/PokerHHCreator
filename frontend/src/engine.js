@@ -421,10 +421,16 @@ export function computeSidePots(state) {
     else merged.push({ amount: pot.amount, eligible: [...pot.eligible] });
   }
 
-  // Dead money (antes) joins the main pot, contested by everyone still in.
+  // Dead money (antes) is contested by everyone still in. Usually that means it
+  // simply joins the main pot. But a player all-in for the ante alone (a big
+  // blind holding less than the BB ante) has no live chips, so they're missing
+  // from the main pot's eligible list — and used to collect the whole pot with
+  // the best hand anyway. Then the antes are a pot of their own, ahead of the
+  // live layers, and that's all such a player can win.
   if (totalDead > 0) {
-    if (merged.length) merged[0].amount += totalDead;
-    else merged.push({ amount: totalDead, eligible: [...nonfolded].sort((a, b) => a - b) });
+    const stillIn = [...nonfolded].sort((a, b) => a - b);
+    if (merged.length && sameSet(merged[0].eligible, stillIn)) merged[0].amount += totalDead;
+    else merged.unshift({ amount: totalDead, eligible: stillIn });
   }
   return merged;
 }

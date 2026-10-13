@@ -129,6 +129,24 @@ test("side pots pay the right winners and conserve chips", () => {
   assert.deepEqual(hand.pots.map((p) => p.winners), [["A"], ["B"]]);
 });
 
+test("a big blind all-in for the ante alone can only win the antes", () => {
+  // C (BB) has $30 behind: posts it as the BB ante and can't post the blind.
+  let s = deal([P(1, "A", 1000), P(2, "B", 1000), P(3, "C", 30)], { ante: 100 });
+  s = act(s, "call"); s = act(s, "call");
+  while (s.actorSeat != null) s = act(s, "check");
+  for (let i = 0; i < 3; i++) { s = advanceStreet(s); while (s.actorSeat != null) s = act(s, "check"); }
+  const pots = computeSidePots(s);
+  assert.deepEqual(pots[0], { amount: 30, eligible: [1, 2, 3] }, "the antes are their own pot");
+  assert.deepEqual(pots[1].eligible, [1, 2]);
+  // C has the best hand but takes only the $30; A and B's live pot goes to A.
+  const holeCards = { 1: ["Ks", "Kh"], 2: ["7c", "2d"], 3: ["As", "Ah"] };
+  const board = ["3c", "8d", "9h", "Jc", "4s"];
+  const end = computeEndStacks(s, { holeCards, board });
+  assert.equal(end[3], 30);
+  assert.equal(end[1] + end[2] + end[3], 2030);
+  assert.equal(end[1], 2000 - end[2]);
+});
+
 test("chopped pot splits evenly with the odd chip to the first winner", () => {
   let s = deal([P(1, "A"), P(2, "B")]);
   s = act(s, "raise", 301); s = act(s, "call");

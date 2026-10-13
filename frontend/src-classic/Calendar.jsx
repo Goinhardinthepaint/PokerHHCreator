@@ -301,6 +301,12 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
         handNumber: r.resume_state?.handNumber,
         bountyActive: r.resume_state?.bountyActive,
         bountyStreaks: r.resume_state?.bountyStreaks,
+        bountySchedule: r.resume_state?.bountySchedule,
+        squidActive: r.resume_state?.squidActive,
+        squidConfig: r.resume_state?.squidConfig,
+        squidRound: r.resume_state?.squidRound,
+        squidLeft: r.resume_state?.squidLeft,
+        squidButtons: r.resume_state?.squidButtons,
       };
     } catch { /* fall back to just the URL */ }
     onResumeStream(payload);
