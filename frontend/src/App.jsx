@@ -339,7 +339,7 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
       {committed > 0 && (
         <div style={styles.betChip}>{fmtChips(committed)}</div>
       )}
-      <div className={isActor ? "seat-actor" : undefined} style={{ ...styles.seatBox, ...(isActor ? { boxShadow: GOLD_GLOW, borderColor: "var(--gold)" } : isWinner ? { boxShadow: GAIN_GLOW, borderColor: "var(--gain)" } : {}) }}>
+      <div className={isActor ? "seat-actor" : undefined} style={{ ...styles.seatBox, ...(isActor ? { boxShadow: GOLD_GLOW, borderColor: "var(--gold)" } : isWinner ? { boxShadow: GAIN_GLOW, borderColor: "var(--gain)" } : { borderColor: "var(--line-strong)" }) }}>
         {badge && (
           <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || BADGE_DEFAULT }}>{badge}</div>
         )}
@@ -2422,7 +2422,7 @@ function HandBuilder({ me, refreshMe }) {
               </span>
             )}
             <button
-              style={{ ...styles.topBtn, ...(sideGameMode ? { borderColor: "var(--violet)", color: "var(--violet)" } : {}) }}
+              style={{ ...styles.topBtn, ...(sideGameMode ? { border: "1px solid var(--violet)", color: "var(--violet)" } : {}) }}
               title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
               onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
             >
@@ -2919,7 +2919,7 @@ const styles = {
   diffDot: { color: "var(--gold-bright)", fontSize: 8, width: 8, transition: "opacity .15s" },
   dragHandle: { cursor: "grab", color: "var(--text-faint)", fontSize: 14, lineHeight: 1, padding: "0 2px", userSelect: "none", touchAction: "none" },
   seatNumInput: { width: 32, textAlign: "center", padding: "8px 2px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, fontWeight: 600, outline: "none", boxSizing: "border-box" },
-  seatNumAuto: { color: "var(--text-mute)", background: "transparent", borderColor: "var(--line)" },
+  seatNumAuto: { color: "var(--text-mute)", background: "transparent", border: "1px solid var(--line)" },
   dropLine: { height: 2, background: "var(--gold)", borderRadius: 2, margin: "2px 0", boxShadow: "0 0 8px rgba(200,168,90,.7)" },
   autoNumRow: { display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--text-dim)", margin: "0 0 4px", cursor: "pointer", userSelect: "none" },
   miniX: { width: 24, height: 24, ...ghostBtn, border: "1px solid var(--line)", color: "var(--text-mute)", fontSize: 11, padding: 0 },
@@ -2939,7 +2939,7 @@ const styles = {
   chip: { display: "inline-flex", width: 26, height: 26, borderRadius: "50%", background: "var(--gold-grad)", color: "var(--ink)", alignItems: "center", justifyContent: "center", fontSize: 14, boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 16px rgba(200,168,90,.2)" },
   ytField: { display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 260, maxWidth: 480 },
   ytWrap: { display: "flex", alignItems: "center", gap: 9, width: "100%", background: "var(--field)", border: "1px solid var(--line-strong)", borderRadius: 3, padding: "6px 11px", boxSizing: "border-box" },
-  ytWrapDup: { borderColor: "var(--loss)", background: "var(--loss-wash)" },
+  ytWrapDup: { border: "1px solid var(--loss)", background: "var(--loss-wash)" },
   ytHelp: { fontSize: 10.5, color: "var(--gold-bright)", paddingLeft: 2, fontWeight: 500 },
   ytWarn: { fontSize: 10.5, color: "var(--loss-bright)", paddingLeft: 2, fontWeight: 600 },
   ytIcon: { fontSize: 13, color: "var(--gold)", opacity: 0.9 },
@@ -2970,7 +2970,7 @@ const styles = {
   hmList: { flex: 1, display: "flex", flexDirection: "column", gap: 4 },
   hmGroupHead: { position: "sticky", top: -18, background: "var(--surface)", fontSize: 14, fontFamily: "var(--font-display)", fontWeight: 600, color: "var(--gold-bright)", padding: "8px 0 5px", zIndex: 1 },
   hmCard: { position: "relative", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "9px 11px 8px", marginBottom: 6, cursor: "pointer", userSelect: "none" },
-  hmCardSel: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px var(--gold), 0 0 16px rgba(200,168,90,.22)", background: "var(--surface-3)" },
+  hmCardSel: { border: "1px solid var(--gold)", boxShadow: "0 0 0 1px var(--gold), 0 0 16px rgba(200,168,90,.22)", background: "var(--surface-3)" },
   hmCardX: { position: "absolute", top: 6, right: 6, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, ...ghostBtn, border: "1px solid var(--line)", color: "var(--text-mute)", fontSize: 10 },
   hmCardTop: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, paddingRight: 20 },
   hmTime: { fontSize: 12, fontWeight: 600, color: "var(--gold-pale)", fontFamily: "var(--font-mono)" },
@@ -2978,7 +2978,7 @@ const styles = {
   hmCardMeta: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-dim)" },
   hmLink: { display: "inline-block", fontSize: 11, color: "var(--gold-bright)", fontWeight: 500, textDecoration: "none" },
   hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "1px dashed var(--line-strong)", borderRadius: 3, textAlign: "center", fontSize: 12, color: "var(--text-mute)", background: "rgba(13,12,10,.4)", transition: "all .15s" },
-  hmDropActive: { borderColor: "var(--gold)", color: "var(--gold-bright)", background: "var(--gold-wash)" },
+  hmDropActive: { border: "1px dashed var(--gold)", color: "var(--gold-bright)", background: "var(--gold-wash)" },
   hmUnsaved: { fontSize: 8.5, fontWeight: 700, letterSpacing: 0.8, color: "var(--ink)", background: "var(--gold-bright)", borderRadius: 999, padding: "1px 6px" },
   hmYtIcon: { fontSize: 12, fontWeight: 700, color: "var(--gold)", textDecoration: "none" },
   hmTimelineWrap: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "10px 11px", marginBottom: 6, flexShrink: 0 },

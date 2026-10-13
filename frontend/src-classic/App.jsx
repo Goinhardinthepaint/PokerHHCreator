@@ -2375,7 +2375,7 @@ function HandBuilder({ me, refreshMe }) {
               </span>
             )}
             <button
-              style={{ ...styles.topBtn, ...(sideGameMode ? { borderColor: "#a78bfa", color: "#c4b5fd" } : {}) }}
+              style={{ ...styles.topBtn, ...(sideGameMode ? { border: "1px solid #a78bfa", color: "#c4b5fd" } : {}) }}
               title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
               onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
             >
@@ -2848,7 +2848,7 @@ const styles = {
   seatTag: { width: 20, textAlign: "center", fontSize: 11, color: "#64748b", fontWeight: 700 },
   dragHandle: { cursor: "grab", color: "#475569", fontSize: 15, lineHeight: 1, padding: "0 2px", userSelect: "none", touchAction: "none" },
   seatNumInput: { width: 30, textAlign: "center", padding: "8px 2px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 12, fontWeight: 700, outline: "none", boxSizing: "border-box" },
-  seatNumAuto: { color: "#64748b", background: "#0d1320", borderColor: "#162132" },
+  seatNumAuto: { color: "#64748b", background: "#0d1320", border: "1px solid #162132" },
   dropLine: { height: 2, background: "#3b82f6", borderRadius: 2, margin: "2px 0", boxShadow: "0 0 6px rgba(59,130,246,.7)" },
   autoNumRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#94a3b8", margin: "2px 0 6px", cursor: "pointer", userSelect: "none" },
   miniX: { width: 24, height: 24, background: "#1e293b", border: "none", borderRadius: 5, color: "#94a3b8", cursor: "pointer", fontSize: 11 },
@@ -2867,7 +2867,7 @@ const styles = {
   chip: { display: "inline-flex", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 16 },
   ytField: { display: "flex", flexDirection: "column", gap: 3, flex: 1, maxWidth: 460, margin: "0 18px" },
   ytWrap: { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 10px", boxSizing: "border-box" },
-  ytWrapDup: { borderColor: "#ef4444", background: "#1f1113" },
+  ytWrapDup: { border: "1px solid #ef4444", background: "#1f1113" },
   ytHelp: { fontSize: 10.5, color: "#fbbf24", paddingLeft: 4, fontWeight: 600 },
   ytWarn: { fontSize: 10.5, color: "#fca5a5", paddingLeft: 4, fontWeight: 700 },
   ytIcon: { fontSize: 14, opacity: 0.8 },
@@ -2898,7 +2898,7 @@ const styles = {
   hmList: { flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, margin: "0 -2px", padding: "0 2px" },
   hmGroupHead: { position: "sticky", top: 0, background: "#0d1320", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", padding: "6px 0 4px", zIndex: 1 },
   hmCard: { position: "relative", background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px 7px", marginBottom: 6, cursor: "pointer", userSelect: "none" },
-  hmCardSel: { borderColor: "#3b82f6", boxShadow: "0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.35)", background: "#10203a" },
+  hmCardSel: { border: "1px solid #3b82f6", boxShadow: "0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.35)", background: "#10203a" },
   hmCardX: { position: "absolute", top: 5, right: 5, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", fontSize: 10, cursor: "pointer" },
   hmCardTop: { display: "flex", alignItems: "center", gap: 8, marginBottom: 3, paddingRight: 18 },
   hmTime: { fontSize: 12, fontWeight: 800, color: "#fde68a" },
@@ -2907,7 +2907,7 @@ const styles = {
   hmCardMeta: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94a3b8" },
   hmLink: { display: "inline-block", marginTop: 5, fontSize: 10.5, color: "#7dd3fc", fontWeight: 600, textDecoration: "none" },
   hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "2px dashed #2b3a52", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", background: "rgba(10,15,26,.4)", transition: "all .12s" },
-  hmDropActive: { borderColor: "#22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
+  hmDropActive: { border: "2px dashed #22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
   hmUnsaved: { fontSize: 8.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 6, padding: "1px 5px", marginLeft: 6 },
   hmYtIcon: { marginLeft: 6, fontSize: 12, fontWeight: 800, color: "#7dd3fc", textDecoration: "none", cursor: "pointer" },
   // Timeline

@@ -19,6 +19,12 @@ export async function api(path, { method = "GET", body } = {}) {
 }
 
 export const fmtMoney = (n) => "$" + (Number(n) || 0).toFixed(2);
+// New UI: same, with thousands separators and the sign first ($1,222.24,
+// -$1,614.68). Classic keeps fmtMoney.
+export const fmtUsd = (n) => {
+  const v = Number(n) || 0;
+  return (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];

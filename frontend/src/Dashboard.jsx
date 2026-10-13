@@ -1,4 +1,4 @@
-import { fmtMoney, fmtMonth } from "./api.js";
+import { fmtUsd, fmtMonth } from "./api.js";
 
 const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", incomplete: "In progress" };
 const BONUS_STYLE = {
@@ -27,8 +27,8 @@ export default function Dashboard({ user, dashboard: d }) {
       <div style={st.cards}>
         <Stat label="Hands transcribed" value={d.hands.toLocaleString()} />
         <Stat label="Pieces entered" value={d.pieces.toLocaleString()} />
-        <Stat label="Total earned" value={fmtMoney(d.total)} accent="#4ade80" />
-        <Stat label="Pending payment" value={fmtMoney(d.owed)} accent="#fbbf24" />
+        <Stat label="Total earned" value={fmtUsd(d.total)} accent="#4ade80" />
+        <Stat label="Pending payment" value={fmtUsd(d.owed)} accent="#fbbf24" />
       </div>
 
       {/* Your month */}
@@ -45,7 +45,7 @@ export default function Dashboard({ user, dashboard: d }) {
           </div>
           <div style={st.progressTrack}><div style={{ ...st.progressFill, width: `${Math.min(100, am.pct)}%` }} /></div>
           <div style={st.monthMeta}>
-            <span>Month bonus: <strong style={{ color: am.amount ? "var(--gain-bright)" : "var(--text-dim)" }}>{fmtMoney(am.amount)}</strong> of {fmtMoney(am.bonus_amount)}</span>
+            <span>Month bonus: <strong style={{ color: am.amount ? "var(--gain-bright)" : "var(--text-dim)" }}>{fmtUsd(am.amount)}</strong> of {fmtUsd(am.bonus_amount)}</span>
             <span>Your error rate: <strong style={{ color: am.error_rate < 0.10 ? "var(--gain-bright)" : am.error_rate <= 0.20 ? "var(--gold-bright)" : "var(--loss-bright)" }}>{(am.error_rate * 100).toFixed(1)}%</strong> ({am.error_count} errors)</span>
           </div>
           {!am.is_complete && <div style={st.monthNote}>Complete every stream in {fmtMonth(am.month)} to unlock the bonus (helpers count toward completion).</div>}
@@ -57,17 +57,17 @@ export default function Dashboard({ user, dashboard: d }) {
       {/* earnings breakdown */}
       <div style={st.panel}>
         <div style={st.panelHead}>Earnings breakdown</div>
-        <Row k="Cards income" v={fmtMoney(d.cards_income)} sub={`${d.cards} cards`} />
-        <Row k="Actions income" v={fmtMoney(d.actions_income)} sub={`${d.actions} actions`} />
-        <Row k="Completion bonuses" v={fmtMoney(d.completion_bonus)} sub={`${d.hands} hands`} />
-        <Row k="Stream bonuses" v={fmtMoney(d.stream_bonus)} sub="completed streams" accent="#fbbf24" />
-        <Row k="Month bonus" v={fmtMoney(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
-        {d.tutorial_bonus > 0 && <Row k="Tutorial bonus" v={fmtMoney(d.tutorial_bonus)} sub="onboarding reward" accent="#fbbf24" />}
+        <Row k="Cards income" v={fmtUsd(d.cards_income)} sub={`${d.cards} cards`} />
+        <Row k="Actions income" v={fmtUsd(d.actions_income)} sub={`${d.actions} actions`} />
+        <Row k="Completion bonuses" v={fmtUsd(d.completion_bonus)} sub={`${d.hands} hands`} />
+        <Row k="Stream bonuses" v={fmtUsd(d.stream_bonus)} sub="completed streams" accent="#fbbf24" />
+        <Row k="Month bonus" v={fmtUsd(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
+        {d.tutorial_bonus > 0 && <Row k="Tutorial bonus" v={fmtUsd(d.tutorial_bonus)} sub="onboarding reward" accent="#fbbf24" />}
         <div style={st.divider} />
-        <Row k="Base" v={fmtMoney(d.base)} />
-        <Row k="Total earned" v={fmtMoney(d.total)} accent="#4ade80" bold />
-        <Row k="Paid to date" v={fmtMoney(d.paid)} />
-        <Row k="Still owed" v={fmtMoney(d.owed)} accent="#fbbf24" bold />
+        <Row k="Base" v={fmtUsd(d.base)} />
+        <Row k="Total earned" v={fmtUsd(d.total)} accent="#4ade80" bold />
+        <Row k="Paid to date" v={fmtUsd(d.paid)} />
+        <Row k="Still owed" v={fmtUsd(d.owed)} accent="#fbbf24" bold />
       </div>
 
       {/* own vs other-month hands */}
@@ -106,7 +106,7 @@ export default function Dashboard({ user, dashboard: d }) {
                 ) : clock(h.timestamp_seconds)}
                 <span style={st.dim}> · {h.stream_id || "—"}</span>
               </span>
-              <span style={st.lineMeta}>{fmtMoney(h.earnings)}</span>
+              <span style={st.lineMeta}>{fmtUsd(h.earnings)}</span>
             </div>
           ))}
         </div>

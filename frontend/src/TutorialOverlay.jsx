@@ -53,11 +53,20 @@ export default function TutorialOverlay({ steps, onFinish, bonusAwarded }) {
 
   useLayoutEffect(() => {
     let raf;
+    let opening = true;
     const measure = () => {
       const el = step.selector ? document.querySelector(step.selector) : null;
       let r = null;
       if (el) {
-        try { el.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch { /* ignore */ }
+        // When the step opens with its target off (or hugging the bottom of)
+        // the screen, centre it so what follows the target is visible too and
+        // the tooltip has room; after that only keep it in view.
+        try {
+          const b0 = el.getBoundingClientRect();
+          const off = b0.top < 0 || b0.bottom > window.innerHeight - 40;
+          el.scrollIntoView({ block: opening && off ? "center" : "nearest", inline: "nearest" });
+        } catch { /* ignore */ }
+        opening = false;
         const b = el.getBoundingClientRect();
         if (b.width || b.height) r = { top: b.top, left: b.left, width: b.width, height: b.height };
       }

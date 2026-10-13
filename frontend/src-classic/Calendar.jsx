@@ -687,7 +687,7 @@ const s = {
   grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(108px, auto)", gap: 6 },
   cell: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 9, padding: 6, display: "flex", flexDirection: "column", gap: 4, cursor: "pointer", overflow: "hidden", transition: "border-color .12s" },
   cellOut: { background: "#0a0d15", opacity: 0.5 },
-  cellToday: { borderColor: "#f59e0b", boxShadow: "0 0 0 1px #f59e0b55" },
+  cellToday: { border: "1px solid #f59e0b", boxShadow: "0 0 0 1px #f59e0b55" },
   cellHead: { display: "flex", alignItems: "center", justifyContent: "space-between" },
   cellDay: { fontSize: 12, fontWeight: 700, color: "#94a3b8" },
   cellDayToday: { background: "#f59e0b", color: "#0a0e17", borderRadius: "50%", width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" },

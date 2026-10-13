@@ -688,7 +688,7 @@ const s = {
   grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(108px, auto)", gap: 6 },
   cell: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, padding: 6, display: "flex", flexDirection: "column", gap: 4, cursor: "pointer", overflow: "hidden", transition: "border-color .12s" },
   cellOut: { background: "rgba(8,7,6,.55)", opacity: 0.45 },
-  cellToday: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 18px rgba(200,168,90,.12)" },
+  cellToday: { border: "1px solid var(--gold)", boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 18px rgba(200,168,90,.12)" },
   cellHead: { display: "flex", alignItems: "center", justifyContent: "space-between" },
   cellDay: { fontSize: 12, fontWeight: 700, color: "var(--text-dim)" },
   cellDayToday: { background: "var(--gold)", color: "var(--ink)", borderRadius: "50%", width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" },

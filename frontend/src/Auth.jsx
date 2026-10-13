@@ -80,5 +80,5 @@ const s = {
   error: { marginTop: 8, fontSize: 12.5, color: "var(--loss-bright)", background: "var(--loss-wash)", border: "1px solid var(--loss-deep)", borderRadius: 3, padding: "8px 10px" },
   submit: { marginTop: 14, padding: "11px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 14, fontWeight: 600, letterSpacing: 0.5, cursor: "pointer" },
   hint: { fontSize: 12, color: "var(--text-mute)", textAlign: "center", marginTop: 10 },
-  linkBtn: { background: "none", border: "none", color: "var(--steel)", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 },
+  linkBtn: { background: "none", border: "none", color: "var(--gold)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 },
 };

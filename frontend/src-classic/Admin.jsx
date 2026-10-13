@@ -465,7 +465,7 @@ const st = {
   statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
   tabs: { display: "flex", gap: 6, marginBottom: 12 },
   tab: { padding: "8px 16px", background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  tabOn: { background: "#16243a", color: "#f8fafc", borderColor: "#2b3a52" },
+  tabOn: { background: "#16243a", color: "#f8fafc", border: "1px solid #2b3a52" },
   panel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: 8 },
   table: { width: "100%", borderCollapse: "collapse" },
   thr: { borderBottom: "1px solid #1e293b" },

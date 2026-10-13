@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, fmtMoney, fmtMonth } from "./api.js";
+import { api, fmtUsd, fmtMonth } from "./api.js";
 
 const BONUS_LABEL = { full: "full", half: "half", forfeited: "forfeited", incomplete: "pending" };
 
@@ -81,8 +81,8 @@ export default function Admin() {
       <div style={st.cards}>
         <Stat label="Users" value={p.users} />
         <Stat label="Hands" value={p.hands.toLocaleString()} />
-        <Stat label="Earnings owed" value={fmtMoney(p.owed)} accent="#fbbf24" />
-        <Stat label="Payments made" value={fmtMoney(p.paid)} accent="#4ade80" />
+        <Stat label="Earnings owed" value={fmtUsd(p.owed)} accent="#fbbf24" />
+        <Stat label="Payments made" value={fmtUsd(p.paid)} accent="#4ade80" />
       </div>
 
       <ImportHands onImported={loadOverview} />
@@ -113,8 +113,8 @@ export default function Admin() {
                     <td style={{ ...st.td, color: "var(--text-dim)" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}` : "—"}</td>
                     <td style={st.td}>{u.hands}</td>
                     <td style={{ ...st.td, color: u.error_rate > 0.20 ? "var(--loss-bright)" : u.error_rate >= 0.10 ? "var(--gold-bright)" : "var(--text-mute)" }}>{u.error_count} ({(u.error_rate * 100).toFixed(0)}%)</td>
-                    <td style={{ ...st.td, color: "var(--gain-bright)" }}>{fmtMoney(u.earnings)}</td>
-                    <td style={{ ...st.td, color: u.owed > 0 ? "var(--gold-bright)" : "var(--text-mute)" }}>{fmtMoney(u.owed)}</td>
+                    <td style={{ ...st.td, color: "var(--gain-bright)" }}>{fmtUsd(u.earnings)}</td>
+                    <td style={{ ...st.td, color: u.owed > 0 ? "var(--gold-bright)" : "var(--text-mute)" }}>{fmtUsd(u.owed)}</td>
                     <td style={{ ...st.td, color: "var(--text-mute)" }}>{(u.last_active || "").slice(0, 10)}</td>
                     <td style={st.td}>
                       <div style={st.rowActions}>
@@ -264,7 +264,7 @@ function MonthRow({ m, users, onAssign }) {
         <div style={st.progressTrack}><div style={{ ...st.progressFill, width: `${Math.min(100, m.pct)}%` }} /></div>
       </div>
       <div style={st.assignBox}>
-        <select style={{ ...st.input, minWidth: 90 }} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+        <select style={{ ...st.input, minWidth: 140 }} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
           <option value="">— unassigned —</option>
           {users.filter((u) => !u.is_admin).map((u) => (<option key={u.id} value={u.id}>{u.username}</option>))}
         </select>
@@ -344,9 +344,9 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
             <div style={st.drawerBody}>
               <div style={st.miniStats}>
                 <Mini k="Hands" v={detail.stats.hands} />
-                <Mini k="Earned" v={fmtMoney(detail.stats.total)} c="#4ade80" />
-                <Mini k="Month bonus" v={fmtMoney(detail.stats.month_bonus)} c="#fbbf24" />
-                <Mini k="Owed" v={fmtMoney(detail.stats.owed)} c="#fbbf24" />
+                <Mini k="Earned" v={fmtUsd(detail.stats.total)} c="#4ade80" />
+                <Mini k="Month bonus" v={fmtUsd(detail.stats.month_bonus)} c="#fbbf24" />
+                <Mini k="Owed" v={fmtUsd(detail.stats.owed)} c="#fbbf24" />
               </div>
 
               {/* Errors + month bonus */}
@@ -358,7 +358,7 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                     {mb ? (
                       <div style={st.bonusLine}>
                         <span>{fmtMonth(mb.month)} — {mb.hands_done}/{mb.hands_estimated} ({mb.pct}%) · {mb.is_complete ? "complete" : "in progress"}</span>
-                        <span style={{ color: mb.amount ? "var(--gain-bright)" : "var(--text-dim)", fontWeight: 600 }}>{BONUS_LABEL[mb.status]} {fmtMoney(mb.amount)}</span>
+                        <span style={{ color: mb.amount ? "var(--gain-bright)" : "var(--text-dim)", fontWeight: 600 }}>{BONUS_LABEL[mb.status]} {fmtUsd(mb.amount)}</span>
                       </div>
                     ) : <div style={st.dim}>No month assigned.</div>}
                     <div style={st.bonusLine}>
@@ -388,7 +388,7 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                   <div style={st.section}>Payment history</div>
                   {detail.payments.map((pay) => (
                     <div key={pay.id} style={st.payRow}>
-                      <span>{fmtMoney(pay.amount)} <span style={st.dim}>· {pay.date}</span></span>
+                      <span>{fmtUsd(pay.amount)} <span style={st.dim}>· {pay.date}</span></span>
                       <span style={st.dim}>{pay.note}</span>
                     </div>
                   ))}
@@ -412,7 +412,7 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                 <div key={h.id} style={st.handBlock}>
                   <div style={st.handRow} onClick={() => toggleHand(h.id)}>
                     <span>#{h.id} · {h.stream_id || "—"} · t={h.timestamp_seconds}s</span>
-                    <span style={st.dim}>{fmtMoney(h.earnings)} {openHand === h.id ? "▾" : "▸"}</span>
+                    <span style={st.dim}>{fmtUsd(h.earnings)} {openHand === h.id ? "▾" : "▸"}</span>
                   </div>
                   {openHand === h.id && (
                     <div style={st.handDetail}>
@@ -465,7 +465,7 @@ const st = {
   statValue: { fontSize: 30, fontWeight: 500, fontFamily: "var(--font-display)", marginTop: 4, fontVariantNumeric: "tabular-nums" },
   tabs: { display: "flex", gap: 6, marginBottom: 12 },
   tab: { padding: "8px 16px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text-dim)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  tabOn: { background: "var(--raised)", color: "var(--text-strong)", borderColor: "var(--line-strong)" },
+  tabOn: { background: "var(--raised)", color: "var(--text-strong)", border: "1px solid var(--line-strong)" },
   panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: 8 },
   table: { width: "100%", borderCollapse: "collapse" },
   thr: { borderBottom: "1px solid var(--line)" },
