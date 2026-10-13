@@ -64,11 +64,13 @@ function readAndClearPendingResume() {
 
 // ── Card constants ──────────────────────────────────────────────────────────
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
+// Four-color deck, inverted: the suit colors the whole face, with a large
+// white rank and a small white suit in the top-right corner.
 const SUITS = [
-  { v: "s", symbol: "♠", color: "#1a1917" },
-  { v: "h", symbol: "♥", color: "#b23a3a" },
-  { v: "d", symbol: "♦", color: "#2f67a3" },
-  { v: "c", symbol: "♣", color: "#2e7a4c" },
+  { v: "s", symbol: "♠", face: "linear-gradient(180deg,#45413b,#2b2824)", edge: "rgba(255,255,255,.28)" },
+  { v: "h", symbol: "♥", face: "linear-gradient(180deg,#c24b4b,#9c2f31)", edge: "rgba(255,210,210,.35)" },
+  { v: "d", symbol: "♦", face: "linear-gradient(180deg,#3d79b8,#285a92)", edge: "rgba(205,225,255,.35)" },
+  { v: "c", symbol: "♣", face: "linear-gradient(180deg,#3a8c5a,#286b42)", edge: "rgba(205,245,220,.35)" },
 ];
 const SUIT = Object.fromEntries(SUITS.map((s) => [s.v, s]));
 const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
@@ -199,7 +201,8 @@ function cmpHand(a, b) {
 
 // ── Playing card ────────────────────────────────────────────────────────────
 function Card({ card, onClick, size = "md", faceDownIfEmpty }) {
-  const dims = { sm: { w: 30, h: 42, f: 15 }, md: { w: 44, h: 62, f: 20 }, lg: { w: 56, h: 78, f: 26 } }[size];
+  // f: the "+" on an empty slot; r: the rank; s: the corner suit.
+  const dims = { sm: { w: 30, h: 42, f: 15, r: 21, s: 9 }, md: { w: 44, h: 62, f: 20, r: 30, s: 11 }, lg: { w: 56, h: 78, f: 26, r: 38, s: 13 } }[size];
   const base = {
     width: dims.w, height: dims.h, borderRadius: 3, display: "flex",
     flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -219,9 +222,9 @@ function Card({ card, onClick, size = "md", faceDownIfEmpty }) {
   const rank = card[0] === "T" ? "10" : card[0];
   const sd = SUIT[card[1]] || SUITS[0];
   return (
-    <div onClick={onClick} className={onClick ? "ui-card-pick" : undefined} style={{ ...base, background: "linear-gradient(180deg,#fbf5e6,#efe4cb)", border: "1px solid #d8ccb0", color: sd.color, boxShadow: "0 3px 9px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.5)", gap: 1 }}>
-      <span>{rank}</span>
-      <span style={{ fontSize: dims.f + 2 }}>{sd.symbol}</span>
+    <div onClick={onClick} className={onClick ? "ui-card-pick" : undefined} style={{ ...base, position: "relative", background: sd.face, border: `1px solid ${sd.edge}`, color: "#fff", boxShadow: "0 3px 9px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.18)" }}>
+      <span style={{ ...styles.cardRank, fontSize: dims.r, letterSpacing: rank === "10" ? -1.5 : 0 }}>{rank}</span>
+      <span style={{ ...styles.cardSuit, fontSize: dims.s }}>{sd.symbol}</span>
     </div>
   );
 }
@@ -244,13 +247,14 @@ function CardPicker({ used, onPick, onClose, title }) {
                   onClick={() => onPick(c)}
                   style={{
                     ...styles.pickerCard,
-                    color: s.color,
+                    background: s.face,
+                    border: `1px solid ${s.edge}`,
                     opacity: taken ? 0.22 : 1,
                     cursor: taken ? "not-allowed" : "pointer",
                   }}
                 >
-                  {r === "T" ? "10" : r}
-                  {s.symbol}
+                  <span style={{ ...styles.cardRank, fontSize: 19, letterSpacing: r === "T" ? -1.5 : 0 }}>{r === "T" ? "10" : r}</span>
+                  <span style={{ ...styles.cardSuit, fontSize: 9 }}>{s.symbol}</span>
                 </button>
               );
             })}
@@ -3189,7 +3193,10 @@ const styles = {
   confirmYes: { flex: 1, minWidth: 150, padding: "10px 14px", ...goldBtn, fontSize: 12.5 },
   confirmNo: { padding: "10px 16px", ...ghostBtn, fontSize: 12.5 },
   pickerTitle: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.4, color: "var(--gold)", marginBottom: 12, textTransform: "uppercase" },
-  pickerCard: { width: 38, height: 36, background: "#f4ecd8", border: "1px solid #d8ccb0", borderRadius: 3, fontSize: 13, fontWeight: 700, padding: 0, fontFamily: "var(--font-display)", transition: "transform .12s ease, box-shadow .15s ease, opacity .15s" },
+  pickerCard: { position: "relative", width: 38, height: 40, borderRadius: 3, color: "#fff", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.18)", transition: "transform .12s ease, box-shadow .15s ease, opacity .15s" },
+  // Card face: a large white rank, and the suit small in the top-right corner.
+  cardRank: { fontFamily: "var(--font-ui)", fontWeight: 700, lineHeight: 1, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.35)" },
+  cardSuit: { position: "absolute", top: 2, right: 3, lineHeight: 1, color: "rgba(255,255,255,.92)" },
   pickerClear: { padding: "7px 16px", ...ghostBtn, fontSize: 12 },
   buyBox: { background: PANEL_BG, border: "1px solid var(--line-gold)", borderRadius: 3, padding: 20, maxWidth: 440, boxShadow: "var(--shadow-lg)" },
   buyNote: { fontSize: 12, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.5 },
