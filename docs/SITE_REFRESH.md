@@ -1,80 +1,56 @@
-# Site refresh (branch `site-refresh`)
+# Site refresh: launch notes (October 2026)
 
-**Preview:** https://pokerhhcreator-staging.up.railway.app. Log in with your usual admin password.
+## What workers see
 
-The preview runs in its own Railway environment (`staging`) on its own database. That database is a copy of production taken 2026-10-12. Anything saved there stays there, so no real work should happen on it. Production is unchanged until launch.
+- **The original look loads first.** A one-time *What's new* popup:
+  - offers to switch to the new look,
+  - explains the side-game changes and the $0.25 payout pay,
+  - reminds workers to mark streams complete to earn the stream bonus.
+- **Switching looks.**
+  - In the new look, **Classic view** in the top bar switches back; in the original, **✨ New look** switches forward.
+  - The choice is remembered per browser.
+  - To make the new look the default for everyone, set `UI_DEFAULT=new` on Railway.
+- **Side Game** opens a menu: **Squid Game** (one button each), **Progressive Squid Game** or **Bounty Game**.
+  - Picking one asks for its structure: buttons and $ per button, or when bounties start and what each win pays.
+  - A chip in the top bar reopens the game, with holders, streaks, a new round and End game.
+  - Each seat shows a small round marker: violet for squid buttons, copper for the bounty streak.
+  - The setup panel no longer sits in the sidebar.
+- **Side games run on their own, but money waits for a yes.**
+  - A hand that pays a bounty asks "Did *player* just win the bounty game?"
+  - A hand that ends a squid round asks "Has squid ended, and are all squids correct?"
+  - Each question shows exactly who pays whom. **Yes** saves the hand and pays out. **No** saves nothing so the streaks or buttons can be fixed.
+- **New deck (new look):** each card face is its suit's color, with a large white rank and a small suit in the corner.
+- Keyboard play in the new look: `F` fold, `C` check/call, `R`/`B` raise, `A` all-in, `Enter` deal or next, `Z` undo.
 
-## What's new
+## Pay
 
-- **Two versions, one switch.**
-  - The new design is the default.
-  - **Classic view** in its top bar switches to the original site. **✨ New look** switches back.
-  - The choice is remembered per browser. Both versions share the same data and session.
-- **Bounty and squid games, in both versions.**
-  - Turn them on in the sidebar. A panel sets the exact amounts:
-    - Bounty: pays from N in a row, first bounty $, plus $ per extra win.
-    - Squid: number of buttons, $ per button, progressive or one-per-player.
-  - The panel shows who holds which streak or buttons, plus what last hand paid.
-  - Stacks for the next hand already include side-game money.
-  - Hand histories carry the notation from `docs/SIDE_GAME_HH_FORMAT.md`.
-- **Redesign** in Sophia's look: black, gold, ivory cards, Cormorant headings, smooth drawers and modals, and a table that fits the screen.
-- **Keyboard play** in the builder:
-  - `F` fold, `C` check/call, `R`/`B` bet or raise to the slider amount, `A` all-in.
-  - `Enter` deals or advances, `Z` undoes.
-- **Faster.** On a copy of production data, the admin page dropped from 233 ms to 42 ms. The dashboard, which reloads after every saved hand, dropped from 118 ms to 15 ms.
+| | |
+|---|---|
+| Per piece (filled card or action) | $0.03 |
+| Per hand | $0.10 |
+| Per bounty payout or squid round settled in a hand | **$0.25** (new) |
+| Per hand in a stream once it's marked complete | $0.05 |
+| Month bonus (assigned month, error tiers) | $150 default |
+| Tutorial | $1 |
 
-## Bugs fixed (both versions)
+## Payment fixes
 
-**Money and data**
-- Going to Calendar, Dashboard or Admin and back could restore an old session over the current one: roster, stacks, button, hand number.
-- A network blip logged workers out mid-session.
-- Pay was computed from numbers the browser sent, so a crafted request could claim any amount. The server now caps it at what the submitted hand can actually contain.
-- The saved session grew without limit until browser storage filled, then silently stopped saving.
-- Marking a stream complete from the builder overwrote the catalog's title and date.
-
-**Hand histories**
-- An all-in for less than the call was written as an invalid raise.
-- A straddle shorter than the big blind broke the betting.
-- A blind or ante that put a player all-in was missing "and is all-in".
-- A big blind all-in for the ante alone could win the whole pot.
-- Duplicate player names or seat numbers silently broke winners and side pots. They are now refused.
-- The custom straddle menu offered the blinds.
-- The "pot" raise size left out the call amount.
-- All of these were found by fuzzing about 50,000 random hands through the engine, formatter and linter. All of those hands pass now.
-
-**Security**
-- Four scraper endpoints (`run`, `stop`, `download`, `status`) had no login check. They are now admin-only.
-- Unknown `/api/` paths returned the web page instead of an error.
-- Cross-site requests were accepted from any origin.
-- Payments accepted NaN or infinity.
-
-**Screens**
-- The PT4 import counted each player twice.
-- Streams added by hand got random IDs, so their progress stayed at 0.
-- "Mark complete" showed ✓ even when the server rejected it.
-- Any admin error replaced the whole page.
-- Downloads failed in Firefox and Safari.
-- Toasts cut each other off.
-- After 8pm ET, the default video date was tomorrow.
-- A blank stack became NaN.
-- A double-click applied two actions.
-- Some borders turned white after a highlight went away.
-- Opening a worker in Admin downloaded every hand's full text. It now shows 100 hands at a time and fetches a hand's text when you expand it.
+- **Double submissions.** A double-click or retry saved and paid the same hand twice: 70 times in production, $69.22 in total.
+  - The server now saves such a hand once.
+  - Existing copies are marked `duplicate` on boot and left out of pay, counts and exports. They are kept, not deleted. Undo with `UPDATE hands SET type='hand' WHERE type='duplicate'`.
+- **Month bonuses.**
+  - Every assigned month pays its own bonus; before, one arbitrary month counted.
+  - A month finished after its deadline is **late** and pays nothing.
+- **Earnings owed** on the Admin page no longer includes the admin account's own test hands.
+- **Square up** (Admin → worker): logs one payment so everything through a chosen day reads as paid. The day defaults to last Friday, Eastern time. What's left owed is exactly the work since that day.
+- loja was squared up through **Fri 2026-10-09**.
 
 ## Needs you
 
-1. **Stream auto-refresh is blocked in production.** YouTube's bot check rejects the Railway server. Production logs say "nothing fetched". New streams only appear when the catalog is refreshed by hand. The fix is a free YouTube Data API key: add it as `YOUTUBE_API_KEY` on the PokerHHCreator service, and the refresher uses it automatically.
-2. **Railway config deadline: 2026-12-01.** Railway has deprecated `railway.json` and says it stops working on that date. It should be migrated before then (`railway config migrate`).
-3. **Side-game rule call.** "Won the hand" means won the main pot on the first board. Someone who only wins a side pot does not advance a bounty or take a squid button. Say if you want it different.
-4. **Stream bonus is never paid.** No stream has ever been marked complete, so the $0.05/hand stream bonus is $0 for everyone. Marking streams complete in the Calendar releases it.
-5. **Not changed, for your judgment:**
-   - Anyone can register an account.
-   - Payments can't be deleted. Reversals are negative payments, e.g. the ±$1,614.68 pair on 2026-08-14.
-   - The app runs on Flask's development server.
-
-## Launch
-
-- Say the word and `site-refresh` is merged into `main`. `main` has no commits the branch lacks, so the merge is clean. Railway then deploys production as usual.
-- Everyone lands on the new design, with Classic one click away. To make Classic the default at first, set `UI_DEFAULT=classic`.
-- The database change is one new index, created automatically on boot.
-- After launch, delete the preview environment, since it bills while it runs: `railway environment delete staging`.
+1. **The $69.22 of duplicate hands was already paid.** loja's ledger is square through Friday without it. To deduct it from the next payment, record a -$69.22 adjustment.
+2. **loja's January bonus is past its deadline** (2026-06-18). With deadlines now enforced, finishing January would pay $0. Extend the deadline in Admin → Months if that isn't what you want.
+3. **Stream bonus:** no stream has ever been marked complete, so it has paid $0 so far. The What's New popup and the dashboard now remind workers.
+4. **Stream auto-refresh is blocked in production.** YouTube's bot check rejects Railway. Add a free YouTube Data API key as `YOUTUBE_API_KEY` on the PokerHHCreator service.
+5. **Railway's `railway.json` stops working on 2026-12-01.** Migrate it with `railway config migrate` before then.
+6. **Side-game rule call:** "won the hand" means the main pot on the first board.
+7. **The `staging` Railway environment** is still running and bills while it runs. Remove it with `railway environment delete staging`.
