@@ -187,6 +187,15 @@ def init_db():
     _add_column(conn, "hands", "type TEXT NOT NULL DEFAULT 'hand'")  # 'hand' | 'tutorial_bonus'
     _add_column(conn, "hands", "hand_number TEXT")        # PokerStars Hand # (import dedup)
     conn.commit()
+    # Every per-worker total (dashboard on each save, admin, earnings) filters
+    # hands by user. The HH text lives in the same row (~1.5KB each), so
+    # answering those from an index that carries the summed columns avoids
+    # reading every row. Created after the migrations above: it needs `type`.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_hands_user_totals ON hands "
+        "(user_id, type, stream_id, cards_count, actions_count, earnings, created_at)"
+    )
+    conn.commit()
 
     # Bootstrap the admin account (username "admin", password from env).
     if not conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone():
@@ -661,18 +670,7 @@ def get_resume_state(stream_id):
 
 
 # ── Month assignments + bonus ────────────────────────────────────────────────
-def _month_stats(conn, month):
-    """Streams + hands progress for a calendar month ("YYYY-MM"), across all workers."""
-    rows = conn.execute(
-        "SELECT is_complete, hands_estimated FROM streams WHERE substr(date,1,7) = ?", (month,)
-    ).fetchall()
-    total = len(rows)
-    complete = sum(1 for r in rows if r["is_complete"])
-    est = sum((r["hands_estimated"] or 0) for r in rows)
-    done = conn.execute(
-        "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
-        "WHERE substr(s.date,1,7) = ?", (month,)
-    ).fetchone()["n"]
+def _month_stats_row(month, total, complete, est, done):
     return {
         "month": month, "total_streams": total, "complete_streams": complete,
         "is_complete": total > 0 and complete == total,
@@ -681,19 +679,36 @@ def _month_stats(conn, month):
     }
 
 
-def _user_errors(conn, user_id):
-    hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'", (user_id,)).fetchone()["n"]
+def _month_stats(conn, month):
+    """Streams + hands progress for a calendar month ("YYYY-MM"), across all workers."""
+    rows = conn.execute(
+        "SELECT is_complete, hands_estimated FROM streams WHERE substr(date,1,7) = ?", (month,)
+    ).fetchall()
+    done = conn.execute(
+        "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
+        "WHERE substr(s.date,1,7) = ?", (month,)
+    ).fetchone()["n"]
+    return _month_stats_row(
+        month, len(rows), sum(1 for r in rows if r["is_complete"]),
+        sum((r["hands_estimated"] or 0) for r in rows), done,
+    )
+
+
+def _user_errors(conn, user_id, hands=None):
+    """(errors, hands, rate). Pass `hands` when the caller already counted them."""
+    if hands is None:
+        hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'", (user_id,)).fetchone()["n"]
     errors = conn.execute("SELECT COALESCE(error_count,0) AS e FROM users WHERE id = ?", (user_id,)).fetchone()["e"]
     return errors, hands, (errors / hands if hands else 0.0)
 
 
-def _month_bonus(conn, user_id):
+def _month_bonus(conn, user_id, hands=None):
     """Month-completion bonus for a worker's assigned month, tiered by error rate."""
     a = conn.execute("SELECT * FROM month_assignments WHERE user_id = ?", (user_id,)).fetchone()
     if not a:
         return None
     ms = _month_stats(conn, a["month"])
-    errors, hands, rate = _user_errors(conn, user_id)
+    errors, hands, rate = _user_errors(conn, user_id, hands)
     bonus_amount = a["bonus_amount"] if a["bonus_amount"] is not None else MONTH_BONUS_DEFAULT
     if not ms["is_complete"]:
         status, amount = "incomplete", 0.0
@@ -743,26 +758,43 @@ def month_list(admin=False):
     """Every month that has streams, with its owner + progress. Admin variant adds
     owner-vs-helper hand counts and a neglect flag."""
     conn = get_db()
-    months = [r["m"] for r in conn.execute(
-        "SELECT DISTINCT substr(date,1,7) AS m FROM streams WHERE date IS NOT NULL AND date != '' "
-        "ORDER BY m DESC"
-    ).fetchall()]
+    # One grouped query per figure rather than three or four queries per month:
+    # every month with streams is listed (30+ and growing), and the per-month
+    # version re-scanned streams and hands for each one.
+    stats = conn.execute(
+        "SELECT substr(date,1,7) AS m, COUNT(*) AS total, "
+        "SUM(CASE WHEN is_complete <> 0 THEN 1 ELSE 0 END) AS complete, "
+        "SUM(COALESCE(hands_estimated,0)) AS est "
+        "FROM streams WHERE date IS NOT NULL AND date != '' "
+        "GROUP BY substr(date,1,7) ORDER BY m DESC"
+    ).fetchall()
+    done = {r["m"]: r["n"] for r in conn.execute(
+        "SELECT substr(s.date,1,7) AS m, COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
+        "WHERE s.date IS NOT NULL AND s.date != '' GROUP BY substr(s.date,1,7)"
+    ).fetchall()}
+    assigned = {r["month"]: r for r in conn.execute(
+        "SELECT ma.month, ma.user_id, ma.bonus_amount, ma.deadline, u.username FROM month_assignments ma "
+        "LEFT JOIN users u ON u.id = ma.user_id"
+    ).fetchall()}
+    owner_done = {}
+    if admin:
+        owner_done = {r["m"]: r["n"] for r in conn.execute(
+            "SELECT ma.month AS m, COUNT(*) AS n FROM month_assignments ma "
+            "JOIN hands h ON h.user_id = ma.user_id "
+            "JOIN streams s ON s.id = h.stream_id AND substr(s.date,1,7) = ma.month "
+            "GROUP BY ma.month"
+        ).fetchall()}
     out = []
-    for m in months:
-        ms = _month_stats(conn, m)
-        a = conn.execute(
-            "SELECT ma.user_id, ma.bonus_amount, ma.deadline, u.username FROM month_assignments ma "
-            "LEFT JOIN users u ON u.id = ma.user_id WHERE ma.month = ?", (m,)
-        ).fetchone()
+    for r in stats:
+        m = r["m"]
+        ms = _month_stats_row(m, r["total"], r["complete"] or 0, r["est"] or 0, done.get(m, 0))
+        a = assigned.get(m)
         owner = {"id": a["user_id"], "username": a["username"]} if (a and a["user_id"]) else None
         row = {**ms, "owner": owner,
                "bonus_amount": (a["bonus_amount"] if a else None),
                "deadline": (a["deadline"] if a else None)}
         if admin and owner:
-            oh = conn.execute(
-                "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
-                "WHERE substr(s.date,1,7) = ? AND h.user_id = ?", (m, owner["id"])
-            ).fetchone()["n"]
+            oh = owner_done.get(m, 0)
             row["owner_hands"] = oh
             row["helper_hands"] = ms["hands_done"] - oh
             # Owner neglecting their own month: incomplete, work happening, but the
@@ -810,7 +842,7 @@ def _earnings_breakdown(conn, user_id):
     completion = round(hands * COMPLETION_BONUS, 2)
     stream_bonus = round(bonus_hands * STREAM_BONUS_PER_HAND, 2)
     base = round(cards_income + actions_income + completion, 2)
-    mb = _month_bonus(conn, user_id)
+    mb = _month_bonus(conn, user_id, hands)
     month_bonus = mb["amount"] if mb else 0.0
     total = round(base + stream_bonus + month_bonus + tutorial_bonus, 2)
     return {
@@ -985,7 +1017,7 @@ def admin_overview():
         last = conn.execute(
             "SELECT MAX(created_at) AS t FROM hands WHERE user_id = ?", (u["id"],)
         ).fetchone()["t"]
-        errors, _hands, rate = _user_errors(conn, u["id"])
+        errors, _hands, rate = _user_errors(conn, u["id"], bd["hands"])
         users.append({
             **public_user(u),
             "hands": bd["hands"], "earnings": bd["total"], "base": bd["base"],
@@ -998,22 +1030,25 @@ def admin_overview():
         total_earned += bd["total"]
         total_paid += bd["paid"]
 
+    # Contributors for every stream in one query (was one query per stream).
+    contributors = {}
+    for c in conn.execute(
+        "SELECT h.stream_id AS stream_id, u.username AS username, COUNT(*) AS hands FROM hands h "
+        "JOIN users u ON u.id = h.user_id WHERE h.stream_id IS NOT NULL "
+        "GROUP BY h.stream_id, h.user_id, u.username ORDER BY hands DESC, u.username"
+    ).fetchall():
+        contributors.setdefault(c["stream_id"], []).append({"username": c["username"], "hands": c["hands"]})
     streams = []
     for s in conn.execute(
         "SELECT s.*, (SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id) AS hands_done "
         "FROM streams s WHERE s.is_complete = 1 OR "
         "(SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id) > 0 ORDER BY s.date DESC"
     ).fetchall():
-        contributors = conn.execute(
-            "SELECT u.username AS username, COUNT(*) AS hands FROM hands h "
-            "JOIN users u ON u.id = h.user_id WHERE h.stream_id = ? GROUP BY h.user_id, u.username ORDER BY hands DESC",
-            (s["id"],),
-        ).fetchall()
         streams.append({
             "id": s["id"], "title": s["title"], "date": s["date"],
             "youtube_url": s["youtube_url"], "is_complete": bool(s["is_complete"]),
             "completed_at": s["completed_at"], "hands_done": s["hands_done"],
-            "contributors": [dict(c) for c in contributors],
+            "contributors": contributors.get(s["id"], []),
         })
 
     total_hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE COALESCE(type,'hand') = 'hand'").fetchone()["n"]
