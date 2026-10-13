@@ -94,7 +94,7 @@ def test_ui_cookie_picks_the_page(app_env):
     if not os.path.exists(os.path.join(server._DIST, "classic.html")):
         pytest.skip("frontend not built")
     c = server.app.test_client()
-    assert b"(Classic)" not in c.get("/").data          # no cookie: UI_DEFAULT (the redesign)
+    assert b"(Classic)" in c.get("/").data              # no cookie: UI_DEFAULT (the original)
     c.set_cookie("ui", "classic")
     r = c.get("/calendar")
     assert b"Classic" in r.data and r.headers["Cache-Control"] == "no-store"

@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import queue
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, request, Response, send_file, jsonify, send_from_directory, session
 from flask_cors import CORS
@@ -449,6 +450,19 @@ def _piece_caps(hand):
     return max_cards, actions
 
 
+def _side_payouts(hand):
+    """Side-game payouts recorded in this hand, each worth SIDE_PAYOUT_BONUS to
+    the worker: a bounty paid out, and a squid round settled. Read from the
+    hand's own SIDE GAME data (what the hand history says happened), never a
+    count the browser claims; at most one of each per hand."""
+    sg = hand.get("side_game") if isinstance(hand, dict) else None
+    if not isinstance(sg, dict):
+        return 0
+    b, q = sg.get("bounty"), sg.get("squid")
+    return int(isinstance(b, dict) and bool(b.get("payouts"))) + \
+        int(isinstance(q, dict) and bool(q.get("settled")) and bool(q.get("payouts")))
+
+
 def _clamp_count(value, cap):
     try:
         n = int(value or 0)
@@ -597,17 +611,18 @@ def api_hands_submit():
         max_cards, max_actions = _piece_caps(d["hand"])
         cards = _clamp_count(d.get("cards_count"), max_cards)
         actions = _clamp_count(d.get("actions_count"), max_actions)
+        side_payouts = _side_payouts(d["hand"])
     else:
         # A hand without a hand dict is a side-game / 7-2 record: no hand
         # history and no pieces, by design. A worker can't attach raw PT4 text
         # (it would flow into the exports) or claim pieces for it.
         text = (d.get("pt4_text") or "") if is_admin else ""
-        cards = actions = 0
+        cards = actions = side_payouts = 0
     next_state = d.get("next_state")
     hand_id, earnings = auth_db.insert_hand(
         uid, d.get("stream_id"), d.get("youtube_url"), d.get("timestamp_seconds"),
         text, cards, actions,
-        next_state=next_state,
+        next_state=next_state, side_payouts=side_payouts,
     )
     # Also snapshot the stream's latest state so the calendar's Resume works.
     sid = d.get("stream_id") or d.get("youtube_url")
@@ -815,6 +830,27 @@ def api_admin_payment():
     return jsonify(auth_db.admin_user_detail(uid))
 
 
+@app.route("/api/admin/user/<int:uid>/square-up", methods=["GET", "POST"])
+@admin_required
+def api_admin_square_up(uid):
+    """GET: what squaring a worker up through a date would log (?through=
+    YYYY-MM-DD, default last Friday). POST {through}: log it, so everything
+    through that day reads as paid and only later work is owed."""
+    if not auth_db.get_user(uid):
+        return jsonify({"error": "No such user."}), 404
+    raw = (request.json or {}).get("through") if request.method == "POST" else request.args.get("through")
+    try:
+        through = date.fromisoformat(str(raw)[:10]) if raw else auth_db.last_friday()
+    except ValueError:
+        return jsonify({"error": "through must be a date (YYYY-MM-DD)"}), 400
+    if auth_db.end_of_day_utc(through - timedelta(days=1)) > datetime.now(timezone.utc):
+        return jsonify({"error": "That day hasn't started yet."}), 400
+    if request.method == "GET":
+        return jsonify(auth_db.earned_through(uid, through))
+    s = auth_db.square_up(uid, through)
+    return jsonify({**auth_db.admin_user_detail(uid), "square_up": s})
+
+
 @app.route("/api/admin/assign-month", methods=["POST"])
 @admin_required
 def api_admin_assign_month():
@@ -890,8 +926,9 @@ _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "di
 
 # Two UIs ship in one build: index.html (the redesign) and classic.html (the
 # original UI). The `ui` cookie, set by the switch in either UI's nav, picks one;
-# UI_DEFAULT decides for browsers that haven't chosen.
-UI_DEFAULT = os.environ.get("UI_DEFAULT", "new")
+# UI_DEFAULT decides for browsers that haven't chosen: the original, whose
+# What's New popup offers the new look (set UI_DEFAULT=new to flip it).
+UI_DEFAULT = os.environ.get("UI_DEFAULT", "classic")
 
 
 def _ui_page():

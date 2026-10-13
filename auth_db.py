@@ -20,7 +20,7 @@ import os
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 
 # Extract the 11-char YouTube video id from any common URL shape (watch?v=,
@@ -69,6 +69,7 @@ DB_PATH = os.path.join(DATA_DIR, "users.db")
 PIECE_RATE = 0.03
 COMPLETION_BONUS = 0.10
 STREAM_BONUS_PER_HAND = 0.05
+SIDE_PAYOUT_BONUS = 0.25     # per bounty paid / squid round settled in a hand
 
 MONTH_BONUS_DEFAULT = 150.0   # paid when a worker's assigned month is completed
 MONTH_DEADLINE_DAYS = 14      # default deadline = 2 weeks from assignment
@@ -78,6 +79,50 @@ ERR_HALF = 0.20               # 10–20% → half; > 20% → none
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# A row that counts as a worker's hand (paid, counted, exported). Other types:
+# 'tutorial_bonus' (a one-off $1 credit) and 'duplicate' (a second copy of a
+# hand that was already saved; kept for the record, never paid or counted).
+HAND_ROW = "COALESCE(type,'hand') = 'hand'"
+H_HAND_ROW = "COALESCE(h.type,'hand') = 'hand'"
+
+
+def _parse_ts(s):
+    """created_at / completed_at text -> aware UTC datetime (None if unreadable)."""
+    try:
+        t = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _eastern_offset(day):
+    """UTC offset (hours) of US Eastern time on a date: -4 from the second Sunday
+    of March to the first Sunday of November, else -5. Computed by hand because
+    Windows Pythons often ship without a time-zone database."""
+    def nth_sunday(month, n):
+        first = date(day.year, month, 1)
+        return first + timedelta(days=(6 - first.weekday()) % 7 + 7 * (n - 1))
+    return -4 if nth_sunday(3, 2) <= day < nth_sunday(11, 1) else -5
+
+
+def end_of_day_utc(day):
+    """The UTC instant an Eastern-time calendar day ('YYYY-MM-DD' or date) ends."""
+    if isinstance(day, str):
+        day = date.fromisoformat(day[:10])
+    # The clocks change at 2am, so the midnight that ends `day` still carries
+    # `day`'s own offset (the end of Oct 31 is EDT though Nov 1 is EST).
+    nxt = day + timedelta(days=1)
+    return datetime(nxt.year, nxt.month, nxt.day, tzinfo=timezone.utc) - timedelta(hours=_eastern_offset(day))
+
+
+def last_friday(today=None):
+    """The most recent Friday that has fully ended in Eastern time."""
+    if today is None:
+        now = datetime.now(timezone.utc)
+        today = (now + timedelta(hours=_eastern_offset(now.date()))).date()
+    return today - timedelta(days=(today.weekday() - 4) % 7 or 7)
 
 
 # ── Backend selection: Postgres when DATABASE_URL is set, else local SQLite ───
@@ -149,8 +194,8 @@ def _add_column(conn, table, coldef):
             pass  # column already exists
 
 
-def _hand_earnings(cards, actions):
-    return round((cards + actions) * PIECE_RATE + COMPLETION_BONUS, 2)
+def _hand_earnings(cards, actions, side_payouts=0):
+    return round((cards + actions) * PIECE_RATE + COMPLETION_BONUS + side_payouts * SIDE_PAYOUT_BONUS, 2)
 
 
 # ── Schema + seed ────────────────────────────────────────────────────────────
@@ -186,16 +231,25 @@ def init_db():
     _add_column(conn, "users", "tutorial_completed INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "hands", "type TEXT NOT NULL DEFAULT 'hand'")  # 'hand' | 'tutorial_bonus'
     _add_column(conn, "hands", "hand_number TEXT")        # PokerStars Hand # (import dedup)
+    _add_column(conn, "hands", "side_payouts INTEGER NOT NULL DEFAULT 0")  # bounty paid / squid settled
     conn.commit()
     # Every per-worker total (dashboard on each save, admin, earnings) filters
     # hands by user. The HH text lives in the same row (~1.5KB each), so
     # answering those from an index that carries the summed columns avoids
     # reading every row. Created after the migrations above: it needs `type`.
+    conn.execute("DROP INDEX IF EXISTS idx_hands_user_totals")   # superseded: no side_payouts
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_hands_user_totals ON hands "
-        "(user_id, type, stream_id, cards_count, actions_count, earnings, created_at)"
+        "CREATE INDEX IF NOT EXISTS idx_hands_user_totals2 ON hands "
+        "(user_id, type, stream_id, cards_count, actions_count, side_payouts, earnings, created_at)"
     )
     conn.commit()
+    try:
+        dups = mark_duplicate_hands(conn)
+        if dups:
+            print(f"Marked {dups} duplicate hand submission(s) — no longer paid or counted", flush=True)
+    except Exception as e:
+        conn.rollback()
+        print(f"duplicate check skipped: {e}", flush=True)
 
     # Bootstrap the admin account (username "admin", password from env).
     if not conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone():
@@ -383,21 +437,36 @@ def award_tutorial_bonus(user_id):
 
 
 # ── Hands ────────────────────────────────────────────────────────────────────
-def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count, next_state=None):
+def insert_hand(user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, cards_count, actions_count,
+                next_state=None, side_payouts=0):
     cards = int(cards_count or 0)
     actions = int(actions_count or 0)
+    side_payouts = max(0, int(side_payouts or 0))
     # Normalize the stream key to the canonical 11-char video id so a hand always
     # matches the calendar's stream (whose id is the video id) — regardless of
     # whether the client sent a bare id, a full watch URL, or a /live/ link.
     stream_id = extract_video_id(stream_id) or extract_video_id(youtube_url) or (stream_id or "")
-    earnings = _hand_earnings(cards, actions)
+    earnings = _hand_earnings(cards, actions, side_payouts)
     conn = get_db()
+    # A double-click, or a retry after a slow response, used to save the same
+    # hand twice and pay for it twice (70 such hands in production by Oct 2026).
+    # The same worker sending an identical hand history for the same timestamp
+    # gets the hand already saved back instead of a second, paid copy.
+    if pt4_text:
+        dup = conn.execute(
+            "SELECT id, earnings FROM hands WHERE user_id = ? AND stream_id = ? AND timestamp_seconds = ? "
+            f"AND {HAND_ROW} AND pt4_text = ? ORDER BY id LIMIT 1",
+            (user_id, stream_id, int(timestamp_seconds or 0), pt4_text),
+        ).fetchone()
+        if dup:
+            conn.close()
+            return dup["id"], dup["earnings"]
     row = conn.execute(
         "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, "
-        "cards_count, actions_count, earnings, next_state, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id",
+        "cards_count, actions_count, side_payouts, earnings, next_state, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id",
         (user_id, stream_id, youtube_url, int(timestamp_seconds or 0), pt4_text or "",
-         cards, actions, earnings, json.dumps(next_state) if next_state else None, now_iso()),
+         cards, actions, side_payouts, earnings, json.dumps(next_state) if next_state else None, now_iso()),
     ).fetchone()
     hand_id = row["id"]
     # Upsert a minimal stream row so the hand always ties to a known stream.
@@ -682,50 +751,82 @@ def _month_stats_row(month, total, complete, est, done):
 def _month_stats(conn, month):
     """Streams + hands progress for a calendar month ("YYYY-MM"), across all workers."""
     rows = conn.execute(
-        "SELECT is_complete, hands_estimated FROM streams WHERE substr(date,1,7) = ?", (month,)
+        "SELECT is_complete, hands_estimated, completed_at FROM streams WHERE substr(date,1,7) = ?", (month,)
     ).fetchall()
     done = conn.execute(
         "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
-        "WHERE substr(s.date,1,7) = ?", (month,)
+        f"WHERE substr(s.date,1,7) = ? AND {H_HAND_ROW}", (month,)
     ).fetchone()["n"]
-    return _month_stats_row(
+    ms = _month_stats_row(
         month, len(rows), sum(1 for r in rows if r["is_complete"]),
         sum((r["hands_estimated"] or 0) for r in rows), done,
     )
+    # When the month's last stream was marked complete (checked against the
+    # bonus deadline).
+    stamps = [t for t in (_parse_ts(r["completed_at"]) for r in rows if r["is_complete"]) if t]
+    ms["completed_at"] = max(stamps).isoformat(timespec="seconds") if ms["is_complete"] and stamps else None
+    return ms
 
 
 def _user_errors(conn, user_id, hands=None):
     """(errors, hands, rate). Pass `hands` when the caller already counted them."""
     if hands is None:
-        hands = conn.execute("SELECT COUNT(*) AS n FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'", (user_id,)).fetchone()["n"]
+        hands = conn.execute(f"SELECT COUNT(*) AS n FROM hands WHERE user_id = ? AND {HAND_ROW}", (user_id,)).fetchone()["n"]
     errors = conn.execute("SELECT COALESCE(error_count,0) AS e FROM users WHERE id = ?", (user_id,)).fetchone()["e"]
     return errors, hands, (errors / hands if hands else 0.0)
 
 
-def _month_bonus(conn, user_id, hands=None):
-    """Month-completion bonus for a worker's assigned month, tiered by error rate."""
-    a = conn.execute("SELECT * FROM month_assignments WHERE user_id = ?", (user_id,)).fetchone()
-    if not a:
-        return None
-    ms = _month_stats(conn, a["month"])
+def _past(deadline, when):
+    """True if `when` (aware datetime) is after the Eastern end of `deadline`'s day."""
+    try:
+        return bool(deadline) and when >= end_of_day_utc(deadline)
+    except (TypeError, ValueError):
+        return False
+
+
+def _month_bonuses(conn, user_id, hands=None):
+    """The month-completion bonus for every month assigned to a worker, newest
+    first, each tiered by error rate.
+
+    A worker can own several months and each pays its own bonus (this used to
+    read one arbitrary assignment, so a second completed month paid nothing).
+    A month pays only if its last stream was marked complete by the end of its
+    deadline day, Eastern time; finished after that it is 'late' and pays $0.
+    The error tier uses the worker's overall error rate.
+    """
+    rows = conn.execute(
+        "SELECT * FROM month_assignments WHERE user_id = ? ORDER BY month DESC", (user_id,)
+    ).fetchall()
+    if not rows:
+        return []
     errors, hands, rate = _user_errors(conn, user_id, hands)
-    bonus_amount = a["bonus_amount"] if a["bonus_amount"] is not None else MONTH_BONUS_DEFAULT
-    if not ms["is_complete"]:
-        status, amount = "incomplete", 0.0
-    elif rate < ERR_FULL:
-        status, amount = "full", bonus_amount
-    elif rate <= ERR_HALF:
-        status, amount = "half", round(bonus_amount / 2, 2)
-    else:
-        status, amount = "forfeited", 0.0
-    return {
-        "month": a["month"], "bonus_amount": bonus_amount, "deadline": a["deadline"],
-        "is_complete": ms["is_complete"], "total_streams": ms["total_streams"],
-        "complete_streams": ms["complete_streams"], "hands_done": ms["hands_done"],
-        "hands_estimated": ms["hands_estimated"], "pct": ms["pct"],
-        "error_count": errors, "error_rate": round(rate, 4),
-        "status": status, "amount": amount,
-    }
+    now = datetime.now(timezone.utc)
+    out = []
+    for a in rows:
+        ms = _month_stats(conn, a["month"])
+        bonus_amount = a["bonus_amount"] if a["bonus_amount"] is not None else MONTH_BONUS_DEFAULT
+        finished = _parse_ts(ms["completed_at"]) if ms["completed_at"] else None
+        if not ms["is_complete"]:
+            status, amount = "incomplete", 0.0
+        elif finished and _past(a["deadline"], finished):
+            status, amount = "late", 0.0
+        elif rate < ERR_FULL:
+            status, amount = "full", bonus_amount
+        elif rate <= ERR_HALF:
+            status, amount = "half", round(bonus_amount / 2, 2)
+        else:
+            status, amount = "forfeited", 0.0
+        out.append({
+            "month": a["month"], "bonus_amount": bonus_amount, "deadline": a["deadline"],
+            "is_complete": ms["is_complete"], "completed_at": ms["completed_at"],
+            "overdue": not ms["is_complete"] and _past(a["deadline"], now),
+            "total_streams": ms["total_streams"],
+            "complete_streams": ms["complete_streams"], "hands_done": ms["hands_done"],
+            "hands_estimated": ms["hands_estimated"], "pct": ms["pct"],
+            "error_count": errors, "error_rate": round(rate, 4),
+            "status": status, "amount": amount,
+        })
+    return out
 
 
 def set_month_assignment(month, user_id, bonus_amount=None, deadline=None):
@@ -770,7 +871,7 @@ def month_list(admin=False):
     ).fetchall()
     done = {r["m"]: r["n"] for r in conn.execute(
         "SELECT substr(s.date,1,7) AS m, COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
-        "WHERE s.date IS NOT NULL AND s.date != '' GROUP BY substr(s.date,1,7)"
+        f"WHERE s.date IS NOT NULL AND s.date != '' AND {H_HAND_ROW} GROUP BY substr(s.date,1,7)"
     ).fetchall()}
     assigned = {r["month"]: r for r in conn.execute(
         "SELECT ma.month, ma.user_id, ma.bonus_amount, ma.deadline, u.username FROM month_assignments ma "
@@ -782,7 +883,7 @@ def month_list(admin=False):
             "SELECT ma.month AS m, COUNT(*) AS n FROM month_assignments ma "
             "JOIN hands h ON h.user_id = ma.user_id "
             "JOIN streams s ON s.id = h.stream_id AND substr(s.date,1,7) = ma.month "
-            "GROUP BY ma.month"
+            f"WHERE {H_HAND_ROW} GROUP BY ma.month"
         ).fetchall()}
     out = []
     for r in stats:
@@ -814,13 +915,14 @@ def _earnings_breakdown(conn, user_id):
     """Full earnings breakdown for one user from hands + completed streams + payments."""
     agg = conn.execute(
         "SELECT COUNT(*) AS hands, COALESCE(SUM(cards_count),0) AS cards, "
-        "COALESCE(SUM(actions_count),0) AS actions, COALESCE(SUM(earnings),0) AS base "
+        "COALESCE(SUM(actions_count),0) AS actions, COALESCE(SUM(side_payouts),0) AS side_payouts "
         "FROM hands WHERE user_id = ? AND COALESCE(type,'hand') = 'hand'",
         (user_id,),
     ).fetchone()
     hands = agg["hands"]
     cards = agg["cards"]
     actions = agg["actions"]
+    side_payouts = agg["side_payouts"]
     tutorial_bonus = conn.execute(
         "SELECT COALESCE(SUM(earnings),0) AS b FROM hands WHERE user_id = ? AND type = 'tutorial_bonus'",
         (user_id,),
@@ -829,7 +931,7 @@ def _earnings_breakdown(conn, user_id):
     # Stream bonus = $0.05 per the user's hands that live in a completed stream.
     bonus_hands = conn.execute(
         "SELECT COUNT(*) AS n FROM hands h JOIN streams s ON h.stream_id = s.id "
-        "WHERE h.user_id = ? AND s.is_complete = 1",
+        f"WHERE h.user_id = ? AND s.is_complete = 1 AND {H_HAND_ROW}",
         (user_id,),
     ).fetchone()["n"]
 
@@ -840,10 +942,11 @@ def _earnings_breakdown(conn, user_id):
     cards_income = round(cards * PIECE_RATE, 2)
     actions_income = round(actions * PIECE_RATE, 2)
     completion = round(hands * COMPLETION_BONUS, 2)
+    side_game_bonus = round(side_payouts * SIDE_PAYOUT_BONUS, 2)
     stream_bonus = round(bonus_hands * STREAM_BONUS_PER_HAND, 2)
-    base = round(cards_income + actions_income + completion, 2)
-    mb = _month_bonus(conn, user_id, hands)
-    month_bonus = mb["amount"] if mb else 0.0
+    base = round(cards_income + actions_income + completion + side_game_bonus, 2)
+    months = _month_bonuses(conn, user_id, hands)
+    month_bonus = round(sum(m["amount"] for m in months), 2)
     total = round(base + stream_bonus + month_bonus + tutorial_bonus, 2)
     return {
         "hands": hands,
@@ -853,9 +956,12 @@ def _earnings_breakdown(conn, user_id):
         "cards_income": cards_income,
         "actions_income": actions_income,
         "completion_bonus": completion,
+        "side_payouts": side_payouts,
+        "side_game_bonus": side_game_bonus,
         "stream_bonus": stream_bonus,
         "month_bonus": month_bonus,
-        "month_bonus_detail": mb,
+        "month_bonus_detail": months[0] if months else None,  # newest assigned month
+        "month_bonuses": months,
         "tutorial_bonus": round(tutorial_bonus, 2),
         "base": base,
         "total": total,
@@ -891,7 +997,7 @@ def user_dashboard(user_id):
     if month:
         own = conn.execute(
             "SELECT COUNT(*) AS n, COALESCE(SUM(earnings),0) AS e FROM hands h "
-            "JOIN streams s ON h.stream_id = s.id WHERE h.user_id = ? AND substr(s.date,1,7) = ?",
+            f"JOIN streams s ON h.stream_id = s.id WHERE h.user_id = ? AND substr(s.date,1,7) = ? AND {H_HAND_ROW}",
             (user_id, month),
         ).fetchone()
         bd["own_month_hands"] = {"count": own["n"], "earnings": round(own["e"], 2)}
@@ -908,7 +1014,7 @@ def stream_state():
     """Per-stream live hand count + completion, for the calendar to overlay."""
     conn = get_db()
     counts = {r["stream_id"]: r["n"] for r in conn.execute(
-        "SELECT stream_id, COUNT(*) AS n FROM hands WHERE stream_id IS NOT NULL GROUP BY stream_id"
+        f"SELECT stream_id, COUNT(*) AS n FROM hands WHERE stream_id IS NOT NULL AND {HAND_ROW} GROUP BY stream_id"
     ).fetchall()}
     states = {}
     for r in conn.execute("SELECT id, is_complete FROM streams").fetchall():
@@ -995,7 +1101,7 @@ def set_stream_complete(stream_id, complete=True, meta=None):
     conn.commit()
     # Per-user bonus from this stream (for feedback).
     shares = conn.execute(
-        "SELECT user_id, COUNT(*) AS hands FROM hands WHERE stream_id = ? GROUP BY user_id",
+        f"SELECT user_id, COUNT(*) AS hands FROM hands WHERE stream_id = ? AND {HAND_ROW} GROUP BY user_id",
         (stream_id,),
     ).fetchall()
     conn.close()
@@ -1027,22 +1133,25 @@ def admin_overview():
             "paid": bd["paid"], "owed": bd["owed"],
             "last_active": last or u["created_at"],
         })
-        total_earned += bd["total"]
-        total_paid += bd["paid"]
+        # Platform totals are what workers are owed; an admin's own test hands
+        # aren't wages (they used to inflate "Earnings owed").
+        if not u["is_admin"]:
+            total_earned += bd["total"]
+            total_paid += bd["paid"]
 
     # Contributors for every stream in one query (was one query per stream).
     contributors = {}
     for c in conn.execute(
         "SELECT h.stream_id AS stream_id, u.username AS username, COUNT(*) AS hands FROM hands h "
-        "JOIN users u ON u.id = h.user_id WHERE h.stream_id IS NOT NULL "
+        f"JOIN users u ON u.id = h.user_id WHERE h.stream_id IS NOT NULL AND {H_HAND_ROW} "
         "GROUP BY h.stream_id, h.user_id, u.username ORDER BY hands DESC, u.username"
     ).fetchall():
         contributors.setdefault(c["stream_id"], []).append({"username": c["username"], "hands": c["hands"]})
     streams = []
     for s in conn.execute(
-        "SELECT s.*, (SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id) AS hands_done "
+        f"SELECT s.*, (SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id AND {H_HAND_ROW}) AS hands_done "
         "FROM streams s WHERE s.is_complete = 1 OR "
-        "(SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id) > 0 ORDER BY s.date DESC"
+        f"(SELECT COUNT(*) FROM hands h WHERE h.stream_id = s.id AND {H_HAND_ROW}) > 0 ORDER BY s.date DESC"
     ).fetchall():
         streams.append({
             "id": s["id"], "title": s["title"], "date": s["date"],
@@ -1112,6 +1221,94 @@ def record_payment(user_id, amount, date, note):
     )
     conn.commit()
     conn.close()
+
+
+def mark_duplicate_hands(conn=None):
+    """Mark second copies of an already-saved hand as type 'duplicate': the same
+    worker, stream, timestamp and identical hand-history text, keeping the
+    first. Duplicates stay in the table but are never paid, counted or exported.
+    Idempotent; run on every boot. Undo with
+    UPDATE hands SET type = 'hand' WHERE type = 'duplicate'."""
+    own = conn is None
+    conn = conn or get_db()
+    n = conn.execute(
+        f"UPDATE hands SET type = 'duplicate' WHERE {HAND_ROW} "
+        "AND pt4_text IS NOT NULL AND pt4_text != '' AND EXISTS ("
+        "SELECT 1 FROM hands o WHERE o.user_id = hands.user_id AND o.stream_id = hands.stream_id "
+        "AND o.timestamp_seconds = hands.timestamp_seconds AND o.id < hands.id "
+        "AND COALESCE(o.type,'hand') = 'hand' AND o.pt4_text = hands.pt4_text)"
+    ).rowcount
+    conn.commit()
+    if own:
+        conn.close()
+    return n
+
+
+def earned_through(user_id, through):
+    """What a worker had earned by the end of `through` (an Eastern-time date),
+    and how that compares with everything paid so far.
+
+    Counts pay for every hand saved by then, the tutorial credit if given by
+    then, the stream bonus on those hands for streams marked complete by then,
+    and month bonuses for months completed by then. Duplicates never count.
+    """
+    cutoff = end_of_day_utc(through)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT COALESCE(h.type,'hand') AS type, h.cards_count AS cards, h.actions_count AS actions, "
+        "COALESCE(h.side_payouts,0) AS side_payouts, "
+        "h.earnings AS earnings, h.created_at AS created_at, s.is_complete AS done, s.completed_at AS done_at "
+        "FROM hands h LEFT JOIN streams s ON s.id = h.stream_id "
+        "WHERE h.user_id = ? AND COALESCE(h.type,'hand') IN ('hand','tutorial_bonus')",
+        (user_id,),
+    ).fetchall()
+    hands = cards = actions = bonus_hands = side_payouts = 0
+    tutorial = 0.0
+    for r in rows:
+        t = _parse_ts(r["created_at"])
+        if not t or t >= cutoff:
+            continue
+        if r["type"] == "tutorial_bonus":
+            tutorial += r["earnings"] or 0
+            continue
+        hands += 1
+        cards += r["cards"] or 0
+        actions += r["actions"] or 0
+        side_payouts += r["side_payouts"] or 0
+        if r["done"]:
+            done_at = _parse_ts(r["done_at"])
+            if done_at is None or done_at < cutoff:
+                bonus_hands += 1
+    base = round(round(cards * PIECE_RATE, 2) + round(actions * PIECE_RATE, 2) + round(hands * COMPLETION_BONUS, 2)
+                 + round(side_payouts * SIDE_PAYOUT_BONUS, 2), 2)
+    stream_bonus = round(bonus_hands * STREAM_BONUS_PER_HAND, 2)
+    month_bonus = round(sum(
+        m["amount"] for m in _month_bonuses(conn, user_id)
+        if m["completed_at"] and _parse_ts(m["completed_at"]) < cutoff
+    ), 2)
+    paid = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) AS p FROM payments WHERE user_id = ?", (user_id,)
+    ).fetchone()["p"]
+    conn.close()
+    earned = round(base + stream_bonus + month_bonus + tutorial, 2)
+    return {
+        "through": str(through)[:10], "hands": hands, "base": base,
+        "stream_bonus": stream_bonus, "month_bonus": month_bonus,
+        "tutorial_bonus": round(tutorial, 2), "earned": earned,
+        "paid": round(paid, 2), "to_pay": round(earned - paid, 2),
+    }
+
+
+def square_up(user_id, through):
+    """Record that a worker is paid in full through `through` (Eastern date):
+    logs one payment for whatever earned-through-then exceeds everything paid,
+    so the balance left owing is exactly the work after that day. Logs nothing
+    if they're already paid that far. Returns earned_through()'s figures."""
+    s = earned_through(user_id, through)
+    if s["to_pay"] > 0:
+        d = date.fromisoformat(s["through"])
+        record_payment(user_id, s["to_pay"], s["through"], f"Square-up: paid in full through {d:%a} {s['through']}")
+    return s
 
 
 def export_stream_text(stream_id):
