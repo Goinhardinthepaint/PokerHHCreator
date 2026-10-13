@@ -10,6 +10,9 @@
 
 export const DEFAULT_BOUNTY = { start: 3, first: 300, step: 100 };
 export const DEFAULT_SQUID = { total: 7, value: 200, mode: "progressive" };
+// What the worker earns for recording a bounty payout or a squid round
+// settling (the server pays it, from the hand's SIDE GAME data).
+export const SIDE_PAYOUT_BONUS = 0.25;
 
 // ── Display names ────────────────────────────────────────────────────────────
 // State ENTERING the hand rides in the name: JT3bounty, raver2squid, JT3bounty1squid.
@@ -162,3 +165,23 @@ export function sideGamePayload({ bounty, bountySchedule, squid, squidConfig, sq
   }
   return out;
 }
+
+// The side games the builder offers (the Side Game popup lists them in this
+// order). The two squid games share one state; `mode` tells them apart.
+export const SIDE_GAMES = {
+  squid: {
+    label: "Squid Game", short: "Squid", mode: "one-per-player",
+    blurb: "One button per player. The sole winner of a hand takes a button if they don't have one yet. When the last button goes, everyone without one pays each holder.",
+  },
+  progressive: {
+    label: "Progressive Squid Game", short: "Progressive Squid", mode: "progressive",
+    blurb: "Players can win several buttons. The sole winner of a hand takes a button. When the last goes, everyone without one pays each holder for every button they hold.",
+  },
+  bounty: {
+    label: "Bounty Game", short: "Bounty",
+    blurb: "Win enough hands in a row and everyone dealt in pays you, more for each further win. A chop extends the streak but pays nothing.",
+  },
+};
+
+// Which squid game a squid config is.
+export const squidGameKey = (cfg) => (cfg?.mode === "one-per-player" ? "squid" : "progressive");

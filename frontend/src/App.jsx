@@ -4,7 +4,8 @@ import Auth from "./Auth.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Admin from "./Admin.jsx";
 import TutorialOverlay from "./TutorialOverlay.jsx";
-import { switchUi } from "./uiSwitch.js";
+import { switchUi, whatsNewSeen, markWhatsNewSeen } from "./uiSwitch.js";
+import WhatsNew from "./WhatsNew.jsx";
 
 // Onboarding tour — each step points at an element tagged with data-tour.
 // Order follows the real workflow: set up the table → paste link → deal → cards
@@ -42,9 +43,9 @@ import {
 } from "./engine.js";
 import {
   applySideGameNames, mainPotWinners, settleBounty, settleSquid, sideGameDeltas, sideGamePayload,
-  DEFAULT_BOUNTY, DEFAULT_SQUID,
+  DEFAULT_BOUNTY, DEFAULT_SQUID, SIDE_GAMES, squidGameKey, SIDE_PAYOUT_BONUS,
 } from "./sideGames.js";
-import SideGamePanel from "./SideGamePanel.jsx";
+import SideGameDialog, { SidePayConfirm } from "./SideGameDialog.jsx";
 import Calendar from "./Calendar.jsx";
 
 // When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
@@ -101,9 +102,10 @@ function isVpipAction(action) {
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
 // special server pricing is needed; these constants drive the live counter only.
 const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
-// Bounty and Squid used to be listed here. Both are now transcribed in full —
-// holdings in each name plus a SIDE GAME block (sideGames.js) — so the quick
-// counter is only for other, untranscribed games.
+// Squid, Progressive Squid and Bounty are started from the Side Game popup
+// and transcribed in full (holdings in each name plus a SIDE GAME block, see
+// sideGames.js). The quick counter is the popup's "Other game: just count
+// hands", for anything else.
 const SIDE_GAME_TYPES = ["Other"];
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
@@ -344,6 +346,13 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
           <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || BADGE_DEFAULT }}>{badge}</div>
         )}
         {isButton && <div style={styles.dealerBtn}>D</div>}
+        {/* Side-game markers, like the dealer button: squid buttons held, bounty streak. */}
+        {(squid > 0 || bounty > 0) && (
+          <div style={styles.gameDiscs}>
+            {squid > 0 && <div style={styles.squidDisc} title={`${squid} squid button${squid === 1 ? "" : "s"}`}>{squid}</div>}
+            {bounty > 0 && <div style={styles.bountyDisc} title={`Bounty: ${bounty} in a row`}>{bounty}</div>}
+          </div>
+        )}
         {/* Hole cards are locked until the hand is dealt (workflow: deal → cards). */}
         <div style={{ ...styles.cardsRow, opacity: phase === "setup" ? 0.35 : 1 }} title={phase === "setup" ? "Deal a hand first" : undefined}>
           <Card card={cards[0]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={phase === "setup" ? undefined : () => onCardClick(0)} />
@@ -788,13 +797,13 @@ function HandBuilder({ me, refreshMe }) {
   const [lastHandKey, setLastHandKey] = useState(() => pick("lastHandKey", null));
 
   // ── Side game mode ─────────────────────────────────────────────────────────
-  // A simplified flow for non-standard side games (Squid Game, …):
+  // A simplified flow for other, untranscribed side games:
   // no hole cards / actions / board — just count hands as positions rotate. Each
   // counted hand is submitted as a 0-piece hand so it pays $0.10 (+$0.05 on
   // stream completion) and counts toward the stream's handsCompleted, but it
   // generates no PT4 text.
   const [sideGameMode, setSideGameMode] = useState(() => pick("sideGameMode", false));
-  const [sideGameType, setSideGameType] = useState(() => {
+  const [sideGameType] = useState(() => {
     const t = pick("sideGameType", "Other");
     return SIDE_GAME_TYPES.includes(t) ? t : "Other";
   });
@@ -869,6 +878,44 @@ function HandBuilder({ me, refreshMe }) {
     setSquidRound((r) => r + 1);
     setSquidLeft(squidConfig.total);
   };
+  // Side Game popup: null, "menu", or a game ("squid" | "progressive" | "bounty").
+  const [sideDialog, setSideDialog] = useState(null);
+  const squidGame = squidGameKey(squidConfig);
+  // Start a side game with the structure the popup asked for. A new game starts
+  // clean: no streaks, every button back in play, round 1.
+  function startSideGameType(game, cfg) {
+    if (game === "bounty") {
+      setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
+      setBountyStreaks({});
+      setBountyActive(true);
+    } else {
+      setSquidConfigState({ total: cfg.total, value: cfg.value, mode: SIDE_GAMES[game].mode });
+      setSquidButtons({});
+      setSquidRound(1);
+      setSquidLeft(cfg.total);
+      setSquidActive(true);
+    }
+    setLastSideGame(null); // a summary from an earlier game would mislead
+    setSideDialog(null);
+  }
+  // Change a running game's structure, or switch between the two squid games;
+  // everything already won stays won.
+  function saveSideGameType(game, cfg) {
+    if (game === "bounty") setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
+    else setSquidConfig({ total: cfg.total, value: cfg.value, mode: SIDE_GAMES[game].mode });
+    setSideDialog(null);
+  }
+  function endSideGameType(game) {
+    if (game === "bounty") {
+      setBountyActive(false);
+      setBountyStreaks({});
+    } else {
+      setSquidActive(false);
+      setSquidButtons({});
+      setSquidLeft(squidConfig.total);
+    }
+    setSideDialog(null);
+  }
   // Last saved hand's side-game results, for the panel.
   const [lastSideGame, setLastSideGame] = useState(() => pick("lastSideGame", null));
 
@@ -1516,13 +1563,16 @@ function HandBuilder({ me, refreshMe }) {
   // A second click while the first save is in flight would submit (and pay
   // for) the same hand twice.
   const submittingRef = useRef(false);
-  async function completeHand() {
+  // A hand that moves side-game money waits for a yes: {bounty, squid, …}.
+  const [sidePayConfirm, setSidePayConfirm] = useState(null);
+  async function completeHand(opts) {
     if (submittingRef.current) return;
-    if (trySevenTwoVpip("complete")) return;
+    const sideConfirmed = opts?.sideConfirmed === true;
+    if (!sideConfirmed && trySevenTwoVpip("complete")) return;
     submittingRef.current = true;
-    try { await runCompleteHand(); } finally { submittingRef.current = false; }
+    try { await runCompleteHand({ sideConfirmed }); } finally { submittingRef.current = false; }
   }
-  async function runCompleteHand() {
+  async function runCompleteHand({ sideConfirmed = false } = {}) {
     setError("");
     // 1. YouTube link validation
     const link = youtubeLink.trim();
@@ -1562,6 +1612,18 @@ function HandBuilder({ me, refreshMe }) {
       const squidRes = squidActive
         ? settleSquid({ dealtIn, buttons: squidButtons, config: squidConfig, round: squidRound, left: squidLeft, winners: won })
         : null;
+      // Streaks and buttons move on their own; money waits for a yes. A bounty
+      // being paid or the squid round settling asks first, and No goes back
+      // unsaved so the streaks or buttons can be fixed.
+      if (!sideConfirmed && (bountyRes?.payouts.length || squidRes?.settled)) {
+        setSidePayConfirm({
+          bounty: bountyRes?.payouts.length ? bountyRes : null,
+          squid: squidRes?.settled ? squidRes : null,
+          squidValue: squidConfig.value,
+          squidTotal: squidConfig.total,
+        });
+        return;
+      }
       const outHand = applySideGameNames(hand, bountyActive ? bountyStreaks : {}, squidActive ? squidButtons : {});
       if (bountyRes || squidRes) {
         outHand.side_game = sideGamePayload({ bounty: bountyRes, bountySchedule, squid: squidRes, squidConfig, squidRound });
@@ -1629,9 +1691,11 @@ function HandBuilder({ me, refreshMe }) {
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
-      const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
+      const sideEvents = (bountyRes?.payouts.length ? 1 : 0) + (squidRes?.settled ? 1 : 0);
+      const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS + sideEvents * SIDE_PAYOUT_BONUS).toFixed(2);
       const sidePaid = [...(bountyRes?.payouts || []), ...(squidRes?.payouts || [])].reduce((a, p) => a + p.amount, 0);
-      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`
+      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)})`
+        + (sideEvents ? ` + side-game payout ($${(sideEvents * SIDE_PAYOUT_BONUS).toFixed(2)})` : "") + ` = $${total}`
         + (sidePaid ? ` · side games moved $${sidePaid.toLocaleString()} (in the next stacks)` : ""), sidePaid ? 4200 : 2800);
       if (bountyRes) setBountyStreaks(bountyRes.nextStreaks);
       if (squidRes) {
@@ -2021,7 +2085,7 @@ function HandBuilder({ me, refreshMe }) {
   const keyState = useRef(null);
   useEffect(() => {
     keyState.current = {
-      modal: !!(editor || sevenTwoDetect || sevenTwoVpip || straddleMenuOpen || buyMenuSeat != null),
+      modal: !!(editor || sevenTwoDetect || sevenTwoVpip || straddleMenuOpen || buyMenuSeat != null || sideDialog || sidePayConfirm),
       sideGameMode, phase, hasActor, legal, betTo, canDeal, showDealNext, nextStreet, canComplete, showRunPrompt,
       act, dealHand, startBetting, dealNextStreet, completeHand, undo, boardReadyFor, engHistory,
     };
@@ -2154,33 +2218,6 @@ function HandBuilder({ me, refreshMe }) {
               <input type="checkbox" checked={sevenTwoActive} onChange={(e) => setSevenTwoActive(e.target.checked)} />
               <span>7-2 Game Active <span style={styles.sideHint}>· VPIP with 7-2 → side game</span></span>
             </label>
-            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's win streak going into the hand into their PT4 name, e.g. raver2bounty. Winners and choppers go up one after every hand; everyone else resets.">
-              <input type="checkbox" checked={bountyActive} onChange={(e) => setBountyActive(e.target.checked)} />
-              <span>Bounty Game <span style={styles.sideHint}>· streak → raver2bounty</span></span>
-            </label>
-            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's buttons going into the hand into their PT4 name, e.g. raver2squid. The sole winner of each hand takes a button; when the last goes, everyone without one pays every holder.">
-              <input type="checkbox" checked={squidActive} onChange={(e) => setSquidActive(e.target.checked)} />
-              <span>Squid Game <span style={styles.sideHint}>· buttons → raver2squid</span></span>
-            </label>
-            {(bountyActive || squidActive) && (
-              <SideGamePanel
-                ui={SIDE_PANEL_UI}
-                seatedNames={named.map((p) => p.name)}
-                bountyActive={bountyActive}
-                bountySchedule={bountySchedule}
-                setBountySchedule={setBountySchedule}
-                bountyStreaks={bountyStreaks}
-                squidActive={squidActive}
-                squidConfig={squidConfig}
-                setSquidConfig={setSquidConfig}
-                squidRound={squidRound}
-                squidLeft={squidLeft}
-                squidButtons={squidButtons}
-                onSquidButton={setSquidButton}
-                onNewSquidRound={newSquidRound}
-                lastSideGame={lastSideGame}
-              />
-            )}
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
@@ -2401,33 +2438,42 @@ function HandBuilder({ me, refreshMe }) {
               )}
             </div>
             <span>{anteGame ? `Ante Game $${anteX}/$${2 * anteX}` : `${stakes}${Number(ante) > 0 ? ` · $${ante} ante` : ""}`}</span>
-            {/* Side Game Mode toggle + (when on) the game-type picker. */}
-            {sideGameMode && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <select
-                  style={{ ...styles.input, width: "auto" }}
-                  value={sideGameType}
-                  onChange={(e) => setSideGameType(e.target.value)}
+            {/* Side games. While the hand counter for an untranscribed game runs it
+                shows here; otherwise Side Game opens the popup, and each game in
+                play gets a chip that reopens it (holders, streaks, structure). */}
+            {sideGameMode ? (
+              <>
+                <input
+                  style={{ ...styles.input, width: 130 }}
+                  value={sideGameOther}
+                  onChange={(e) => setSideGameOther(e.target.value)}
+                  placeholder="Game name…"
+                />
+                <button
+                  style={{ ...styles.topBtn, border: "1px solid var(--violet)", color: "var(--violet)" }}
+                  title="End the side game (adjust stacks, then resume)"
+                  onClick={requestEndSideGame}
                 >
-                  {SIDE_GAME_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {sideGameType === "Other" && (
-                  <input
-                    style={{ ...styles.input, width: 130 }}
-                    value={sideGameOther}
-                    onChange={(e) => setSideGameOther(e.target.value)}
-                    placeholder="Game name…"
-                  />
+                  Counting hands · End
+                </button>
+              </>
+            ) : (
+              <>
+                {squidActive && (
+                  <button style={styles.sideChip} title="Squid buttons, who holds them, and the structure" onClick={() => setSideDialog(squidGame)}>
+                    {SIDE_GAMES[squidGame].short} · {squidLeft}/{squidConfig.total} left
+                  </button>
                 )}
-              </span>
+                {bountyActive && (
+                  <button style={styles.sideChip} title="Bounty streaks and the structure" onClick={() => setSideDialog("bounty")}>
+                    Bounty · from {bountySchedule.start} in a row
+                  </button>
+                )}
+                <button style={styles.topBtn} title="Squid Game, Progressive Squid Game or Bounty Game" onClick={() => setSideDialog("menu")}>
+                  Side Game
+                </button>
+              </>
             )}
-            <button
-              style={{ ...styles.topBtn, ...(sideGameMode ? { border: "1px solid var(--violet)", color: "var(--violet)" } : {}) }}
-              title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
-              onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
-            >
-              {sideGameMode ? "Side Game ON" : "Side Game Mode"}
-            </button>
             {!sideGameMode && phase !== "setup" && (
               <>
                 <button style={styles.topBtn} title="Restart this hand (same players & stacks)" onClick={resetHand}>↺ Reset Hand</button>
@@ -2784,6 +2830,42 @@ function HandBuilder({ me, refreshMe }) {
         />
       )}
 
+      {/* Side Game popup: pick a game, set its structure, see who holds what */}
+      {sideDialog && (
+        <SideGameDialog
+          ui={SIDE_DIALOG_UI}
+          view={sideDialog}
+          setView={setSideDialog}
+          onClose={() => setSideDialog(null)}
+          seatedNames={named.map((p) => p.name)}
+          bountyActive={bountyActive}
+          bountySchedule={bountySchedule}
+          bountyStreaks={bountyStreaks}
+          squidActive={squidActive}
+          squidConfig={squidConfig}
+          squidRound={squidRound}
+          squidLeft={squidLeft}
+          squidButtons={squidButtons}
+          lastSideGame={lastSideGame}
+          onStart={startSideGameType}
+          onSave={saveSideGameType}
+          onEnd={endSideGameType}
+          onSquidButton={setSquidButton}
+          onNewSquidRound={newSquidRound}
+          onCountOnly={() => { setSideDialog(null); startSideGame(); }}
+        />
+      )}
+
+      {/* A side-game payout waits for a yes */}
+      {sidePayConfirm && (
+        <SidePayConfirm
+          ui={SIDE_DIALOG_UI}
+          confirm={sidePayConfirm}
+          onYes={() => { setSidePayConfirm(null); completeHand({ sideConfirmed: true }); }}
+          onNo={() => setSidePayConfirm(null)}
+        />
+      )}
+
       {/* 7-2 detection: offer to enable the 7-2 game */}
       {sevenTwoDetect && (
         <div className="ui-fade" style={styles.pickerOverlay} onClick={() => setSevenTwoDetect(null)}>
@@ -2885,21 +2967,36 @@ const GAIN_GLOW = "0 0 0 1px var(--gain), 0 0 22px rgba(126,184,138,.34)";
 const PANEL_BG = "linear-gradient(180deg, #1a1814 0%, #12110e 100%)";
 const ghostBtn = { background: "transparent", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontWeight: 500 };
 const goldBtn = { background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontWeight: 700 };
-const SIDE_PANEL_UI = {
-  box: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 },
-  head: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.2, color: "var(--gold)" },
+const SIDE_DIALOG_UI = {
+  overlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 },
+  box: { width: 470, maxWidth: "94vw", maxHeight: "88vh", overflowY: "auto", boxSizing: "border-box", background: PANEL_BG, border: "1px solid var(--line-gold)", borderRadius: 3, padding: 24, boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column", gap: 12, color: "var(--text)", fontFamily: "var(--font-ui)" },
+  title: { display: "flex", alignItems: "center", gap: 10, fontSize: 26, fontWeight: 500, color: "var(--gold-bright)", fontFamily: "var(--font-display)" },
+  sub: { fontSize: 12.5, color: "var(--text-dim)", lineHeight: 1.55 },
+  head: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.2, color: "var(--gold)", marginTop: 6 },
+  card: { display: "flex", flexDirection: "column", gap: 4, textAlign: "left", padding: "12px 14px", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, color: "var(--text)", cursor: "pointer", fontFamily: "inherit" },
+  cardOn: { border: "1px solid var(--gold)", boxShadow: "0 0 0 1px rgba(200,168,90,.25)" },
+  cardTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 19, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)" },
+  cardText: { fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 },
+  badge: { fontSize: 8.5, fontWeight: 700, letterSpacing: 1.2, color: "var(--ink)", background: "var(--gold)", borderRadius: 999, padding: "2px 7px", fontFamily: "var(--font-ui)" },
+  field: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  label: { fontSize: 12.5, color: "var(--text-2)" },
+  input: { width: 80, padding: "7px 9px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 13, outline: "none", fontFamily: "inherit" },
+  preview: { fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6, background: "var(--field)", border: "1px solid var(--line)", borderRadius: 2, padding: "10px 12px" },
+  hint: { fontSize: 11.5, color: "var(--text-mute)", lineHeight: 1.5 },
+  warn: { fontSize: 11.5, color: "var(--gold-bright)", lineHeight: 1.5 },
   row: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
-  label: { fontSize: 11, color: "var(--text-dim)" },
-  input: { width: 60, padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "inherit" },
-  select: { padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "inherit", maxWidth: "100%" },
-  hint: { fontSize: 10.5, color: "var(--text-mute)", lineHeight: 1.5 },
-  value: { fontSize: 12, color: "var(--text-2)" },
+  value: { fontSize: 12.5, color: "var(--text-2)" },
   accent: { color: "var(--gold-bright)", fontWeight: 600 },
   gain: { color: "var(--gain-bright)", fontWeight: 600 },
   loss: { color: "var(--loss-bright)", fontWeight: 600 },
-  stepBtn: { width: 20, height: 20, padding: 0, ...ghostBtn, fontSize: 12, lineHeight: 1 },
-  btn: { padding: "5px 11px", ...ghostBtn, fontSize: 11 },
+  stepBtn: { width: 22, height: 22, padding: 0, ...ghostBtn, fontSize: 13, lineHeight: 1 },
   away: { fontSize: 8.5, fontWeight: 700, letterSpacing: 1, color: "var(--ink)", background: "var(--text-dim)", borderRadius: 999, padding: "1px 6px" },
+  actions: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 },
+  primary: { flex: 1, minWidth: 150, padding: "10px 14px", ...goldBtn, fontSize: 12.5 },
+  btn: { padding: "10px 14px", ...ghostBtn, fontSize: 12.5 },
+  danger: { padding: "10px 14px", ...ghostBtn, border: "1px solid rgba(198,120,120,.4)", color: "var(--loss-bright)", fontSize: 12.5 },
+  link: { background: "none", border: "none", padding: 0, color: "var(--text-mute)", fontSize: 12, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" },
+  footer: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 4 },
 };
 const styles = {
   // ── shell ──
@@ -2946,6 +3043,7 @@ const styles = {
   ytInput: { flex: 1, background: "transparent", border: "none", outline: "none", boxShadow: "none", color: "var(--text)", fontSize: 12.5, fontFamily: "inherit", minWidth: 0 },
   ytParsed: { fontSize: 10.5, color: "var(--gold-bright)", whiteSpace: "nowrap", fontWeight: 500, textDecoration: "none", fontFamily: "var(--font-mono)" },
   topMeta: { display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: "var(--text-dim)", flexWrap: "wrap", justifyContent: "flex-end" },
+  sideChip: { padding: "6px 12px", background: "var(--gold-wash)", border: "1px solid var(--line-gold)", borderRadius: 999, color: "var(--gold-bright)", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap", fontFamily: "inherit", cursor: "pointer" },
   topBtn: { padding: "7px 12px", ...ghostBtn, fontSize: 12, whiteSpace: "nowrap" },
   sessionBtn: { padding: "7px 12px", background: "var(--gold-wash)", border: "1px solid var(--gold-dim)", borderRadius: 3, color: "var(--gold-bright)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" },
   statTracker: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "6px 12px", fontSize: 12, color: "var(--text-dim)", whiteSpace: "nowrap", lineHeight: 1.5 },
@@ -3048,6 +3146,9 @@ const styles = {
   bountyBtn: { width: 16, height: 16, padding: 0, ...ghostBtn, border: "1px solid var(--line)", fontSize: 11, lineHeight: 1 },
   stackInput: { width: 84, marginTop: 2, padding: "2px 6px", background: "var(--field)", border: "1px solid var(--gold-dim)", borderRadius: 3, color: "var(--gold-bright)", fontSize: 13, textAlign: "center", outline: "none" },
   badge: { position: "absolute", top: -9, left: -9, fontSize: 8.5, fontWeight: 700, color: "var(--ink)", padding: "2px 7px", borderRadius: 999, letterSpacing: 0.8, boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
+  gameDiscs: { position: "absolute", top: -10, right: -10, display: "flex", gap: 3, zIndex: 2 },
+  squidDisc: { width: 22, height: 22, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#e4dcff,#a99cd8 55%,#5f4f99)", color: "#16112c", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.2)" },
+  bountyDisc: { width: 22, height: 22, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#f6cdb5,#d4815f 55%,#8e4a2f)", color: "#1d0d06", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.2)" },
   dealerBtn: { position: "absolute", bottom: -9, right: -9, width: 24, height: 24, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#fff7df,#d9bf7a 55%,#a8893f)", color: "var(--ink)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px rgba(0,0,0,.6)", fontFamily: "var(--font-display)" },
   betChip: { position: "absolute", left: "50%", top: "108%", transform: "translateX(-50%)", background: "rgba(8,7,6,.85)", border: "1px solid var(--gold-dim)", color: "var(--gold-pale)", fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" },
 
@@ -3203,6 +3304,9 @@ export default function App() {
   // tutorial_completed. Derived (no effect) so it can't re-trigger itself.
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const showTutorial = !!(me && me.user && !me.user.tutorial_completed && !tutorialDismissed && route === "builder");
+  // One-time What's New popup (new workers see it after the tutorial).
+  const [whatsNew, setWhatsNew] = useState(() => !whatsNewSeen());
+  const closeWhatsNew = () => { markWhatsNewSeen(); setWhatsNew(false); };
   // award = finished via the last step (not skipped); the server only pays once.
   const finishTutorial = async (award) => {
     setTutorialDismissed(true);
@@ -3240,9 +3344,23 @@ export default function App() {
       <NavBar route={route} navigate={navigate} me={me} onLogout={logout} onRedoTutorial={redoTutorial} />
       <div style={navStyles.view}>{view}</div>
       {showTutorial && <TutorialOverlay steps={TUTORIAL_STEPS} bonusAwarded={!!(me.dashboard && me.dashboard.tutorial_bonus)} onFinish={finishTutorial} />}
+      {whatsNew && !showTutorial && <WhatsNew ui={WHATS_NEW_UI} current="new" onClose={closeWhatsNew} />}
     </div>
   );
 }
+
+// The What's New popup's look in this UI.
+const WHATS_NEW_UI = {
+  overlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 },
+  box: { width: 540, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box", background: "linear-gradient(180deg, #1a1814 0%, #12110e 100%)", border: "1px solid var(--line-gold)", borderRadius: 3, padding: 26, boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column", gap: 14, color: "var(--text)", fontFamily: "var(--font-ui)" },
+  title: { fontSize: 30, fontWeight: 500, color: "var(--text-strong)", fontFamily: "var(--font-display)" },
+  section: { display: "flex", flexDirection: "column", gap: 6, padding: "13px 15px", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2 },
+  head: { fontSize: 19, fontWeight: 500, color: "var(--gold-bright)", fontFamily: "var(--font-display)" },
+  text: { fontSize: 13, lineHeight: 1.6, color: "var(--text-2)" },
+  strong: { color: "var(--gold-pale)", fontWeight: 600 },
+  primary: { flex: 1, minWidth: 160, padding: "11px 14px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btn: { padding: "11px 16px", background: "transparent", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" },
+};
 
 const navStyles = {
   root: { display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg)" },

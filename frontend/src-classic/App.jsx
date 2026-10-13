@@ -4,7 +4,8 @@ import Auth from "./Auth.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Admin from "./Admin.jsx";
 import TutorialOverlay from "./TutorialOverlay.jsx";
-import { switchUi } from "../src/uiSwitch.js";
+import { switchUi, whatsNewSeen, markWhatsNewSeen } from "../src/uiSwitch.js";
+import WhatsNew from "../src/WhatsNew.jsx";
 
 // Onboarding tour — each step points at an element tagged with data-tour.
 // Order follows the real workflow: set up the table → paste link → deal → cards
@@ -42,9 +43,9 @@ import {
 } from "../src/engine.js";
 import {
   applySideGameNames, mainPotWinners, settleBounty, settleSquid, sideGameDeltas, sideGamePayload,
-  DEFAULT_BOUNTY, DEFAULT_SQUID,
+  DEFAULT_BOUNTY, DEFAULT_SQUID, SIDE_GAMES, squidGameKey, SIDE_PAYOUT_BONUS,
 } from "../src/sideGames.js";
-import SideGamePanel from "../src/SideGamePanel.jsx";
+import SideGameDialog, { SidePayConfirm } from "../src/SideGameDialog.jsx";
 import Calendar from "./Calendar.jsx";
 
 // When the Calendar's "Open in Hand Builder" hands a YouTube URL to the main
@@ -99,9 +100,10 @@ function isVpipAction(action) {
 // prices at COMPLETION_BONUS ($0.10) + STREAM_BONUS ($0.05) = $0.15 — so no
 // special server pricing is needed; these constants drive the live counter only.
 const SIDE_GAME_RATE = 0.10;        // $ per side-game hand (base)
-// Bounty and Squid used to be listed here. Both are now transcribed in full —
-// holdings in each name plus a SIDE GAME block (sideGames.js) — so the quick
-// counter is only for other, untranscribed games.
+// Squid, Progressive Squid and Bounty are started from the Side Game popup
+// and transcribed in full (holdings in each name plus a SIDE GAME block, see
+// sideGames.js). The quick counter is the popup's "Other game: just count
+// hands", for anything else.
 const SIDE_GAME_TYPES = ["Other"];
 
 const fmtChips = (n) => "$" + (n ?? 0).toLocaleString();
@@ -341,6 +343,13 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
           <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || "#475569" }}>{badge}</div>
         )}
         {isButton && <div style={styles.dealerBtn}>D</div>}
+        {/* Side-game markers, like the dealer button: squid buttons held, bounty streak. */}
+        {(squid > 0 || bounty > 0) && (
+          <div style={styles.gameDiscs}>
+            {squid > 0 && <div style={styles.squidDisc} title={`${squid} squid button${squid === 1 ? "" : "s"}`}>{squid}</div>}
+            {bounty > 0 && <div style={styles.bountyDisc} title={`Bounty: ${bounty} in a row`}>{bounty}</div>}
+          </div>
+        )}
         {/* Hole cards are locked until the hand is dealt (workflow: deal → cards). */}
         <div style={{ ...styles.cardsRow, opacity: phase === "setup" ? 0.35 : 1 }} title={phase === "setup" ? "Deal a hand first" : undefined}>
           <Card card={cards[0]} size="sm" faceDownIfEmpty={phase !== "setup"} onClick={phase === "setup" ? undefined : () => onCardClick(0)} />
@@ -784,13 +793,13 @@ function HandBuilder({ me, refreshMe }) {
   const [lastHandKey, setLastHandKey] = useState(() => pick("lastHandKey", null));
 
   // ── Side game mode ─────────────────────────────────────────────────────────
-  // A simplified flow for non-standard side games (Squid Game, …):
+  // A simplified flow for other, untranscribed side games:
   // no hole cards / actions / board — just count hands as positions rotate. Each
   // counted hand is submitted as a 0-piece hand so it pays $0.10 (+$0.05 on
   // stream completion) and counts toward the stream's handsCompleted, but it
   // generates no PT4 text.
   const [sideGameMode, setSideGameMode] = useState(() => pick("sideGameMode", false));
-  const [sideGameType, setSideGameType] = useState(() => {
+  const [sideGameType] = useState(() => {
     const t = pick("sideGameType", "Other");
     return SIDE_GAME_TYPES.includes(t) ? t : "Other";
   });
@@ -865,6 +874,44 @@ function HandBuilder({ me, refreshMe }) {
     setSquidRound((r) => r + 1);
     setSquidLeft(squidConfig.total);
   };
+  // Side Game popup: null, "menu", or a game ("squid" | "progressive" | "bounty").
+  const [sideDialog, setSideDialog] = useState(null);
+  const squidGame = squidGameKey(squidConfig);
+  // Start a side game with the structure the popup asked for. A new game starts
+  // clean: no streaks, every button back in play, round 1.
+  function startSideGameType(game, cfg) {
+    if (game === "bounty") {
+      setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
+      setBountyStreaks({});
+      setBountyActive(true);
+    } else {
+      setSquidConfigState({ total: cfg.total, value: cfg.value, mode: SIDE_GAMES[game].mode });
+      setSquidButtons({});
+      setSquidRound(1);
+      setSquidLeft(cfg.total);
+      setSquidActive(true);
+    }
+    setLastSideGame(null); // a summary from an earlier game would mislead
+    setSideDialog(null);
+  }
+  // Change a running game's structure, or switch between the two squid games;
+  // everything already won stays won.
+  function saveSideGameType(game, cfg) {
+    if (game === "bounty") setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
+    else setSquidConfig({ total: cfg.total, value: cfg.value, mode: SIDE_GAMES[game].mode });
+    setSideDialog(null);
+  }
+  function endSideGameType(game) {
+    if (game === "bounty") {
+      setBountyActive(false);
+      setBountyStreaks({});
+    } else {
+      setSquidActive(false);
+      setSquidButtons({});
+      setSquidLeft(squidConfig.total);
+    }
+    setSideDialog(null);
+  }
   // Last saved hand's side-game results, for the panel.
   const [lastSideGame, setLastSideGame] = useState(() => pick("lastSideGame", null));
 
@@ -1512,13 +1559,16 @@ function HandBuilder({ me, refreshMe }) {
   // A second click while the first save is in flight would submit (and pay
   // for) the same hand twice.
   const submittingRef = useRef(false);
-  async function completeHand() {
+  // A hand that moves side-game money waits for a yes: {bounty, squid, …}.
+  const [sidePayConfirm, setSidePayConfirm] = useState(null);
+  async function completeHand(opts) {
     if (submittingRef.current) return;
-    if (trySevenTwoVpip("complete")) return;
+    const sideConfirmed = opts?.sideConfirmed === true;
+    if (!sideConfirmed && trySevenTwoVpip("complete")) return;
     submittingRef.current = true;
-    try { await runCompleteHand(); } finally { submittingRef.current = false; }
+    try { await runCompleteHand({ sideConfirmed }); } finally { submittingRef.current = false; }
   }
-  async function runCompleteHand() {
+  async function runCompleteHand({ sideConfirmed = false } = {}) {
     setError("");
     // 1. YouTube link validation
     const link = youtubeLink.trim();
@@ -1558,6 +1608,18 @@ function HandBuilder({ me, refreshMe }) {
       const squidRes = squidActive
         ? settleSquid({ dealtIn, buttons: squidButtons, config: squidConfig, round: squidRound, left: squidLeft, winners: won })
         : null;
+      // Streaks and buttons move on their own; money waits for a yes. A bounty
+      // being paid or the squid round settling asks first, and No goes back
+      // unsaved so the streaks or buttons can be fixed.
+      if (!sideConfirmed && (bountyRes?.payouts.length || squidRes?.settled)) {
+        setSidePayConfirm({
+          bounty: bountyRes?.payouts.length ? bountyRes : null,
+          squid: squidRes?.settled ? squidRes : null,
+          squidValue: squidConfig.value,
+          squidTotal: squidConfig.total,
+        });
+        return;
+      }
       const outHand = applySideGameNames(hand, bountyActive ? bountyStreaks : {}, squidActive ? squidButtons : {});
       if (bountyRes || squidRes) {
         outHand.side_game = sideGamePayload({ bounty: bountyRes, bountySchedule, squid: squidRes, squidConfig, squidRound });
@@ -1625,9 +1687,11 @@ function HandBuilder({ me, refreshMe }) {
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
-      const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS).toFixed(2);
+      const sideEvents = (bountyRes?.payouts.length ? 1 : 0) + (squidRes?.settled ? 1 : 0);
+      const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS + sideEvents * SIDE_PAYOUT_BONUS).toFixed(2);
       const sidePaid = [...(bountyRes?.payouts || []), ...(squidRes?.payouts || [])].reduce((a, p) => a + p.amount, 0);
-      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)}) = $${total}`
+      showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)})`
+        + (sideEvents ? ` + side-game payout ($${(sideEvents * SIDE_PAYOUT_BONUS).toFixed(2)})` : "") + ` = $${total}`
         + (sidePaid ? ` · side games moved $${sidePaid.toLocaleString()} (in the next stacks)` : ""), sidePaid ? 4200 : 2800);
       if (bountyRes) setBountyStreaks(bountyRes.nextStreaks);
       if (squidRes) {
@@ -2109,33 +2173,6 @@ function HandBuilder({ me, refreshMe }) {
               <input type="checkbox" checked={sevenTwoActive} onChange={(e) => setSevenTwoActive(e.target.checked)} />
               <span>7-2 Game Active <span style={styles.sideHint}>· VPIP with 7-2 → side game</span></span>
             </label>
-            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's win streak going into the hand into their PT4 name, e.g. raver2bounty. Winners and choppers go up one after every hand; everyone else resets.">
-              <input type="checkbox" checked={bountyActive} onChange={(e) => setBountyActive(e.target.checked)} />
-              <span>Bounty Game <span style={styles.sideHint}>· streak → raver2bounty</span></span>
-            </label>
-            <label style={{ ...styles.checkRow, marginTop: 4 }} title="Writes each player's buttons going into the hand into their PT4 name, e.g. raver2squid. The sole winner of each hand takes a button; when the last goes, everyone without one pays every holder.">
-              <input type="checkbox" checked={squidActive} onChange={(e) => setSquidActive(e.target.checked)} />
-              <span>Squid Game <span style={styles.sideHint}>· buttons → raver2squid</span></span>
-            </label>
-            {(bountyActive || squidActive) && (
-              <SideGamePanel
-                ui={SIDE_PANEL_UI}
-                seatedNames={named.map((p) => p.name)}
-                bountyActive={bountyActive}
-                bountySchedule={bountySchedule}
-                setBountySchedule={setBountySchedule}
-                bountyStreaks={bountyStreaks}
-                squidActive={squidActive}
-                squidConfig={squidConfig}
-                setSquidConfig={setSquidConfig}
-                squidRound={squidRound}
-                squidLeft={squidLeft}
-                squidButtons={squidButtons}
-                onSquidButton={setSquidButton}
-                onNewSquidRound={newSquidRound}
-                lastSideGame={lastSideGame}
-              />
-            )}
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
@@ -2354,33 +2391,42 @@ function HandBuilder({ me, refreshMe }) {
               )}
             </div>
             <span>{anteGame ? `Ante Game $${anteX}/$${2 * anteX}` : `${stakes}${Number(ante) > 0 ? ` · $${ante} ante` : ""}`}</span>
-            {/* Side Game Mode toggle + (when on) the game-type picker. */}
-            {sideGameMode && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <select
-                  style={{ ...styles.input, width: "auto" }}
-                  value={sideGameType}
-                  onChange={(e) => setSideGameType(e.target.value)}
+            {/* Side games. While the hand counter for an untranscribed game runs it
+                shows here; otherwise Side Game opens the popup, and each game in
+                play gets a chip that reopens it (holders, streaks, structure). */}
+            {sideGameMode ? (
+              <>
+                <input
+                  style={{ ...styles.input, width: 130 }}
+                  value={sideGameOther}
+                  onChange={(e) => setSideGameOther(e.target.value)}
+                  placeholder="Game name…"
+                />
+                <button
+                  style={{ ...styles.topBtn, border: "1px solid #a78bfa", color: "#c4b5fd" }}
+                  title="End the side game (adjust stacks, then resume)"
+                  onClick={requestEndSideGame}
                 >
-                  {SIDE_GAME_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {sideGameType === "Other" && (
-                  <input
-                    style={{ ...styles.input, width: 130 }}
-                    value={sideGameOther}
-                    onChange={(e) => setSideGameOther(e.target.value)}
-                    placeholder="Game name…"
-                  />
+                  🎮 Counting hands · End
+                </button>
+              </>
+            ) : (
+              <>
+                {squidActive && (
+                  <button style={styles.sideChip} title="Squid buttons, who holds them, and the structure" onClick={() => setSideDialog(squidGame)}>
+                    {SIDE_GAMES[squidGame].short} · {squidLeft}/{squidConfig.total} left
+                  </button>
                 )}
-              </span>
+                {bountyActive && (
+                  <button style={styles.sideChip} title="Bounty streaks and the structure" onClick={() => setSideDialog("bounty")}>
+                    Bounty · from {bountySchedule.start} in a row
+                  </button>
+                )}
+                <button style={styles.topBtn} title="Squid Game, Progressive Squid Game or Bounty Game" onClick={() => setSideDialog("menu")}>
+                  🎮 Side Game
+                </button>
+              </>
             )}
-            <button
-              style={{ ...styles.topBtn, ...(sideGameMode ? { border: "1px solid #a78bfa", color: "#c4b5fd" } : {}) }}
-              title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
-              onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
-            >
-              🎮 {sideGameMode ? "Side Game ON" : "Side Game Mode"}
-            </button>
             {!sideGameMode && phase !== "setup" && (
               <>
                 <button style={styles.topBtn} title="Restart this hand (same players & stacks)" onClick={resetHand}>↺ Reset Hand</button>
@@ -2734,6 +2780,42 @@ function HandBuilder({ me, refreshMe }) {
         />
       )}
 
+      {/* Side Game popup: pick a game, set its structure, see who holds what */}
+      {sideDialog && (
+        <SideGameDialog
+          ui={SIDE_DIALOG_UI}
+          view={sideDialog}
+          setView={setSideDialog}
+          onClose={() => setSideDialog(null)}
+          seatedNames={named.map((p) => p.name)}
+          bountyActive={bountyActive}
+          bountySchedule={bountySchedule}
+          bountyStreaks={bountyStreaks}
+          squidActive={squidActive}
+          squidConfig={squidConfig}
+          squidRound={squidRound}
+          squidLeft={squidLeft}
+          squidButtons={squidButtons}
+          lastSideGame={lastSideGame}
+          onStart={startSideGameType}
+          onSave={saveSideGameType}
+          onEnd={endSideGameType}
+          onSquidButton={setSquidButton}
+          onNewSquidRound={newSquidRound}
+          onCountOnly={() => { setSideDialog(null); startSideGame(); }}
+        />
+      )}
+
+      {/* A side-game payout waits for a yes */}
+      {sidePayConfirm && (
+        <SidePayConfirm
+          ui={SIDE_DIALOG_UI}
+          confirm={sidePayConfirm}
+          onYes={() => { setSidePayConfirm(null); completeHand({ sideConfirmed: true }); }}
+          onNo={() => setSidePayConfirm(null)}
+        />
+      )}
+
       {/* 7-2 detection: offer to enable the 7-2 game */}
       {sevenTwoDetect && (
         <div style={styles.pickerOverlay} onClick={() => setSevenTwoDetect(null)}>
@@ -2825,9 +2907,9 @@ function HandBuilder({ me, refreshMe }) {
   );
 }
 
-// The side-game panel's look in this UI (SideGamePanel falls back to the
+// The side-game popup's look in this UI (SideGameDialog falls back to the
 // classic styling for anything not given here).
-const SIDE_PANEL_UI = {};
+const SIDE_DIALOG_UI = {};
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 const FELT = "radial-gradient(ellipse at center, #1b6b43 0%, #0f4d2f 70%, #0a3a23 100%)";
@@ -2874,6 +2956,7 @@ const styles = {
   ytInput: { flex: 1, background: "transparent", border: "none", outline: "none", color: "#e2e8f0", fontSize: 12.5, fontFamily: "inherit", minWidth: 0 },
   ytParsed: { fontSize: 10.5, color: "#4ade80", whiteSpace: "nowrap", fontWeight: 600, textDecoration: "none", cursor: "pointer" },
   topMeta: { display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "#94a3b8" },
+  sideChip: { padding: "5px 11px", background: "rgba(251,191,36,.12)", border: "1px solid #b45309", borderRadius: 999, color: "#fbbf24", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   topBtn: { padding: "6px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   sessionBtn: { padding: "6px 12px", background: "#0e7490", border: "1px solid #155e75", borderRadius: 7, color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
   statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap", lineHeight: 1.4 },
@@ -2989,6 +3072,9 @@ const styles = {
   buySub: { fontSize: 9.5, fontWeight: 500, opacity: 0.85, marginTop: 3, letterSpacing: 0 },
   stackInput: { width: 80, marginTop: 2, padding: "2px 6px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 6, color: "#4ade80", fontSize: 13, textAlign: "center", outline: "none" },
   badge: { position: "absolute", top: -9, left: -9, fontSize: 9, fontWeight: 800, color: "#0a0e17", padding: "2px 6px", borderRadius: 10, letterSpacing: 0.5 },
+  gameDiscs: { position: "absolute", top: -9, right: -9, display: "flex", gap: 3, zIndex: 2 },
+  squidDisc: { width: 22, height: 22, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#ddd6fe,#7c3aed)", color: "#ffffff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #4c1d95", boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
+  bountyDisc: { width: 22, height: 22, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#fecaca,#b91c1c)", color: "#ffffff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #7f1d1d", boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
   dealerBtn: { position: "absolute", bottom: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#ffffff,#cbd5e1)", color: "#0a0e17", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #94a3b8", boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
   betChip: { position: "absolute", left: "50%", top: "108%", transform: "translateX(-50%)", background: "#0a0e17cc", border: "1px solid #f59e0b66", color: "#fde68a", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 12, whiteSpace: "nowrap" },
 
@@ -3150,6 +3236,9 @@ export default function App() {
   // tutorial_completed. Derived (no effect) so it can't re-trigger itself.
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const showTutorial = !!(me && me.user && !me.user.tutorial_completed && !tutorialDismissed && route === "builder");
+  // One-time What's New popup (new workers see it after the tutorial).
+  const [whatsNew, setWhatsNew] = useState(() => !whatsNewSeen());
+  const closeWhatsNew = () => { markWhatsNewSeen(); setWhatsNew(false); };
   // award = finished via the last step (not skipped); the server only pays once.
   const finishTutorial = async (award) => {
     setTutorialDismissed(true);
@@ -3187,6 +3276,9 @@ export default function App() {
       <NavBar route={route} navigate={navigate} me={me} onLogout={logout} onRedoTutorial={redoTutorial} />
       <div style={navStyles.view}>{view}</div>
       {showTutorial && <TutorialOverlay steps={TUTORIAL_STEPS} bonusAwarded={!!(me.dashboard && me.dashboard.tutorial_bonus)} onFinish={finishTutorial} />}
+      {whatsNew && !showTutorial && (
+        <WhatsNew current="classic" onClose={closeWhatsNew} onNewLook={() => { markWhatsNewSeen(); switchUi("new"); }} />
+      )}
     </div>
   );
 }

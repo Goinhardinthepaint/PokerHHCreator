@@ -1,7 +1,8 @@
 import { fmtUsd, fmtMonth } from "./api.js";
 
-const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", incomplete: "In progress" };
+const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", late: "Late (past deadline)", incomplete: "In progress" };
 const BONUS_STYLE = {
+  late: { background: "var(--loss-wash)", color: "var(--loss-bright)", border: "1px solid rgba(198,120,120,.4)" },
   full: { background: "var(--gain-wash)", color: "var(--gain-bright)", border: "1px solid rgba(126,184,138,.4)" },
   half: { background: "var(--gold-wash)", color: "var(--gold-bright)", border: "1px solid var(--gold-dim)" },
   forfeited: { background: "var(--loss-wash)", color: "var(--loss-bright)", border: "1px solid rgba(198,120,120,.4)" },
@@ -48,7 +49,8 @@ export default function Dashboard({ user, dashboard: d }) {
             <span>Month bonus: <strong style={{ color: am.amount ? "var(--gain-bright)" : "var(--text-dim)" }}>{fmtUsd(am.amount)}</strong> of {fmtUsd(am.bonus_amount)}</span>
             <span>Your error rate: <strong style={{ color: am.error_rate < 0.10 ? "var(--gain-bright)" : am.error_rate <= 0.20 ? "var(--gold-bright)" : "var(--loss-bright)" }}>{(am.error_rate * 100).toFixed(1)}%</strong> ({am.error_count} errors)</span>
           </div>
-          {!am.is_complete && <div style={st.monthNote}>Complete every stream in {fmtMonth(am.month)} to unlock the bonus (helpers count toward completion).</div>}
+          {!am.is_complete && <div style={st.monthNote}>Complete every stream in {fmtMonth(am.month)} by the deadline to unlock the bonus (helpers count toward completion).</div>}
+          {am.overdue && <div style={st.monthNote}>The deadline ({am.deadline}) has passed: finishing this month now earns no month bonus unless an admin extends it.</div>}
         </div>
       ) : (
         <div style={st.panel}><div style={st.empty}>No assigned month yet — an admin assigns your "home month".</div></div>
@@ -60,7 +62,8 @@ export default function Dashboard({ user, dashboard: d }) {
         <Row k="Cards income" v={fmtUsd(d.cards_income)} sub={`${d.cards} cards`} />
         <Row k="Actions income" v={fmtUsd(d.actions_income)} sub={`${d.actions} actions`} />
         <Row k="Completion bonuses" v={fmtUsd(d.completion_bonus)} sub={`${d.hands} hands`} />
-        <Row k="Stream bonuses" v={fmtUsd(d.stream_bonus)} sub="completed streams" accent="#fbbf24" />
+        <Row k="Side-game payouts" v={fmtUsd(d.side_game_bonus || 0)} sub={`${d.side_payouts || 0} × $0.25 (bounty paid / squid round settled)`} accent="#fbbf24" />
+        <Row k="Stream bonuses" v={fmtUsd(d.stream_bonus)} sub="$0.05/hand once a stream is marked complete" accent="#fbbf24" />
         <Row k="Month bonus" v={fmtUsd(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
         {d.tutorial_bonus > 0 && <Row k="Tutorial bonus" v={fmtUsd(d.tutorial_bonus)} sub="onboarding reward" accent="#fbbf24" />}
         <div style={st.divider} />
@@ -81,6 +84,11 @@ export default function Dashboard({ user, dashboard: d }) {
         <div style={st.panel}>
           <div style={st.panelHead}>Streams worked ({d.streams_count})</div>
           {d.streams_worked.length === 0 && <div style={st.empty}>No streams yet.</div>}
+          {d.streams_worked.some((s) => !s.is_complete) && (
+            <div style={{ ...st.monthNote, marginTop: 0, marginBottom: 8 }}>
+              Finished a stream? Mark it complete in the Calendar. That&apos;s what pays the $0.05/hand end-of-stream bonus.
+            </div>
+          )}
           {d.streams_worked.map((s) => (
             <div key={s.stream_id} style={st.lineRow}>
               <span style={st.lineTitle}>{s.title || s.stream_id}</span>

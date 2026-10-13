@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, fmtUsd, fmtMonth } from "./api.js";
 
-const BONUS_LABEL = { full: "full", half: "half", forfeited: "forfeited", incomplete: "pending" };
+const BONUS_LABEL = { full: "full", half: "half", forfeited: "forfeited", late: "late (past deadline)", incomplete: "pending" };
 
 // Admin console: platform stats, every worker with pay balances, per-user
 // history + payment recording, stream completion, hand review, and DB export.
@@ -110,7 +110,7 @@ export default function Admin() {
                 return (
                   <tr key={u.id} className="ui-hover-row" style={st.tr} onClick={() => openUser(u.id)}>
                     <td style={st.td}>{u.username}{u.is_admin ? <span style={st.adminTag}>ADMIN</span> : null}</td>
-                    <td style={{ ...st.td, color: "var(--text-dim)" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}` : "—"}</td>
+                    <td style={{ ...st.td, color: "var(--text-dim)" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}${mb.overdue ? " · past deadline" : ""}` : "—"}</td>
                     <td style={st.td}>{u.hands}</td>
                     <td style={{ ...st.td, color: u.error_rate > 0.20 ? "var(--loss-bright)" : u.error_rate >= 0.10 ? "var(--gold-bright)" : "var(--text-mute)" }}>{u.error_count} ({(u.error_rate * 100).toFixed(0)}%)</td>
                     <td style={{ ...st.td, color: "var(--gain-bright)" }}>{fmtUsd(u.earnings)}</td>
@@ -301,6 +301,30 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
   const [err, setErr] = useState("");
   const [errCount, setErrCount] = useState("");
 
+  // Square-up: one payment that makes everything through a day (default: last
+  // Friday) read as paid, so only later work is left owed.
+  const [sqDate, setSqDate] = useState("");
+  const [sq, setSq] = useState(null);
+  const uid = detail?.user?.id;
+  const paidSoFar = detail?.stats?.paid;
+  useEffect(() => {
+    if (!uid) return undefined;
+    let live = true;
+    api(`/api/admin/user/${uid}/square-up${sqDate ? `?through=${sqDate}` : ""}`)
+      .then((r) => { if (live) setSq(r); })
+      .catch((e) => { if (live) setSq({ error: e.message }); });
+    return () => { live = false; };
+  }, [uid, sqDate, paidSoFar]);
+  const squareUp = async () => {
+    if (!sq || sq.error || !(sq.to_pay > 0)) return;
+    if (!window.confirm(`Log ${fmtUsd(sq.to_pay)} as paid, squaring ${detail.user.username} up through ${sq.through}?`)) return;
+    setBusy(true); setErr("");
+    try {
+      const updated = await api(`/api/admin/user/${uid}/square-up`, { method: "POST", body: { through: sq.through } });
+      onPaid(updated);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
   const submit = async () => {
     if (!amount) return;
     setBusy(true); setErr("");
@@ -381,6 +405,23 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                 <button style={st.payBtn} disabled={busy || !amount} onClick={submit}>Record</button>
               </div>
               {err && <div style={st.err}>⚠ {err}</div>}
+
+              {/* Square up through a day */}
+              <div style={st.section}>Square up</div>
+              <div style={st.payForm}>
+                <span style={st.dim}>Paid in full through</span>
+                <input style={st.input} type="date" value={sqDate || sq?.through || ""} onChange={(e) => setSqDate(e.target.value)} />
+                <button style={st.payBtn} disabled={busy || !sq || !!sq.error || !(sq.to_pay > 0)} onClick={squareUp}>
+                  {sq && sq.to_pay > 0 ? `Log ${fmtUsd(sq.to_pay)}` : "Log"}
+                </button>
+              </div>
+              {sq && !sq.error && (
+                <div style={{ ...st.dim, fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                  Earned through {sq.through}: {fmtUsd(sq.earned)} ({sq.hands} hands) · paid so far {fmtUsd(sq.paid)} ·{" "}
+                  {sq.to_pay > 0 ? `${fmtUsd(sq.to_pay)} to log` : sq.to_pay < 0 ? `paid ahead by ${fmtUsd(-sq.to_pay)}` : "already square"}
+                </div>
+              )}
+              {sq?.error && <div style={st.err}>⚠ {sq.error}</div>}
 
               {/* Payment history */}
               {detail.payments.length > 0 && (
