@@ -70,6 +70,10 @@ const SUITS = [
   { v: "d", symbol: "♦", color: "#2563eb" },
   { v: "c", symbol: "♣", color: "#16a34a" },
 ];
+// What Undo / Redo step through: everything about the hand in progress.
+const HIST_KEYS = ["phase", "eng", "engHistory", "holeCards", "board", "extraBoards", "numRuns", "runsChosen",
+  "runWinners", "winner", "buyButton", "customStraddle", "buttonSeat", "roster", "bountyStreaks", "squidButtons", "squidLeft"];
+
 const SUIT = Object.fromEntries(SUITS.map((s) => [s.v, s]));
 const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
 const BADGE_COLOR = {
@@ -1545,13 +1549,6 @@ function HandBuilder({ me, refreshMe }) {
     advanceToNextHand();
   }
 
-  function undo() {
-    if (!engHistory.length) return;
-    setEng(engHistory[engHistory.length - 1]);
-    setEngHistory((h) => h.slice(0, -1));
-    if (phase === "complete") setPhase("betting");
-  }
-
   // One click: validate the YouTube link, auto-generate the PT4 text, save it to
   // the session, flash confirmation, and advance to the next hand. If the 7-2
   // game is on and the 7-2 holder VPIPed (hand ended preflop), offer to convert
@@ -1949,6 +1946,68 @@ function HandBuilder({ me, refreshMe }) {
     sideGameType === "Other" ? (sideGameOther.trim() || "Side Game") : sideGameType;
   const sideGameEarnings = sideGameHands.length * SIDE_GAME_RATE;
 
+  // ── Undo / redo (Ctrl+Z / Ctrl+Y) ────────────────────────────────────────
+  // Every change to the hand in progress is one step: an action or bet, a
+  // card, the board, runs and winners, the button, stacks, side-game streaks
+  // and buttons. Undo steps back a change, Redo forward again. A saved hand
+  // (a new hand number) starts a fresh history, so Undo never reaches into a
+  // hand that's already on the server. Changes are noticed while rendering
+  // (React's "adjust state when inputs change" pattern), so none are missed.
+  const handSnap = {
+    phase, eng, engHistory, holeCards, board, extraBoards, numRuns, runsChosen,
+    runWinners, winner, buyButton, customStraddle, buttonSeat, roster, bountyStreaks, squidButtons, squidLeft,
+  };
+  const [hist, setHist] = useState(() => ({ past: [], future: [], last: handSnap, hand: handNumber }));
+  if (hist.hand !== handNumber) {
+    setHist({ past: [], future: [], last: handSnap, hand: handNumber });
+  } else if (HIST_KEYS.some((k) => hist.last[k] !== handSnap[k])) {
+    setHist({ past: [...hist.past, hist.last].slice(-300), future: [], last: handSnap, hand: handNumber });
+  }
+  const canUndo = hist.past.length > 0;
+  const canRedo = hist.future.length > 0;
+  function applySnap(s) {
+    setPhase(s.phase); setEng(s.eng); setEngHistory(s.engHistory);
+    setHoleCards(s.holeCards); setBoard(s.board); setExtraBoards(s.extraBoards);
+    setNumRuns(s.numRuns); setRunsChosen(s.runsChosen); setRunWinners(s.runWinners); setWinner(s.winner);
+    setBuyButton(s.buyButton); setCustomStraddle(s.customStraddle); setButtonSeat(s.buttonSeat); setRoster(s.roster);
+    setBountyStreaks(s.bountyStreaks); setSquidButtons(s.squidButtons); setSquidLeft(s.squidLeft);
+  }
+  function undoChange() {
+    if (!hist.past.length) return;
+    const prev = hist.past[hist.past.length - 1];
+    setHist({ past: hist.past.slice(0, -1), future: [handSnap, ...hist.future], last: prev, hand: handNumber });
+    applySnap(prev);
+  }
+  function redoChange() {
+    if (!hist.future.length) return;
+    const next = hist.future[0];
+    setHist({ past: [...hist.past, handSnap], future: hist.future.slice(1), last: next, hand: handNumber });
+    applySnap(next);
+  }
+
+  // Ctrl+Z undo · Ctrl+Y (or Ctrl+Shift+Z) redo, unless typing in a field or a
+  // dialog is open. The handler reads the latest state through a ref.
+  const histKeys = useRef(null);
+  useEffect(() => {
+    histKeys.current = {
+      modal: !!(editor || sevenTwoDetect || sevenTwoVpip || straddleMenuOpen || buyMenuSeat != null || sideDialog || sidePayConfirm),
+      undo: undoChange, redo: redoChange,
+    };
+  });
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = histKeys.current;
+      if (!k || k.modal || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const key = e.key.toLowerCase();
+      if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); k.redo(); }
+      else if (key === "z") { e.preventDefault(); k.undo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Enter side game mode: drop any in-progress hand and switch to the counter UI.
   function startSideGame() {
     setEng(null);
@@ -2338,7 +2397,19 @@ function HandBuilder({ me, refreshMe }) {
       {/* Main area */}
       <main style={styles.main}>
         <div style={styles.topBar}>
-          <div style={styles.logo}><span style={styles.chip}>♠</span> POKER TABLE</div>
+          <div style={styles.titleCol}>
+            <div style={styles.logo}><span style={styles.chip}>♠</span> POKER TABLE</div>
+            <div style={styles.histRow}>
+              <div style={styles.histItem}>
+                <button style={{ ...styles.histBtn, opacity: canUndo ? 1 : 0.4 }} disabled={!canUndo} onClick={undoChange} title="Undo the last change: an action, bet, card…">↶ Undo</button>
+                <span style={styles.histKey}>Ctrl + Z</span>
+              </div>
+              <div style={styles.histItem}>
+                <button style={{ ...styles.histBtn, opacity: canRedo ? 1 : 0.4 }} disabled={!canRedo} onClick={redoChange} title="Redo what was undone">Redo ↷</button>
+                <span style={styles.histKey}>Ctrl + Y</span>
+              </div>
+            </div>
+          </div>
           <div style={styles.ytField}>
             <div
               style={{ ...styles.ytWrap, ...(ytDuplicate ? styles.ytWrapDup : {}) }}
@@ -2545,9 +2616,6 @@ function HandBuilder({ me, refreshMe }) {
 
         {/* Action bar */}
         <div style={styles.actionBar} data-tour="actionbar">
-          {!sideGameMode && (phase === "betting" || phase === "complete") && engHistory.length > 0 && (
-            <button style={styles.undoBtn} title="Undo last action" onClick={undo}>↶ Undo</button>
-          )}
           {error && <div style={styles.errorInline}>⚠ {error}</div>}
 
           {/* Side game mode: count hands fast. No cards / actions / board. */}
@@ -2945,6 +3013,11 @@ const styles = {
 
   main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
   topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 22px 12px 34px", borderBottom: "1px solid #141e2e" },
+  titleCol: { display: "flex", flexDirection: "column", gap: 7, flexShrink: 0 },
+  histRow: { display: "flex", gap: 8 },
+  histItem: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3 },
+  histBtn: { padding: "4px 10px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  histKey: { fontSize: 9, letterSpacing: 0.5, color: "#64748b", whiteSpace: "nowrap" },
   logo: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, letterSpacing: 2, fontSize: 16 },
   chip: { display: "inline-flex", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 16 },
   ytField: { display: "flex", flexDirection: "column", gap: 3, flex: 1, maxWidth: 460, margin: "0 18px" },
@@ -3079,7 +3152,6 @@ const styles = {
   betChip: { position: "absolute", left: "50%", top: "108%", transform: "translateX(-50%)", background: "#0a0e17cc", border: "1px solid #f59e0b66", color: "#fde68a", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 12, whiteSpace: "nowrap" },
 
   actionBar: { position: "relative", minHeight: 92, borderTop: "1px solid #141e2e", background: "#0a0f19", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "center" },
-  undoBtn: { position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)", padding: "9px 14px", background: "#1e293b", border: "1px solid #475569", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer" },
   barCenter: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
   barHint: { fontSize: 13, color: "#94a3b8" },
   dealBtn: { padding: "13px 40px", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: 1.5, cursor: "pointer", boxShadow: "0 0 26px #f59e0b44" },

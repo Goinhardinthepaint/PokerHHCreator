@@ -19,6 +19,9 @@
   - A hand that pays a bounty asks "Did *player* just win the bounty game?"
   - A hand that ends a squid round asks "Has squid ended, and are all squids correct?"
   - Each question shows exactly who pays whom. **Yes** saves the hand and pays out. **No** saves nothing so the streaks or buttons can be fixed.
+- **Undo / Redo** under the builder title (both looks), also on **Ctrl+Z** and **Ctrl+Y**.
+  - Steps back or forward through every change to the hand in progress: actions and bets, cards, board, runs, button, stacks, and side-game corrections.
+  - A saved hand starts a fresh history.
 - **New deck (new look):** each card face is its suit's color, with a large white rank and a small suit in the corner.
 - Keyboard play in the new look: `F` fold, `C` check/call, `R`/`B` raise, `A` all-in, `Enter` deal or next, `Z` undo.
 
