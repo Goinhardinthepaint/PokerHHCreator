@@ -64,17 +64,19 @@ function readAndClearPendingResume() {
 // ── Card constants ──────────────────────────────────────────────────────────
 const RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"];
 const SUITS = [
-  { v: "s", symbol: "♠", color: "#1e293b" },
-  { v: "h", symbol: "♥", color: "#dc2626" },
-  { v: "d", symbol: "♦", color: "#2563eb" },
-  { v: "c", symbol: "♣", color: "#16a34a" },
+  { v: "s", symbol: "♠", color: "#1a1917" },
+  { v: "h", symbol: "♥", color: "#b23a3a" },
+  { v: "d", symbol: "♦", color: "#2f67a3" },
+  { v: "c", symbol: "♣", color: "#2e7a4c" },
 ];
 const SUIT = Object.fromEntries(SUITS.map((s) => [s.v, s]));
 const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
+// Position chips on the seats: gold for the button, then the muted signal hues.
 const BADGE_COLOR = {
-  BTN: "#f59e0b", "BTN/SB": "#f59e0b", SB: "#38bdf8", BB: "#a78bfa",
-  CO: "#22c55e", HJ: "#22c55e", LJ: "#22c55e", STR: "#7c3aed",
+  BTN: "#dec078", "BTN/SB": "#dec078", SB: "#8fb0cf", BB: "#a99cd8",
+  CO: "#7eb88a", HJ: "#7eb88a", LJ: "#7eb88a", STR: "#d4815f",
 };
+const BADGE_DEFAULT = "#a89b7e";
 
 // Piece-rate pricing.
 const PIECE_RATE = 0.03; // per filled card / per voluntary action
@@ -197,24 +199,25 @@ function cmpHand(a, b) {
 function Card({ card, onClick, size = "md", faceDownIfEmpty }) {
   const dims = { sm: { w: 30, h: 42, f: 15 }, md: { w: 44, h: 62, f: 20 }, lg: { w: 56, h: 78, f: 26 } }[size];
   const base = {
-    width: dims.w, height: dims.h, borderRadius: 6, display: "flex",
+    width: dims.w, height: dims.h, borderRadius: 3, display: "flex",
     flexDirection: "column", alignItems: "center", justifyContent: "center",
     cursor: onClick ? "pointer" : "default", userSelect: "none", flexShrink: 0,
-    fontWeight: 800, fontSize: dims.f, lineHeight: 1,
+    fontWeight: 600, fontSize: dims.f, lineHeight: 1, fontFamily: "var(--font-display)",
+    transition: "transform .15s ease, box-shadow .2s ease",
   };
   if (!card) {
     if (faceDownIfEmpty)
       return (
-        <div onClick={onClick} style={{ ...base, background: "repeating-linear-gradient(45deg,#7f1d1d,#7f1d1d 4px,#991b1b 4px,#991b1b 8px)", border: "2px solid #450a0a" }} />
+        <div onClick={onClick} style={{ ...base, background: "repeating-linear-gradient(45deg,#15130f,#15130f 4px,#1f1b14 4px,#1f1b14 8px)", border: "1px solid rgba(200,168,90,.45)", boxShadow: "inset 0 0 0 2px #0d0c0a, inset 0 0 0 3px rgba(200,168,90,.25), 0 3px 8px rgba(0,0,0,.5)" }} />
       );
     return (
-      <div onClick={onClick} style={{ ...base, background: "#0b1220", border: "1.5px dashed #334155", color: "#475569", fontSize: dims.f - 4 }}>＋</div>
+      <div onClick={onClick} style={{ ...base, background: "rgba(13,12,10,.55)", border: "1px dashed rgba(200,168,90,.28)", color: "var(--gold-dim)", fontSize: dims.f - 6, fontFamily: "var(--font-ui)" }}>＋</div>
     );
   }
   const rank = card[0] === "T" ? "10" : card[0];
   const sd = SUIT[card[1]] || SUITS[0];
   return (
-    <div onClick={onClick} style={{ ...base, background: "#f8fafc", border: "1px solid #cbd5e1", color: sd.color, boxShadow: "0 2px 6px rgba(0,0,0,.4)", gap: 1 }}>
+    <div onClick={onClick} className={onClick ? "ui-card-pick" : undefined} style={{ ...base, background: "linear-gradient(180deg,#fbf5e6,#efe4cb)", border: "1px solid #d8ccb0", color: sd.color, boxShadow: "0 3px 9px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.5)", gap: 1 }}>
       <span>{rank}</span>
       <span style={{ fontSize: dims.f + 2 }}>{sd.symbol}</span>
     </div>
@@ -224,8 +227,8 @@ function Card({ card, onClick, size = "md", faceDownIfEmpty }) {
 // ── Card picker popover (rank grid + suit grid) ─────────────────────────────
 function CardPicker({ used, onPick, onClose, title }) {
   return (
-    <div style={styles.pickerOverlay} onClick={onClose}>
-      <div style={styles.pickerBox} onClick={(e) => e.stopPropagation()}>
+    <div className="ui-fade" style={styles.pickerOverlay} onClick={onClose}>
+      <div className="ui-pop" style={styles.pickerBox} onClick={(e) => e.stopPropagation()}>
         <div style={styles.pickerTitle}>{title || "Choose card"}</div>
         {SUITS.map((s) => (
           <div key={s.v} style={{ display: "flex", gap: 4, marginBottom: 6 }}>
@@ -267,8 +270,8 @@ function StraddleMenu({ seats, positions, defaultSeat, defaultAmount, onConfirm,
   const amt = Math.max(0, Math.round(Number(amount) || 0));
   const ok = amt > 0 && seats.length > 0;
   return (
-    <div style={styles.pickerOverlay} onClick={onClose}>
-      <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+    <div className="ui-fade" style={styles.pickerOverlay} onClick={onClose}>
+      <div className="ui-pop" style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
         <div style={styles.confirmTitle}>Custom straddle</div>
         <div style={styles.confirmBody}>
           Straddle from any position for any amount — independent of the UTG 2× BB straddle.
@@ -336,9 +339,9 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
       {committed > 0 && (
         <div style={styles.betChip}>{fmtChips(committed)}</div>
       )}
-      <div style={{ ...styles.seatBox, boxShadow: isActor ? "0 0 0 2px #f59e0b, 0 0 22px 4px rgba(245,158,11,.55)" : isWinner ? "0 0 0 2px #22c55e, 0 0 20px 3px rgba(34,197,94,.5)" : "0 4px 14px rgba(0,0,0,.5)", borderColor: isActor ? "#f59e0b" : isWinner ? "#22c55e" : "#1e293b" }}>
+      <div className={isActor ? "seat-actor" : undefined} style={{ ...styles.seatBox, ...(isActor ? { boxShadow: GOLD_GLOW, borderColor: "var(--gold)" } : isWinner ? { boxShadow: GAIN_GLOW, borderColor: "var(--gain)" } : {}) }}>
         {badge && (
-          <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || "#475569" }}>{badge}</div>
+          <div style={{ ...styles.badge, background: BADGE_COLOR[badge] || BADGE_DEFAULT }}>{badge}</div>
         )}
         {isButton && <div style={styles.dealerBtn}>D</div>}
         {/* Hole cards are locked until the hand is dealt (workflow: deal → cards). */}
@@ -376,8 +379,8 @@ function Seat({ p, empty, pos, badge, isButton, isActor, folded, committed, card
           <div style={styles.seatStack} onClick={onStackClick}>{fmtChips(p.stack)}</div>
         )}
         {desc && (
-          <div style={{ ...styles.handDesc, color: isWinner ? "#4ade80" : "#94a3b8" }}>
-            {isWinner ? "🏆 " : ""}{desc}
+          <div style={{ ...styles.handDesc, color: isWinner ? "var(--gain-bright)" : "var(--text-mute)" }}>
+            {isWinner ? "◆ " : ""}{desc}
           </div>
         )}
       </div>
@@ -583,7 +586,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
   return (
     <div style={styles.hmInner}>
       <div style={styles.hmHeadRow}>
-        <span style={styles.sideHead}>HAND MANAGER</span>
+        <span style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-strong)" }}>Hand <em style={{ color: "var(--gold)" }}>Manager</em></span>
         <span style={styles.hmCount}>{sorted.length} hand{sorted.length === 1 ? "" : "s"}</span>
       </div>
 
@@ -600,7 +603,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
               <div
                 key={c.key}
                 title={`${c.timestamp} — ${c.summary || ""}`}
-                style={{ ...styles.hmMarker, left: `${Math.min(99.5, (c.startSec / span) * 100)}%`, background: c.source === "server" ? "#4ade80" : "#fbbf24" }}
+                style={{ ...styles.hmMarker, left: `${Math.min(99.5, (c.startSec / span) * 100)}%`, background: c.source === "server" ? "#4ade80" : "var(--gold-bright)" }}
                 onClick={() => onRestore(c)}
               />
             ))}
@@ -611,7 +614,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
               <button style={styles.hmResumeBtn} onClick={() => onResumeFrom(`${streamUrl}?t=${lastTimestamp}`)}>Resume from {fmtClock(lastTimestamp)}</button>
             </div>
           ) : (
-            <div style={styles.hmTimelineFoot}><span style={{ color: "#64748b" }}>No completed hands on this stream yet.</span></div>
+            <div style={styles.hmTimelineFoot}><span style={{ color: "var(--text-mute)" }}>No completed hands on this stream yet.</span></div>
           )}
           {/* Finish the stream → awards the $0.05/hand stream bonus to contributors. */}
           <div style={styles.hmFinishRow}>
@@ -623,7 +626,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                 disabled={!sorted.length}
                 onClick={onFinishStream}
                 title="Mark this stream finished and award the $0.05/hand stream bonus"
-              >🏁 Finish Stream</button>
+              >Finish stream</button>
             )}
           </div>
         </div>
@@ -667,6 +670,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                         e.dataTransfer.setData("text/plain", c.key);
                       }}
                       onClick={(e) => { if (e.shiftKey || e.ctrlKey || e.metaKey) selectCard(e, c.key); else onRestore(c); }}
+                      className="ui-hover-lift"
                       style={{ ...styles.hmCard, ...(isSel ? styles.hmCardSel : {}) }}
                       title="Click to restore the table to after this hand"
                     >
@@ -679,7 +683,7 @@ function HandManager({ localHands, serverHands, stream, lastTimestamp, streamId,
                           onChange={(e) => selectCard(e, c.key)}
                           style={{ marginRight: 2 }}
                         />
-                        <span style={styles.hmTime}>⏱ {c.timestamp || "—"}</span>
+                        <span style={styles.hmTime}>{c.timestamp || "—"}</span>
                         {c.youtubeUrl && (
                           <a
                             href={c.youtubeUrl}
@@ -975,7 +979,7 @@ function HandBuilder({ me, refreshMe }) {
       });
       const mine = (resp.shares || []).find((s) => s.user_id === (me.user && me.user.id));
       const amt = mine ? mine.bonus : 0;
-      showFlash(`🏁 Stream finished — stream bonus awarded${amt ? `: +$${amt.toFixed(2)}` : ""}`, 3200);
+      showFlash(`Stream finished — stream bonus awarded${amt ? `: +$${amt.toFixed(2)}` : ""}`, 3200);
       if (refreshMe) refreshMe();
       fetchHands();
     } catch (e) {
@@ -2009,6 +2013,47 @@ function HandBuilder({ me, refreshMe }) {
     if (refreshMe) refreshMe();
   }
 
+  // ── Keyboard ──────────────────────────────────────────────────────────────
+  // F fold · C check/call · R bet/raise to the amount shown · A all-in · Enter
+  // for whatever's next (deal, start betting, deal the street, complete) · Z or
+  // Ctrl+Z undo. Ignored while typing in a field or with a dialog open. The
+  // handler reads the latest state through a ref so it's registered once.
+  const keyState = useRef(null);
+  useEffect(() => {
+    keyState.current = {
+      modal: !!(editor || sevenTwoDetect || sevenTwoVpip || straddleMenuOpen || buyMenuSeat != null),
+      sideGameMode, phase, hasActor, legal, betTo, canDeal, showDealNext, nextStreet, canComplete, showRunPrompt,
+      act, dealHand, startBetting, dealNextStreet, completeHand, undo, boardReadyFor, engHistory,
+    };
+  });
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = keyState.current;
+      if (!k || k.modal || k.sideGameMode || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key !== "z") return;
+      let handled = true;
+      if (key === "z" && k.engHistory.length) k.undo();
+      else if (k.hasActor && k.legal && key === "f") k.act("fold");
+      else if (k.hasActor && k.legal && key === "c") k.act(k.legal.canCheck ? "check" : "call");
+      else if (k.hasActor && k.legal && key === "a") k.act("allin");
+      else if (k.hasActor && k.legal && (key === "r" || key === "b") && (k.legal.canBet || k.legal.canRaise)) {
+        k.act(k.legal.canBet ? "bet" : "raise", Math.min(Math.max(k.betTo, k.legal.minRaiseTo), k.legal.maxTo));
+      } else if (key === "enter") {
+        if (k.phase === "setup" && k.canDeal) k.dealHand();
+        else if (k.phase === "holecards") k.startBetting();
+        else if (k.showDealNext && k.boardReadyFor(k.nextStreet)) k.dealNextStreet();
+        else if (k.canComplete) k.completeHand();
+        else handled = false;
+      } else handled = false;
+      if (handled) e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── Layout positions ──────────────────────────────────────────────────────
   // Seats sit around a rounded-rectangle (racetrack) table, leaving a gap at the
   // bottom-centre for the dealer. A superellipse warps the angular sweep onto a
@@ -2172,8 +2217,8 @@ function HandBuilder({ me, refreshMe }) {
                 {customStraddle ? (
                   <div style={styles.straddleBox}>
                     <div style={styles.straddleRow}>
-                      <span style={{ ...styles.straddlePreview, color: "#c4b5fd" }}>
-                        🎯 Custom straddle: <strong>{named.find((p) => p.seat === customStraddle.seat)?.name || `Seat ${customStraddle.seat}`}</strong> posts ${customStraddle.amount}
+                      <span style={{ ...styles.straddlePreview, color: "var(--violet)" }}>
+                        Custom straddle: <strong>{named.find((p) => p.seat === customStraddle.seat)?.name || `Seat ${customStraddle.seat}`}</strong> posts ${customStraddle.amount}
                       </span>
                       {!locked && (
                         <div style={{ display: "flex", gap: 6 }}>
@@ -2289,7 +2334,7 @@ function HandBuilder({ me, refreshMe }) {
               <button style={{ ...styles.addBtn, flex: 1, marginTop: 0 }} onClick={captureConfig}>⧉ Capture + copy</button>
               <button style={{ ...styles.addBtn, flex: 1, marginTop: 0 }} onClick={restoreConfig} disabled={!configDraft.trim()}>⤴ Restore</button>
             </div>
-            <button style={{ ...styles.addBtn, marginTop: 6, color: "#fca5a5", borderColor: "#7f1d1d" }} onClick={newSession}>⟲ New session (clear saved)</button>
+            <button style={{ ...styles.addBtn, marginTop: 6, color: "var(--loss-bright)", borderColor: "var(--loss-deep)" }} onClick={newSession}>⟲ New session (clear saved)</button>
           </div>
         )}
       </aside>
@@ -2301,18 +2346,20 @@ function HandBuilder({ me, refreshMe }) {
       {/* Main area */}
       <main style={styles.main}>
         <div style={styles.topBar}>
-          <div style={styles.logo}><span style={styles.chip}>♠</span> POKER TABLE</div>
+          <div style={styles.logo}>Hand <em style={{ color: "var(--gold)" }}>Builder</em></div>
           <div style={styles.ytField}>
             <div
               style={{ ...styles.ytWrap, ...(ytDuplicate ? styles.ytWrapDup : {}) }}
               className={!youtubeLink.trim() ? "yt-empty-flash" : undefined}
               data-tour="youtube"
             >
-              <span style={styles.ytIcon}>📺</span>
+              <span style={styles.ytIcon}>▶</span>
               <input
                 style={styles.ytInput}
                 value={youtubeLink}
                 onChange={(e) => setYoutubeLink(e.target.value)}
+                // Paste the link, press Enter: that's the deal.
+                onKeyDown={(e) => { if (e.key === "Enter" && phase === "setup" && canDeal && !sideGameMode) dealHand(); }}
                 placeholder="Paste timestamped YouTube link for this hand…"
               />
               {(() => {
@@ -2334,13 +2381,13 @@ function HandBuilder({ me, refreshMe }) {
           <div style={styles.topMeta}>
             <div style={styles.statTracker} data-tour="earnings">
               <div>
-                Hands: <strong style={{ color: "#f8fafc" }}>{me.dashboard.hands}</strong>
-                {"  ·  "}Pieces: <strong style={{ color: "#f8fafc" }}>{me.dashboard.pieces}</strong>
+                Hands: <strong style={{ color: "var(--text-strong)" }}>{me.dashboard.hands}</strong>
+                {"  ·  "}Pieces: <strong style={{ color: "var(--text-strong)" }}>{me.dashboard.pieces}</strong>
               </div>
               <div style={styles.statPreview}>
-                Base: <strong style={{ color: "#e2e8f0" }}>${me.dashboard.base.toFixed(2)}</strong>
-                {" + "}Stream Bonuses: <strong style={{ color: "#fbbf24" }}>${me.dashboard.stream_bonus.toFixed(2)}</strong>
-                {" = "}Total: <strong style={{ color: "#4ade80", fontSize: 14 }}>${me.dashboard.total.toFixed(2)}</strong>
+                Base: <strong style={{ color: "var(--text)" }}>${me.dashboard.base.toFixed(2)}</strong>
+                {" + "}Stream Bonuses: <strong style={{ color: "var(--gold-bright)" }}>${me.dashboard.stream_bonus.toFixed(2)}</strong>
+                {" = "}Total: <strong style={{ color: "var(--gain-bright)", fontSize: 14 }}>${me.dashboard.total.toFixed(2)}</strong>
               </div>
               {eng && handPieces.total > 0 && (
                 <div style={styles.statPreview}>
@@ -2348,8 +2395,8 @@ function HandBuilder({ me, refreshMe }) {
                 </div>
               )}
               {(sideGameMode || sideGameHands.length > 0) && (
-                <div style={{ ...styles.statPreview, color: "#a78bfa" }}>
-                  🎮 Side Game: <strong style={{ color: "#c4b5fd" }}>{sideGameHands.length} hands</strong> · <strong style={{ color: "#c4b5fd" }}>${sideGameEarnings.toFixed(2)}</strong>
+                <div style={{ ...styles.statPreview, color: "var(--violet)" }}>
+                  Side game: <strong style={{ color: "var(--violet)" }}>{sideGameHands.length} hands</strong> · <strong style={{ color: "var(--violet)" }}>${sideGameEarnings.toFixed(2)}</strong>
                 </div>
               )}
             </div>
@@ -2375,11 +2422,11 @@ function HandBuilder({ me, refreshMe }) {
               </span>
             )}
             <button
-              style={{ ...styles.topBtn, ...(sideGameMode ? { borderColor: "#a78bfa", color: "#c4b5fd" } : {}) }}
+              style={{ ...styles.topBtn, ...(sideGameMode ? { borderColor: "var(--violet)", color: "var(--violet)" } : {}) }}
               title={sideGameMode ? "End the side game (adjust stacks, then resume)" : "Switch to Side Game Mode — count hands quickly, no cards/actions"}
               onClick={() => (sideGameMode ? requestEndSideGame() : startSideGame())}
             >
-              🎮 {sideGameMode ? "Side Game ON" : "Side Game Mode"}
+              {sideGameMode ? "Side Game ON" : "Side Game Mode"}
             </button>
             {!sideGameMode && phase !== "setup" && (
               <>
@@ -2389,7 +2436,7 @@ function HandBuilder({ me, refreshMe }) {
             )}
             {streamHandCount > 0 && (
               <button style={styles.sessionBtn} title="Open the Hand Manager" onClick={() => setHandPanelOpen((o) => !o)}>
-                🗂 Hand Manager ({streamHandCount})
+                Hand Manager ({streamHandCount})
               </button>
             )}
             <span style={styles.handTag}>Hand #{handNumber}</span>
@@ -2401,7 +2448,7 @@ function HandBuilder({ me, refreshMe }) {
           <div style={styles.rail}>
             <div style={styles.felt}>
               <div style={styles.bettingLine} />
-              <div style={styles.feltBrand}>♠<div style={styles.feltBrandText}>POKER ROOM</div></div>
+              <div style={styles.feltBrand}>♠<div style={styles.feltBrandText}>Poker Suite</div></div>
 
               {/* Pot */}
               <div style={styles.potArea}>
@@ -2433,9 +2480,9 @@ function HandBuilder({ me, refreshMe }) {
             {/* Dealer cutout: concave notch + chip tray */}
             <div style={styles.dealerCut} />
             <div style={styles.chipTray}>
-              {["#dc2626", "#2563eb", "#16a34a", "#0a0e17", "#f59e0b"].map((c, i) => (
+              {["#c8a85a", "#f1e7cf", "#0d0c0a", "#8b2f2f", "#dec078"].map((c, i) => (
                 <div key={i} style={{ ...styles.chipWell }}>
-                  <div style={{ ...styles.chipStack, background: c, borderColor: c === "#0a0e17" ? "#475569" : "#ffffff55" }} />
+                  <div style={{ ...styles.chipStack, background: c, borderColor: c === "#0d0c0a" ? "rgba(200,168,90,.6)" : "rgba(13,12,10,.45)" }} />
                 </div>
               ))}
             </div>
@@ -2500,15 +2547,15 @@ function HandBuilder({ me, refreshMe }) {
         {/* Action bar */}
         <div style={styles.actionBar} data-tour="actionbar">
           {!sideGameMode && (phase === "betting" || phase === "complete") && engHistory.length > 0 && (
-            <button style={styles.undoBtn} title="Undo last action" onClick={undo}>↶ Undo</button>
+            <button style={styles.undoBtn} title="Undo last action (Ctrl+Z)" onClick={undo}>↶ Undo<span className="ui-kbd">Z</span></button>
           )}
-          {error && <div style={styles.errorInline}>⚠ {error}</div>}
+          {error && <div key={error} className="ui-fade" style={styles.errorInline}>⚠ {error}</div>}
 
           {/* Side game mode: count hands fast. No cards / actions / board. */}
           {sideGameMode && !endingSideGame && (
             <div style={styles.barCenter}>
               <div style={styles.barHint}>
-                <strong style={{ color: "#c4b5fd" }}>{sideGameLabel}</strong> — paste the first hand's timestamped link above, then tap through hands. Positions rotate automatically; no cards or actions needed.
+                <strong style={{ color: "var(--violet)" }}>{sideGameLabel}</strong> — paste the first hand's timestamped link above, then tap through hands. Positions rotate automatically; no cards or actions needed.
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                 <button style={styles.dealBtn} onClick={nextSideGameHand}>▶ NEXT SIDE GAME HAND (#{handNumber})</button>
@@ -2523,7 +2570,7 @@ function HandBuilder({ me, refreshMe }) {
               <div style={styles.barHint}>Side game ended. Please adjust player stacks to current values and resume normal transcription.</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", margin: "8px 0" }}>
                 {named.map((p) => (
-                  <label key={p.seat} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#cbd5e1", fontSize: 12 }}>
+                  <label key={p.seat} style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "var(--text-2)", fontSize: 12 }}>
                     <span style={{ minWidth: 60, textAlign: "right" }}>{p.name}</span>
                     <input
                       style={{ ...styles.input, width: 96 }}
@@ -2540,7 +2587,7 @@ function HandBuilder({ me, refreshMe }) {
 
           {!sideGameMode && phase === "setup" && (
             <div style={styles.barCenter}>
-              <div style={{ ...styles.barHint, color: canDeal ? "#94a3b8" : "#fbbf24" }}>
+              <div style={{ ...styles.barHint, color: canDeal ? "var(--text-dim)" : "var(--gold-bright)" }}>
                 {ytDuplicate
                   ? "⚠ This is the same timestamp as the last hand. Each hand needs its own timestamp."
                   : !ytReady
@@ -2548,19 +2595,19 @@ function HandBuilder({ me, refreshMe }) {
                   : `${named.length} players seated · button on Seat ${buttonSeat}`}
               </div>
               <button
-                style={{ ...styles.dealBtn, opacity: canDeal ? 1 : 0.4, cursor: canDeal ? "pointer" : "not-allowed", boxShadow: canDeal ? styles.dealBtn.boxShadow : "none" }}
+                className="ui-sheen" style={{ ...styles.dealBtn, opacity: canDeal ? 1 : 0.4, cursor: canDeal ? "pointer" : "not-allowed", boxShadow: canDeal ? styles.dealBtn.boxShadow : "none" }}
                 disabled={!canDeal}
                 onClick={dealHand}
                 data-tour="deal"
                 title={canDeal ? undefined : ytDuplicate ? "Paste a link with a new timestamp" : "Paste a timestamped YouTube link first"}
-              >♠ DEAL HAND</button>
+              >♠ DEAL HAND<span className="ui-kbd">↵</span></button>
             </div>
           )}
 
           {phase === "holecards" && (
             <div style={styles.barCenter}>
               <div style={styles.barHint}>Set hole cards (optional) and adjust the button / stacks if needed, then start.</div>
-              <button style={styles.dealBtn} onClick={startBetting}>START BETTING ▶</button>
+              <button className="ui-sheen" style={styles.dealBtn} onClick={startBetting}>START BETTING ▶<span className="ui-kbd">↵</span></button>
             </div>
           )}
 
@@ -2570,12 +2617,12 @@ function HandBuilder({ me, refreshMe }) {
                 <div style={styles.actorName}>{actorName} to act</div>
                 <div style={styles.actorSub}>{STREET_LABEL[eng.street]} · facing {fmtChips(legal.facing)} · stack {fmtChips(legal.player.stack)}</div>
               </div>
-              <button style={{ ...styles.actBtn, ...styles.foldBtn }} onClick={() => act("fold")}>FOLD</button>
+              <button style={{ ...styles.actBtn, ...styles.foldBtn }} onClick={() => act("fold")}>FOLD<span className="ui-kbd">F</span></button>
               {legal.canCheck ? (
-                <button style={{ ...styles.actBtn, ...styles.checkBtn }} onClick={() => act("check")}>CHECK</button>
+                <button style={{ ...styles.actBtn, ...styles.checkBtn }} onClick={() => act("check")}>CHECK<span className="ui-kbd">C</span></button>
               ) : (
                 <button style={{ ...styles.actBtn, ...styles.checkBtn }} onClick={() => act("call")}>
-                  CALL {fmtChips(legal.callAmount)}{legal.callIsAllin ? " (ALL-IN)" : ""}
+                  CALL {fmtChips(legal.callAmount)}{legal.callIsAllin ? " (ALL-IN)" : ""}<span className="ui-kbd">C</span>
                 </button>
               )}
 
@@ -2612,17 +2659,20 @@ function HandBuilder({ me, refreshMe }) {
                     onChange={(e) => setBetTo(Number(e.target.value))}
                   />
                   <button
+                    className="ui-sheen"
                     style={{ ...styles.actBtn, ...styles.raiseBtn }}
                     onClick={() => {
                       const to = Math.min(Math.max(betTo, legal.minRaiseTo), legal.maxTo);
                       act(legal.canBet ? "bet" : "raise", to);
                     }}
                   >
-                    {legal.canBet ? "BET" : "RAISE TO"} {fmtChips(Math.min(Math.max(betTo, legal.minRaiseTo), legal.maxTo))}
+                    {legal.canBet ? "BET" : "RAISE TO"} {fmtChips(Math.min(Math.max(betTo, legal.minRaiseTo), legal.maxTo))}<span className="ui-kbd">R</span>
                   </button>
                 </div>
               )}
-              <button style={{ ...styles.actBtn, ...styles.allinBtn }} onClick={() => act("allin")}>ALL-IN</button>
+              {!legal.callIsAllin && (
+                <button style={{ ...styles.actBtn, ...styles.allinBtn }} onClick={() => act("allin")}>ALL-IN<span className="ui-kbd">A</span></button>
+              )}
             </div>
           )}
 
@@ -2649,7 +2699,7 @@ function HandBuilder({ me, refreshMe }) {
                 disabled={!boardReadyFor(nextStreet)}
                 onClick={dealNextStreet}
               >
-                DEAL {STREET_LABEL[nextStreet].toUpperCase()} ▶
+                DEAL {STREET_LABEL[nextStreet].toUpperCase()} ▶<span className="ui-kbd">↵</span>
               </button>
             </div>
           )}
@@ -2682,7 +2732,7 @@ function HandBuilder({ me, refreshMe }) {
               <div style={styles.barHint}>
                 {eng.handOver ? `${surv[0]} wins uncontested.` : `Showdown — ${surv.join(", ")}`}
               </div>
-              <button style={styles.completeBtn} onClick={completeHand} data-tour="completehand">✓ COMPLETE HAND</button>
+              <button style={styles.completeBtn} onClick={completeHand} data-tour="completehand">✓ COMPLETE HAND<span className="ui-kbd">↵</span></button>
             </div>
           )}
         </div>
@@ -2736,8 +2786,8 @@ function HandBuilder({ me, refreshMe }) {
 
       {/* 7-2 detection: offer to enable the 7-2 game */}
       {sevenTwoDetect && (
-        <div style={styles.pickerOverlay} onClick={() => setSevenTwoDetect(null)}>
-          <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+        <div className="ui-fade" style={styles.pickerOverlay} onClick={() => setSevenTwoDetect(null)}>
+          <div className="ui-pop" style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
             <div style={styles.confirmTitle}>7-2 detected</div>
             <div style={styles.confirmBody}>
               <strong>{sevenTwoDetect.name || `Seat ${sevenTwoDetect.seat}`}</strong> was dealt{" "}
@@ -2754,8 +2804,8 @@ function HandBuilder({ me, refreshMe }) {
 
       {/* 7-2 VPIP: offer to convert this hand to a side game */}
       {sevenTwoVpip && (
-        <div style={styles.pickerOverlay}>
-          <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
+        <div className="ui-fade" style={styles.pickerOverlay}>
+          <div className="ui-pop" style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
             <div style={styles.confirmTitle}>7-2 VPIP!</div>
             <div style={styles.confirmBody}>
               <strong>{sevenTwoVpip.name}</strong> VPIPed with{" "}
@@ -2794,17 +2844,17 @@ function HandBuilder({ me, refreshMe }) {
         const p = named.find((x) => x.seat === buyMenuSeat);
         const isBuyer = buyButton && buyButton.seat === buyMenuSeat;
         return (
-          <div style={styles.pickerOverlay} onClick={() => setBuyMenuSeat(null)}>
-            <div style={styles.buyBox} onClick={(e) => e.stopPropagation()}>
+          <div className="ui-fade" style={styles.pickerOverlay} onClick={() => setBuyMenuSeat(null)}>
+            <div className="ui-pop" style={styles.buyBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.pickerTitle}>{p ? p.name : `Seat ${buyMenuSeat}`} — buy the button</div>
               <div style={styles.buyNote}>
                 Posts a single live blind + the other blinds/ante as dead money; action starts to their left.
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button style={{ ...styles.buyBtn, background: buyButton?.type === "btn" && isBuyer ? "#16a34a" : "#0e7490" }} onClick={() => buyTheButton(buyMenuSeat, "btn")}>
+                <button style={{ ...styles.buyBtn, background: buyButton?.type === "btn" && isBuyer ? "var(--gain-deep)" : "var(--steel-deep)" }} onClick={() => buyTheButton(buyMenuSeat, "btn")}>
                   Buy the BTN<div style={styles.buySub}>BB live · SB+ante dead</div>
                 </button>
-                <button style={{ ...styles.buyBtn, background: buyButton?.type === "str" && isBuyer ? "#16a34a" : "#7c3aed" }} onClick={() => buyTheButton(buyMenuSeat, "str")}>
+                <button style={{ ...styles.buyBtn, background: buyButton?.type === "str" && isBuyer ? "var(--gain-deep)" : "var(--violet-deep)" }} onClick={() => buyTheButton(buyMenuSeat, "str")}>
                   Buy the STR<div style={styles.buySub}>2× BB live · SB+BB+ante dead</div>
                 </button>
               </div>
@@ -2820,242 +2870,242 @@ function HandBuilder({ me, refreshMe }) {
       })()}
 
       {/* Transient "Hand #N saved" confirmation */}
-      {flash && <div style={styles.flashToast}>✓ {flash}</div>}
+      {flash && <div key={flash} className="ui-toast" style={styles.flashToast}><span style={{ color: "var(--gold)" }}>✓</span> {flash}</div>}
     </div>
   );
 }
 
-// The side-game panel's look in this UI (SideGamePanel falls back to the
-// classic styling for anything not given here).
-const SIDE_PANEL_UI = {};
-
 // ── Styles ──────────────────────────────────────────────────────────────────
-const FELT = "radial-gradient(ellipse at center, #1b6b43 0%, #0f4d2f 70%, #0a3a23 100%)";
+// Sophia's look: warm black, gold, hairlines, DM Sans + Cormorant Garamond.
+// Every colour is a token from theme.css. Hover, focus, press and entrance
+// motion live in theme.css (classes .ui-*), since inline styles can't express them.
+const FELT = "radial-gradient(ellipse at 50% 40%, #221f19 0%, #171510 42%, #0e0d0a 78%, #0a0908 100%)";
+const GOLD_GLOW = "0 0 0 1px var(--gold), 0 0 24px rgba(200,168,90,.38)";
+const GAIN_GLOW = "0 0 0 1px var(--gain), 0 0 22px rgba(126,184,138,.34)";
+const PANEL_BG = "linear-gradient(180deg, #1a1814 0%, #12110e 100%)";
+const ghostBtn = { background: "transparent", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontWeight: 500 };
+const goldBtn = { background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontWeight: 700 };
+const SIDE_PANEL_UI = {
+  box: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 },
+  head: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.2, color: "var(--gold)" },
+  row: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  label: { fontSize: 11, color: "var(--text-dim)" },
+  input: { width: 60, padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "inherit" },
+  select: { padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "inherit", maxWidth: "100%" },
+  hint: { fontSize: 10.5, color: "var(--text-mute)", lineHeight: 1.5 },
+  value: { fontSize: 12, color: "var(--text-2)" },
+  accent: { color: "var(--gold-bright)", fontWeight: 600 },
+  gain: { color: "var(--gain-bright)", fontWeight: 600 },
+  loss: { color: "var(--loss-bright)", fontWeight: 600 },
+  stepBtn: { width: 20, height: 20, padding: 0, ...ghostBtn, fontSize: 12, lineHeight: 1 },
+  btn: { padding: "5px 11px", ...ghostBtn, fontSize: 11 },
+  away: { fontSize: 8.5, fontWeight: 700, letterSpacing: 1, color: "var(--ink)", background: "var(--text-dim)", borderRadius: 999, padding: "1px 6px" },
+};
 const styles = {
-  app: { display: "flex", minHeight: "calc(100vh - 46px)", background: "#070b12", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
-  sidebar: { background: "#0d1320", borderRight: "1px solid #1e293b", overflow: "hidden", transition: "width .18s ease", flexShrink: 0, boxSizing: "border-box" },
-  sidebarInner: { display: "flex", flexDirection: "column", gap: 10 },
-  sideHead: { fontSize: 11, fontWeight: 800, letterSpacing: 2, color: "#f59e0b" },
-  sideHint: { fontSize: 9, fontWeight: 500, letterSpacing: 0.5, color: "#475569" },
-  sidebarToggle: { position: "fixed", top: 60, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "0 8px 8px 0", cursor: "pointer", transition: "left .18s ease" },
+  // ── shell ──
+  app: { display: "flex", flex: 1, minHeight: 0, background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-ui)" },
+  sidebar: { background: "var(--surface)", borderRight: "1px solid var(--line)", overflowX: "hidden", overflowY: "auto", transition: "width .22s var(--ease), padding .22s var(--ease)", flexShrink: 0, boxSizing: "border-box" },
+  sidebarInner: { display: "flex", flexDirection: "column", gap: 11, minWidth: 256 },
+  sidebarToggle: { position: "fixed", top: 66, zIndex: 30, width: 18, height: 46, ...ghostBtn, background: "var(--surface-3)", color: "var(--gold)", borderRadius: "0 3px 3px 0", borderLeft: "none", transition: "left .22s var(--ease)", fontSize: 13, padding: 0 },
+  sideHead: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.4, textTransform: "uppercase", color: "var(--gold)", paddingBottom: 7, borderBottom: "1px solid transparent", borderImage: "linear-gradient(90deg, rgba(200,168,90,.4), transparent 85%) 1" },
+  sideHint: { fontSize: 10, fontWeight: 400, letterSpacing: 0.2, color: "var(--text-mute)", textTransform: "none" },
   row: { display: "flex", gap: 8 },
-  col: { flex: 1, display: "flex", flexDirection: "column", gap: 4 },
-  label: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: "#64748b" },
-  input: { padding: "7px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%" },
-  rosterRow: { display: "flex", gap: 6, alignItems: "center", padding: "2px 0", background: "#0d1320" },
-  rosterRowDragging: { opacity: 0.5, boxShadow: "0 6px 16px rgba(0,0,0,.5)", borderRadius: 6 },
-  diffDot: { color: "#fbbf24", fontSize: 9, width: 8, transition: "opacity .15s" },
-  seatTag: { width: 20, textAlign: "center", fontSize: 11, color: "#64748b", fontWeight: 700 },
-  dragHandle: { cursor: "grab", color: "#475569", fontSize: 15, lineHeight: 1, padding: "0 2px", userSelect: "none", touchAction: "none" },
-  seatNumInput: { width: 30, textAlign: "center", padding: "8px 2px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 12, fontWeight: 700, outline: "none", boxSizing: "border-box" },
-  seatNumAuto: { color: "#64748b", background: "#0d1320", borderColor: "#162132" },
-  dropLine: { height: 2, background: "#3b82f6", borderRadius: 2, margin: "2px 0", boxShadow: "0 0 6px rgba(59,130,246,.7)" },
-  autoNumRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#94a3b8", margin: "2px 0 6px", cursor: "pointer", userSelect: "none" },
-  miniX: { width: 24, height: 24, background: "#1e293b", border: "none", borderRadius: 5, color: "#94a3b8", cursor: "pointer", fontSize: 11 },
-  addBtn: { marginTop: 4, padding: "7px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
-  lockNote: { marginTop: 8, fontSize: 11, color: "#64748b", fontStyle: "italic" },
-  configBox: { width: "100%", height: 64, boxSizing: "border-box", padding: "7px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#94a3b8", fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace", outline: "none", resize: "vertical", marginBottom: 6 },
-  autosaveNote: { fontSize: 10, color: "#4ade80", marginBottom: 6 },
-  straddleBox: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 },
+  col: { flex: 1, display: "flex", flexDirection: "column", gap: 5 },
+  label: { fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.3, color: "var(--text-mute)" },
+  input: { padding: "8px 10px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12.5, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%" },
+  checkRow: { display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--text-2)", cursor: "pointer" },
+  rosterRow: { display: "flex", gap: 6, alignItems: "center", padding: "2px 0", background: "var(--surface)" },
+  rosterRowDragging: { opacity: 0.5, boxShadow: "0 8px 20px rgba(0,0,0,.5)", borderRadius: 3 },
+  diffDot: { color: "var(--gold-bright)", fontSize: 8, width: 8, transition: "opacity .15s" },
+  dragHandle: { cursor: "grab", color: "var(--text-faint)", fontSize: 14, lineHeight: 1, padding: "0 2px", userSelect: "none", touchAction: "none" },
+  seatNumInput: { width: 32, textAlign: "center", padding: "8px 2px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 12, fontWeight: 600, outline: "none", boxSizing: "border-box" },
+  seatNumAuto: { color: "var(--text-mute)", background: "transparent", borderColor: "var(--line)" },
+  dropLine: { height: 2, background: "var(--gold)", borderRadius: 2, margin: "2px 0", boxShadow: "0 0 8px rgba(200,168,90,.7)" },
+  autoNumRow: { display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "var(--text-dim)", margin: "0 0 4px", cursor: "pointer", userSelect: "none" },
+  miniX: { width: 24, height: 24, ...ghostBtn, border: "1px solid var(--line)", color: "var(--text-mute)", fontSize: 11, padding: 0 },
+  addBtn: { marginTop: 4, padding: "8px 10px", ...ghostBtn, fontSize: 12 },
+  lockNote: { marginTop: 6, fontSize: 11, color: "var(--text-mute)", fontStyle: "italic", fontFamily: "var(--font-display)" },
+  configBox: { width: "100%", height: 62, boxSizing: "border-box", padding: "8px 10px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text-dim)", fontSize: 10.5, fontFamily: "var(--font-mono)", outline: "none", resize: "vertical" },
+  autosaveNote: { fontSize: 10.5, color: "var(--gain)", marginBottom: 4 },
+  straddleBox: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "9px 11px", display: "flex", flexDirection: "column", gap: 7 },
   straddleRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  stepBtn: { width: 24, height: 24, background: "#1e293b", border: "1px solid #334155", borderRadius: 6, color: "#cbd5e1", fontSize: 14, fontWeight: 700, cursor: "pointer", lineHeight: 1 },
-  straddlePreview: { fontSize: 10.5, color: "#fbbf24", lineHeight: 1.4 },
+  stepBtn: { width: 24, height: 24, ...ghostBtn, fontSize: 14, lineHeight: 1, padding: 0 },
+  straddlePreview: { fontSize: 11, color: "var(--gold-bright)", lineHeight: 1.45 },
 
-  main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
-  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 22px 12px 34px", borderBottom: "1px solid #141e2e" },
-  logo: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, letterSpacing: 2, fontSize: 16 },
-  chip: { display: "inline-flex", width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 16 },
-  ytField: { display: "flex", flexDirection: "column", gap: 3, flex: 1, maxWidth: 460, margin: "0 18px" },
-  ytWrap: { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 10px", boxSizing: "border-box" },
-  ytWrapDup: { borderColor: "#ef4444", background: "#1f1113" },
-  ytHelp: { fontSize: 10.5, color: "#fbbf24", paddingLeft: 4, fontWeight: 600 },
-  ytWarn: { fontSize: 10.5, color: "#fca5a5", paddingLeft: 4, fontWeight: 700 },
-  ytIcon: { fontSize: 14, opacity: 0.8 },
-  ytInput: { flex: 1, background: "transparent", border: "none", outline: "none", color: "#e2e8f0", fontSize: 12.5, fontFamily: "inherit", minWidth: 0 },
-  ytParsed: { fontSize: 10.5, color: "#4ade80", whiteSpace: "nowrap", fontWeight: 600, textDecoration: "none", cursor: "pointer" },
-  topMeta: { display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "#94a3b8" },
-  topBtn: { padding: "6px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  sessionBtn: { padding: "6px 12px", background: "#0e7490", border: "1px solid #155e75", borderRadius: 7, color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  statTracker: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, padding: "5px 12px", fontSize: 13, color: "#94a3b8", whiteSpace: "nowrap", lineHeight: 1.4 },
-  statPreview: { fontSize: 11, color: "#fbbf24", marginTop: 1 },
-  flashToast: { position: "fixed", top: 64, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: "#16a34a", color: "#f0fdf4", fontWeight: 800, fontSize: 14, letterSpacing: 0.3, padding: "12px 24px", borderRadius: 10, boxShadow: "0 8px 30px rgba(34,197,94,.5)", maxWidth: "90vw", textAlign: "center", whiteSpace: "nowrap" },
-  handTag: { background: "#f59e0b22", color: "#f59e0b", padding: "4px 10px", borderRadius: 20, fontWeight: 700, fontSize: 12 },
+  // ── top bar ──
+  main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 },
+  topBar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "11px 22px 11px 32px", borderBottom: "1px solid var(--line)", background: "linear-gradient(180deg, rgba(200,168,90,.035), transparent)", flexShrink: 0, flexWrap: "wrap" },
+  logo: { display: "flex", alignItems: "center", gap: 10, fontFamily: "var(--font-display)", fontSize: 21, fontWeight: 500, letterSpacing: 0.4, color: "var(--text-strong)", whiteSpace: "nowrap" },
+  chip: { display: "inline-flex", width: 26, height: 26, borderRadius: "50%", background: "var(--gold-grad)", color: "var(--ink)", alignItems: "center", justifyContent: "center", fontSize: 14, boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 16px rgba(200,168,90,.2)" },
+  ytField: { display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 260, maxWidth: 480 },
+  ytWrap: { display: "flex", alignItems: "center", gap: 9, width: "100%", background: "var(--field)", border: "1px solid var(--line-strong)", borderRadius: 3, padding: "6px 11px", boxSizing: "border-box" },
+  ytWrapDup: { borderColor: "var(--loss)", background: "var(--loss-wash)" },
+  ytHelp: { fontSize: 10.5, color: "var(--gold-bright)", paddingLeft: 2, fontWeight: 500 },
+  ytWarn: { fontSize: 10.5, color: "var(--loss-bright)", paddingLeft: 2, fontWeight: 600 },
+  ytIcon: { fontSize: 13, color: "var(--gold)", opacity: 0.9 },
+  ytInput: { flex: 1, background: "transparent", border: "none", outline: "none", boxShadow: "none", color: "var(--text)", fontSize: 12.5, fontFamily: "inherit", minWidth: 0 },
+  ytParsed: { fontSize: 10.5, color: "var(--gold-bright)", whiteSpace: "nowrap", fontWeight: 500, textDecoration: "none", fontFamily: "var(--font-mono)" },
+  topMeta: { display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, color: "var(--text-dim)", flexWrap: "wrap", justifyContent: "flex-end" },
+  topBtn: { padding: "7px 12px", ...ghostBtn, fontSize: 12, whiteSpace: "nowrap" },
+  sessionBtn: { padding: "7px 12px", background: "var(--gold-wash)", border: "1px solid var(--gold-dim)", borderRadius: 3, color: "var(--gold-bright)", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" },
+  statTracker: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "6px 12px", fontSize: 12, color: "var(--text-dim)", whiteSpace: "nowrap", lineHeight: 1.5 },
+  statPreview: { fontSize: 11, color: "var(--gold-bright)" },
+  handTag: { border: "1px solid var(--gold-dim)", color: "var(--gold-bright)", padding: "3px 12px", borderRadius: 999, fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, whiteSpace: "nowrap" },
+  flashToast: { position: "fixed", top: 68, left: "50%", transform: "translateX(-50%)", zIndex: 80, background: PANEL_BG, color: "var(--text-strong)", fontWeight: 500, fontSize: 13, padding: "11px 20px", borderRadius: 3, border: "1px solid var(--gold-dim)", boxShadow: "0 16px 44px rgba(0,0,0,.6), 0 0 26px rgba(200,168,90,.1)", maxWidth: "min(760px, 92vw)", textAlign: "center" },
 
-  // ── Hand Manager panel ──
-  handPanel: { background: "#0d1320", borderLeft: "1px solid #1e293b", overflow: "hidden", transition: "width .18s ease", flexShrink: 0, boxSizing: "border-box" },
-  handToggle: { position: "fixed", top: 60, zIndex: 30, width: 22, height: 44, background: "#1e293b", color: "#cbd5e1", border: "1px solid #334155", borderRadius: "8px 0 0 8px", cursor: "pointer", transition: "right .18s ease" },
-  hmInner: { display: "flex", flexDirection: "column", gap: 10, height: "100%", minWidth: 320 },
+  // ── hand manager ──
+  handPanel: { background: "var(--surface)", borderLeft: "1px solid var(--line)", overflowX: "hidden", overflowY: "auto", transition: "width .22s var(--ease), padding .22s var(--ease)", flexShrink: 0, boxSizing: "border-box" },
+  handToggle: { position: "fixed", top: 66, zIndex: 30, width: 18, height: 46, ...ghostBtn, background: "var(--surface-3)", color: "var(--gold)", borderRadius: "3px 0 0 3px", borderRight: "none", transition: "right .22s var(--ease)", fontSize: 13, padding: 0 },
+  hmInner: { display: "flex", flexDirection: "column", gap: 10, minHeight: "100%", minWidth: 322 },
   hmHeadRow: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
-  hmCount: { fontSize: 11, color: "#64748b", fontWeight: 600 },
-  hmEmpty: { fontSize: 12, color: "#64748b", lineHeight: 1.5, marginTop: 6 },
+  hmCount: { fontSize: 11, color: "var(--text-mute)" },
+  hmEmpty: { fontSize: 13, color: "var(--text-mute)", lineHeight: 1.55, marginTop: 6, fontFamily: "var(--font-display)", fontStyle: "italic" },
   hmToolbar: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  hmSelAll: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#cbd5e1", cursor: "pointer", fontWeight: 600 },
-  hmSelCount: { fontSize: 11, color: "#7dd3fc", fontWeight: 700 },
+  hmSelAll: { display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-2)", cursor: "pointer" },
+  hmSelCount: { fontSize: 11, color: "var(--gold-bright)", fontWeight: 600 },
   hmBtnRow: { display: "flex", flexWrap: "wrap", gap: 6 },
-  hmBtn: { flex: "1 1 46%", padding: "7px 8px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#e2e8f0", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  hmBtnGreen: { flex: "1 1 46%", padding: "7px 8px", background: "#16a34a", border: "1px solid #16a34a", borderRadius: 7, color: "#06210f", fontSize: 11.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
-  hmBtnRed: { flex: "1 1 100%", padding: "7px 8px", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 7, color: "#fca5a5", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  hmList: { flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, margin: "0 -2px", padding: "0 2px" },
-  hmGroupHead: { position: "sticky", top: 0, background: "#0d1320", fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", padding: "6px 0 4px", zIndex: 1 },
-  hmCard: { position: "relative", background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px 7px", marginBottom: 6, cursor: "pointer", userSelect: "none" },
-  hmCardSel: { borderColor: "#3b82f6", boxShadow: "0 0 0 1px #3b82f6, 0 0 14px rgba(59,130,246,.35)", background: "#10203a" },
-  hmCardX: { position: "absolute", top: 5, right: 5, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 5, color: "#94a3b8", fontSize: 10, cursor: "pointer" },
-  hmCardTop: { display: "flex", alignItems: "center", gap: 8, marginBottom: 3, paddingRight: 18 },
-  hmTime: { fontSize: 12, fontWeight: 800, color: "#fde68a" },
-  hmHandNo: { fontSize: 10, color: "#64748b", fontWeight: 700 },
-  hmSummary: { fontSize: 12.5, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3, marginBottom: 4 },
-  hmCardMeta: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "#94a3b8" },
-  hmLink: { display: "inline-block", marginTop: 5, fontSize: 10.5, color: "#7dd3fc", fontWeight: 600, textDecoration: "none" },
-  hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "2px dashed #2b3a52", borderRadius: 10, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", background: "rgba(10,15,26,.4)", transition: "all .12s" },
-  hmDropActive: { borderColor: "#22c55e", color: "#4ade80", background: "rgba(34,197,94,.12)" },
-  hmUnsaved: { fontSize: 8.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 6, padding: "1px 5px", marginLeft: 6 },
-  hmYtIcon: { marginLeft: 6, fontSize: 12, fontWeight: 800, color: "#7dd3fc", textDecoration: "none", cursor: "pointer" },
-  // Timeline
-  hmTimelineWrap: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "8px 10px", marginBottom: 8, flexShrink: 0 },
-  hmTimelineHead: { display: "flex", justifyContent: "space-between", fontSize: 9.5, fontWeight: 800, letterSpacing: 1, color: "#64748b", marginBottom: 6 },
-  hmTrack: { position: "relative", height: 22, background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 5, overflow: "hidden" },
-  hmProgress: { position: "absolute", left: 0, top: 0, bottom: 0, background: "rgba(74,222,128,.12)", borderRight: "1px solid rgba(74,222,128,.4)" },
-  hmMarker: { position: "absolute", top: 3, width: 4, height: 16, borderRadius: 2, transform: "translateX(-50%)", cursor: "pointer", boxShadow: "0 0 3px rgba(0,0,0,.5)" },
-  hmTimelineFoot: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#94a3b8", marginTop: 6, gap: 8 },
-  hmResumeBtn: { padding: "5px 10px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" },
-  hmFinishRow: { display: "flex", justifyContent: "center", marginTop: 8 },
-  hmFinishBtn: { width: "100%", padding: "8px 12px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 8, color: "#eafff1", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
-  hmCompleteTag: { width: "100%", textAlign: "center", padding: "7px 12px", background: "#0e2a18", border: "1px solid #16a34a", borderRadius: 8, color: "#4ade80", fontSize: 12, fontWeight: 800 },
-  // Detail modal
-  hmDetailOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.7)", zIndex: 140, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
-  hmDetailBox: { width: 560, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto", background: "#0d1320", border: "1px solid #334155", borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
-  hmDetailHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, fontWeight: 800, color: "#f8fafc" },
-  hmDetailSummary: { fontSize: 14, fontWeight: 700, color: "#fde68a" },
-  hmDetailRow: { fontSize: 13, color: "#cbd5e1" },
-  hmDetailPre: { margin: "4px 0", padding: 12, background: "#06090f", color: "#a5d6a7", fontSize: 11.5, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 8, border: "1px solid #1e293b", maxHeight: "48vh", overflowY: "auto" },
-  closeMini: { width: 28, height: 28, borderRadius: 7, background: "#1e293b", border: "1px solid #334155", color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
+  hmBtn: { flex: "1 1 46%", padding: "7px 8px", ...ghostBtn, fontSize: 11.5, whiteSpace: "nowrap" },
+  hmBtnGreen: { flex: "1 1 46%", padding: "7px 8px", ...goldBtn, fontSize: 11.5, whiteSpace: "nowrap" },
+  hmBtnRed: { flex: "1 1 100%", padding: "7px 8px", background: "transparent", border: "1px solid rgba(198,120,120,.4)", borderRadius: 3, color: "var(--loss-bright)", fontSize: 11.5, fontWeight: 500, whiteSpace: "nowrap" },
+  hmList: { flex: 1, display: "flex", flexDirection: "column", gap: 4 },
+  hmGroupHead: { position: "sticky", top: -18, background: "var(--surface)", fontSize: 14, fontFamily: "var(--font-display)", fontWeight: 600, color: "var(--gold-bright)", padding: "8px 0 5px", zIndex: 1 },
+  hmCard: { position: "relative", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "9px 11px 8px", marginBottom: 6, cursor: "pointer", userSelect: "none" },
+  hmCardSel: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px var(--gold), 0 0 16px rgba(200,168,90,.22)", background: "var(--surface-3)" },
+  hmCardX: { position: "absolute", top: 6, right: 6, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, ...ghostBtn, border: "1px solid var(--line)", color: "var(--text-mute)", fontSize: 10 },
+  hmCardTop: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, paddingRight: 20 },
+  hmTime: { fontSize: 12, fontWeight: 600, color: "var(--gold-pale)", fontFamily: "var(--font-mono)" },
+  hmSummary: { fontSize: 13, fontWeight: 500, color: "var(--text-strong)", lineHeight: 1.35, marginBottom: 4 },
+  hmCardMeta: { display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-dim)" },
+  hmLink: { display: "inline-block", fontSize: 11, color: "var(--gold-bright)", fontWeight: 500, textDecoration: "none" },
+  hmDrop: { flexShrink: 0, marginTop: 2, padding: "14px 10px", border: "1px dashed var(--line-strong)", borderRadius: 3, textAlign: "center", fontSize: 12, color: "var(--text-mute)", background: "rgba(13,12,10,.4)", transition: "all .15s" },
+  hmDropActive: { borderColor: "var(--gold)", color: "var(--gold-bright)", background: "var(--gold-wash)" },
+  hmUnsaved: { fontSize: 8.5, fontWeight: 700, letterSpacing: 0.8, color: "var(--ink)", background: "var(--gold-bright)", borderRadius: 999, padding: "1px 6px" },
+  hmYtIcon: { fontSize: 12, fontWeight: 700, color: "var(--gold)", textDecoration: "none" },
+  hmTimelineWrap: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "10px 11px", marginBottom: 6, flexShrink: 0 },
+  hmTimelineHead: { display: "flex", justifyContent: "space-between", fontSize: 9.5, fontWeight: 600, letterSpacing: 1.6, color: "var(--text-mute)", marginBottom: 7 },
+  hmTrack: { position: "relative", height: 22, background: "var(--field)", border: "1px solid var(--line)", borderRadius: 2, overflow: "hidden" },
+  hmProgress: { position: "absolute", left: 0, top: 0, bottom: 0, background: "linear-gradient(90deg, rgba(200,168,90,.05), rgba(200,168,90,.16))", borderRight: "1px solid var(--gold-dim)" },
+  hmMarker: { position: "absolute", top: 4, width: 3, height: 14, borderRadius: 2, transform: "translateX(-50%)", cursor: "pointer", boxShadow: "0 0 4px rgba(0,0,0,.6)" },
+  hmTimelineFoot: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--text-dim)", marginTop: 8, gap: 8 },
+  hmResumeBtn: { padding: "6px 11px", ...goldBtn, fontSize: 11, whiteSpace: "nowrap" },
+  hmFinishRow: { display: "flex", justifyContent: "center", marginTop: 9 },
+  hmFinishBtn: { width: "100%", padding: "8px 12px", background: "transparent", border: "1px solid rgba(126,184,138,.45)", borderRadius: 3, color: "var(--gain-bright)", fontSize: 12, fontWeight: 600 },
+  hmCompleteTag: { width: "100%", textAlign: "center", padding: "7px 12px", background: "var(--gain-wash)", border: "1px solid rgba(126,184,138,.35)", borderRadius: 3, color: "var(--gain-bright)", fontSize: 12, fontWeight: 600 },
 
-  tableWrap: { position: "relative", flex: 1, margin: "12px 16px 6px", minHeight: 420 },
+  // ── the table: black felt, gold-trimmed rail ──
+  tableWrap: { position: "relative", flex: 1, margin: "10px 18px 4px", minHeight: 300 },
   rail: {
-    // Wide horizontal oval filling the available width (widescreen, ~2:1+).
     position: "absolute", left: "0.5%", top: "5%", width: "99%", height: "90%", borderRadius: 9999,
-    background: "linear-gradient(160deg,#6b4423 0%,#4a2f18 45%,#2e1d0e 100%)",
-    boxShadow: "0 26px 64px rgba(0,0,0,.65), inset 0 3px 8px rgba(255,255,255,.10), inset 0 -8px 24px rgba(0,0,0,.55)",
-    border: "1px solid #160d05",
+    background: "linear-gradient(165deg, #1d1b16 0%, #110f0c 50%, #070605 100%)",
+    border: "1px solid rgba(200,168,90,.42)",
+    boxShadow: "0 30px 80px rgba(0,0,0,.75), inset 0 0 0 6px #0b0a08, inset 0 0 0 7px rgba(200,168,90,.24), inset 0 2px 12px rgba(255,236,190,.06)",
   },
   felt: {
-    position: "absolute", inset: 26, borderRadius: 9999, background: FELT,
-    boxShadow: "inset 0 0 80px rgba(0,0,0,.6), inset 0 0 0 3px rgba(0,0,0,.35)", overflow: "hidden",
+    position: "absolute", inset: 24, borderRadius: 9999, background: FELT,
+    boxShadow: "inset 0 0 100px rgba(0,0,0,.8), inset 0 0 0 1px rgba(200,168,90,.2)", overflow: "hidden",
   },
-  bettingLine: { position: "absolute", inset: "20% 14%", borderRadius: 9999, border: "2px solid rgba(255,255,255,.10)" },
-  feltBrand: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", fontSize: 64, color: "rgba(255,255,255,.05)", textAlign: "center", pointerEvents: "none", fontWeight: 800, lineHeight: 1 },
-  feltBrandText: { fontSize: 13, letterSpacing: 6, marginTop: 2 },
+  bettingLine: { position: "absolute", inset: "19% 13%", borderRadius: 9999, border: "1px solid rgba(200,168,90,.16)" },
+  feltBrand: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", fontSize: 58, color: "rgba(200,168,90,.07)", textAlign: "center", pointerEvents: "none", fontFamily: "var(--font-display)", lineHeight: 1 },
+  feltBrandText: { fontSize: 17, letterSpacing: 9, marginTop: 6, fontStyle: "italic" },
   dealerCut: {
     position: "absolute", left: "50%", bottom: "-1%", transform: "translateX(-50%)",
     width: "30%", maxWidth: 330, height: "21%", minHeight: 66,
-    background: "#070b12", borderRadius: "130px 130px 0 0",
-    border: "6px solid #2a1c10", borderBottom: "none",
-    boxShadow: "inset 0 10px 22px rgba(0,0,0,.7)", zIndex: 3,
+    background: "var(--bg)", borderRadius: "130px 130px 0 0",
+    border: "1px solid rgba(200,168,90,.4)", borderBottom: "none",
+    boxShadow: "inset 0 10px 24px rgba(0,0,0,.75)", zIndex: 3,
   },
   chipTray: {
     position: "absolute", left: "50%", bottom: "16%", transform: "translateX(-50%)",
-    display: "flex", gap: 5, padding: "5px 8px", borderRadius: 9, zIndex: 5,
-    background: "linear-gradient(#1c1308,#0d0a05)", border: "1px solid #3a2a16",
-    boxShadow: "0 5px 12px rgba(0,0,0,.6)",
+    display: "flex", gap: 5, padding: "5px 8px", borderRadius: 3, zIndex: 5,
+    background: "linear-gradient(#17140f,#0b0a07)", border: "1px solid rgba(200,168,90,.3)",
+    boxShadow: "0 6px 14px rgba(0,0,0,.65)",
   },
-  chipWell: { width: 20, height: 26, borderRadius: 4, background: "#080604", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 2, boxShadow: "inset 0 2px 5px rgba(0,0,0,.85)" },
-  chipStack: { width: 18, height: 18, borderRadius: "50%", border: "2px solid", boxShadow: "0 -3px 0 rgba(255,255,255,.18), 0 -6px 0 rgba(0,0,0,.25)" },
-  dealerLabel: { position: "absolute", left: "50%", bottom: "5.5%", transform: "translateX(-50%)", fontSize: 9, letterSpacing: 3, color: "#8aa0b8", fontWeight: 800, zIndex: 5 },
-  potArea: { position: "absolute", left: "50%", top: "30%", transform: "translate(-50%,-50%)", textAlign: "center" },
-  potLabel: { fontSize: 10, letterSpacing: 2, color: "#cbe8d5", opacity: 0.7, fontWeight: 700 },
-  potValue: { fontSize: 22, fontWeight: 800, color: "#fde68a", textShadow: "0 2px 6px rgba(0,0,0,.5)" },
-  boardArea: { position: "absolute", left: "50%", top: "52%", transform: "translate(-50%,-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
-  runLabel: { fontSize: 9, letterSpacing: 2, color: "#cbe8d5", opacity: 0.65, fontWeight: 700 },
-  boardRow: { display: "flex", gap: 12 },
+  chipWell: { width: 20, height: 26, borderRadius: 3, background: "#060504", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 2, boxShadow: "inset 0 2px 5px rgba(0,0,0,.85)" },
+  chipStack: { width: 18, height: 18, borderRadius: "50%", border: "2px dashed", boxShadow: "0 -3px 0 rgba(255,240,200,.16), 0 -6px 0 rgba(0,0,0,.3)" },
+  dealerLabel: { position: "absolute", left: "50%", bottom: "5.5%", transform: "translateX(-50%)", fontSize: 9, letterSpacing: 4, color: "var(--gold-dim)", fontWeight: 600, zIndex: 5 },
+  potArea: { position: "absolute", left: "50%", top: "29%", transform: "translate(-50%,-50%)", textAlign: "center" },
+  potLabel: { fontSize: 9.5, letterSpacing: 4, color: "var(--gold-dim)", fontWeight: 600 },
+  potValue: { fontSize: 30, fontWeight: 500, color: "var(--gold-bright)", fontFamily: "var(--font-display)", textShadow: "0 0 24px rgba(222,192,120,.25), 0 2px 6px rgba(0,0,0,.6)", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 },
+  boardArea: { position: "absolute", left: "50%", top: "53%", transform: "translate(-50%,-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 5 },
+  runLabel: { fontSize: 9, letterSpacing: 3, color: "var(--gold-dim)", fontWeight: 600 },
+  boardRow: { display: "flex", gap: 10 },
 
+  // ── seats ──
   seat: { position: "absolute", transform: "translate(-50%,-50%)", zIndex: 5 },
-  emptySeat: { width: 96, padding: "10px 8px", textAlign: "center", borderRadius: 12, border: "2px dashed #2b3a52", background: "rgba(10,15,26,.5)", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
-  emptySeatNum: { fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: "#475569" },
-  sitBtn: { padding: "5px 12px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 7, color: "#7dd3fc", fontSize: 11, fontWeight: 700, cursor: "pointer" },
-  sitInput: { width: 80, padding: "4px 6px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12, textAlign: "center", outline: "none" },
-  seatBox: { position: "relative", width: 124, background: "#0e1626", border: "1px solid #1e293b", borderRadius: 12, padding: "8px 8px 6px", textAlign: "center", transition: "box-shadow .15s" },
-  cardsRow: { display: "flex", gap: 4, justifyContent: "center", marginBottom: 5 },
-  seatName: { fontSize: 13, fontWeight: 700, color: "#f1f5f9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  seatStack: { fontSize: 13, fontWeight: 700, color: "#4ade80", cursor: "pointer", marginTop: 1 },
-  handDesc: { fontSize: 10, fontWeight: 600, marginTop: 3, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  boughtTag: { marginTop: 3, fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#fbbf24", borderRadius: 8, padding: "1px 6px", display: "inline-block" },
-  squidTag: { fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#ddd6fe", background: "#4c1d95", borderRadius: 8, padding: "1px 6px" },
-  bountyRow: { marginTop: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
-  bountyTag: { fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: "#fecaca", background: "#7f1d1d", borderRadius: 8, padding: "1px 6px" },
-  bountyBtn: { width: 16, height: 16, padding: 0, background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#cbd5e1", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1 },
-  buyBox: { background: "#0e1626", border: "1px solid #334155", borderRadius: 12, padding: 18, maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,.6)" },
-  buyNote: { fontSize: 11, color: "#94a3b8", marginBottom: 12, lineHeight: 1.4 },
-  buyBtn: { flex: 1, padding: "12px 10px", border: "none", borderRadius: 9, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", letterSpacing: 0.5 },
-  buySub: { fontSize: 9.5, fontWeight: 500, opacity: 0.85, marginTop: 3, letterSpacing: 0 },
-  stackInput: { width: 80, marginTop: 2, padding: "2px 6px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 6, color: "#4ade80", fontSize: 13, textAlign: "center", outline: "none" },
-  badge: { position: "absolute", top: -9, left: -9, fontSize: 9, fontWeight: 800, color: "#0a0e17", padding: "2px 6px", borderRadius: 10, letterSpacing: 0.5 },
-  dealerBtn: { position: "absolute", bottom: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#ffffff,#cbd5e1)", color: "#0a0e17", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #94a3b8", boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
-  betChip: { position: "absolute", left: "50%", top: "108%", transform: "translateX(-50%)", background: "#0a0e17cc", border: "1px solid #f59e0b66", color: "#fde68a", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 12, whiteSpace: "nowrap" },
+  emptySeat: { width: 98, padding: "10px 8px", textAlign: "center", borderRadius: 3, border: "1px dashed var(--line-strong)", background: "rgba(13,12,10,.55)", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
+  emptySeatNum: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2, color: "var(--text-faint)" },
+  sitBtn: { padding: "5px 12px", ...ghostBtn, color: "var(--gold-bright)", borderColor: "var(--line-gold)", fontSize: 11 },
+  sitInput: { width: 82, padding: "4px 6px", background: "var(--field)", border: "1px solid var(--gold-dim)", borderRadius: 3, color: "var(--text)", fontSize: 12, textAlign: "center", outline: "none" },
+  seatBox: { position: "relative", width: 130, background: PANEL_BG, border: "1px solid var(--line-strong)", borderRadius: 3, padding: "9px 8px 7px", textAlign: "center", transition: "box-shadow .25s ease, border-color .25s ease, opacity .25s ease", boxShadow: "0 10px 24px rgba(0,0,0,.5)" },
+  cardsRow: { display: "flex", gap: 4, justifyContent: "center", marginBottom: 6 },
+  seatName: { fontSize: 13, fontWeight: 600, color: "var(--text-strong)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: 0.2 },
+  seatStack: { fontSize: 13, fontWeight: 600, color: "var(--gold-bright)", cursor: "pointer", marginTop: 1, fontVariantNumeric: "tabular-nums" },
+  handDesc: { fontSize: 10, fontWeight: 500, marginTop: 3, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  boughtTag: { marginTop: 4, fontSize: 8.5, fontWeight: 700, letterSpacing: 1, color: "var(--ink)", background: "var(--gold-bright)", borderRadius: 999, padding: "1px 7px", display: "inline-block" },
+  bountyRow: { marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 },
+  bountyTag: { fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "var(--copper)", border: "1px solid rgba(212,129,95,.45)", borderRadius: 999, padding: "0 7px" },
+  squidTag: { fontSize: 8.5, fontWeight: 700, letterSpacing: 0.6, color: "var(--violet)", border: "1px solid rgba(169,156,216,.45)", borderRadius: 999, padding: "0 7px" },
+  bountyBtn: { width: 16, height: 16, padding: 0, ...ghostBtn, border: "1px solid var(--line)", fontSize: 11, lineHeight: 1 },
+  stackInput: { width: 84, marginTop: 2, padding: "2px 6px", background: "var(--field)", border: "1px solid var(--gold-dim)", borderRadius: 3, color: "var(--gold-bright)", fontSize: 13, textAlign: "center", outline: "none" },
+  badge: { position: "absolute", top: -9, left: -9, fontSize: 8.5, fontWeight: 700, color: "var(--ink)", padding: "2px 7px", borderRadius: 999, letterSpacing: 0.8, boxShadow: "0 2px 6px rgba(0,0,0,.5)" },
+  dealerBtn: { position: "absolute", bottom: -9, right: -9, width: 24, height: 24, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#fff7df,#d9bf7a 55%,#a8893f)", color: "var(--ink)", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 8px rgba(0,0,0,.6)", fontFamily: "var(--font-display)" },
+  betChip: { position: "absolute", left: "50%", top: "108%", transform: "translateX(-50%)", background: "rgba(8,7,6,.85)", border: "1px solid var(--gold-dim)", color: "var(--gold-pale)", fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" },
 
-  actionBar: { position: "relative", minHeight: 92, borderTop: "1px solid #141e2e", background: "#0a0f19", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "center" },
-  undoBtn: { position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)", padding: "9px 14px", background: "#1e293b", border: "1px solid #475569", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  // ── action bar ──
+  actionBar: { position: "relative", minHeight: 88, flexShrink: 0, borderTop: "1px solid var(--line)", background: "linear-gradient(180deg, var(--surface) 0%, var(--bg-deep) 100%)", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "center" },
+  undoBtn: { position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)", padding: "9px 14px", ...ghostBtn, fontSize: 12.5 },
   barCenter: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10 },
-  barHint: { fontSize: 13, color: "#94a3b8" },
-  dealBtn: { padding: "13px 40px", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: 1.5, cursor: "pointer", boxShadow: "0 0 26px #f59e0b44" },
-  runBtn: { padding: "13px 22px", background: "#16243a", color: "#e2e8f0", border: "1px solid #2b3a52", borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: "pointer" },
-  runWinnerBox: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "#0e1626", border: "1px solid #1e293b", borderRadius: 8, padding: "6px 8px" },
-  runLabelSm: { fontSize: 9, letterSpacing: 1.5, color: "#cbe8d5", opacity: 0.8, fontWeight: 800 },
-  completeBtn: { padding: "13px 40px", background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#06210f", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: 1.5, cursor: "pointer", boxShadow: "0 0 26px #22c55e44" },
+  barHint: { fontSize: 12.5, color: "var(--text-dim)", textAlign: "center" },
+  dealBtn: { padding: "13px 42px", ...goldBtn, fontSize: 12.5, letterSpacing: 2.6, boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 12px 32px rgba(200,168,90,.18)" },
+  runBtn: { padding: "13px 22px", ...ghostBtn, color: "var(--text)", fontSize: 13 },
+  runWinnerBox: { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: "7px 9px" },
+  runLabelSm: { fontSize: 9, letterSpacing: 2, color: "var(--gold-dim)", fontWeight: 600 },
+  completeBtn: { padding: "13px 42px", background: "linear-gradient(135deg,#93c79d,#5f9a6d)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 12.5, fontWeight: 700, letterSpacing: 2.4, boxShadow: "0 0 0 1px rgba(126,184,138,.35), 0 12px 32px rgba(126,184,138,.16)" },
   actionRow: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "center" },
-  actorTag: { textAlign: "right", marginRight: 6 },
-  actorName: { fontSize: 14, fontWeight: 800, color: "#fde68a" },
-  actorSub: { fontSize: 11, color: "#64748b" },
-  actBtn: { padding: "12px 18px", border: "none", borderRadius: 9, fontSize: 13, fontWeight: 800, letterSpacing: 0.5, cursor: "pointer", color: "#fff", whiteSpace: "nowrap" },
-  foldBtn: { background: "#b91c1c" },
-  checkBtn: { background: "#0e7490" },
-  raiseBtn: { background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17" },
-  allinBtn: { background: "#7c3aed" },
-  raiseGroup: { display: "flex", alignItems: "center", gap: 8, background: "#0e1626", border: "1px solid #1e293b", borderRadius: 10, padding: "6px 8px" },
+  actorTag: { textAlign: "right", marginRight: 8 },
+  actorName: { fontSize: 21, fontWeight: 500, color: "var(--gold-bright)", fontFamily: "var(--font-display)", lineHeight: 1.1 },
+  actorSub: { fontSize: 11, color: "var(--text-mute)", fontVariantNumeric: "tabular-nums" },
+  actBtn: { padding: "12px 18px", border: "1px solid transparent", borderRadius: 3, fontSize: 12, fontWeight: 700, letterSpacing: 1.4, color: "var(--text-strong)", whiteSpace: "nowrap" },
+  foldBtn: { background: "linear-gradient(180deg,#8d4848,#6b3333)", borderColor: "rgba(198,120,120,.35)" },
+  checkBtn: { background: "linear-gradient(180deg,#4d6d8b,#38536c)", borderColor: "rgba(143,176,207,.3)" },
+  raiseBtn: { background: "var(--gold-grad)", color: "var(--ink)" },
+  allinBtn: { background: "linear-gradient(180deg,#71659f,#544982)", borderColor: "rgba(169,156,216,.35)" },
+  raiseGroup: { display: "flex", alignItems: "center", gap: 8, background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 3, padding: "6px 8px" },
   sizeBtns: { display: "flex", gap: 4 },
-  sizeBtn: { padding: "5px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 6, color: "#cbd5e1", fontSize: 11, cursor: "pointer" },
-  betInput: { width: 92, padding: "8px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 7, color: "#fde68a", fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" },
-  slider: { width: 120, accentColor: "#f59e0b" },
+  sizeBtn: { padding: "5px 9px", ...ghostBtn, fontSize: 11 },
+  betInput: { width: 94, padding: "8px", background: "var(--field)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--gold-pale)", fontSize: 13, fontWeight: 600, textAlign: "center", outline: "none" },
+  slider: { width: 120, accentColor: "var(--gold)" },
+  errorInline: { position: "absolute", top: -2, left: "50%", transform: "translate(-50%,-100%)", background: "rgba(107,51,51,.96)", color: "var(--text-strong)", border: "1px solid var(--loss)", borderRadius: 3, padding: "10px 18px", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", boxShadow: "0 12px 32px rgba(0,0,0,.6)", zIndex: 20 },
 
-  errorInline: { position: "absolute", top: -2, left: "50%", transform: "translate(-50%,-100%)", background: "#7f1d1d", color: "#fee2e2", border: "1px solid #ef4444", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 -4px 20px rgba(239,68,68,.4)", zIndex: 20 },
-
-  pickerOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
-  pickerBox: { background: "#0e1626", border: "1px solid #334155", borderRadius: 12, padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,.6)" },
-  confirmBox: { width: 380, maxWidth: "92vw", background: "#0e1626", border: "1px solid #334155", borderRadius: 14, padding: 22, boxShadow: "0 30px 80px rgba(0,0,0,.6)", display: "flex", flexDirection: "column", gap: 14 },
-  confirmTitle: { fontSize: 16, fontWeight: 800, color: "#fbbf24", letterSpacing: 0.5 },
-  confirmBody: { fontSize: 14, lineHeight: 1.6, color: "#e2e8f0" },
-  confirmCards: { fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, color: "#a78bfa", background: "#1e1b3a", padding: "1px 6px", borderRadius: 5 },
+  // ── overlays ──
+  pickerOverlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
+  pickerBox: { background: PANEL_BG, border: "1px solid var(--line-gold)", borderRadius: 3, padding: 18, boxShadow: "var(--shadow-lg)" },
+  confirmBox: { width: 400, maxWidth: "92vw", background: PANEL_BG, border: "1px solid var(--line-gold)", borderRadius: 3, padding: 24, boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column", gap: 14 },
+  confirmTitle: { fontSize: 24, fontWeight: 500, color: "var(--gold-bright)", fontFamily: "var(--font-display)" },
+  confirmBody: { fontSize: 13.5, lineHeight: 1.65, color: "var(--text)" },
+  confirmCards: { fontFamily: "var(--font-mono)", fontWeight: 500, color: "var(--gold-pale)", background: "var(--gold-wash)", border: "1px solid var(--line-gold)", padding: "1px 6px", borderRadius: 3 },
   confirmBtnRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  confirmYes: { flex: 1, minWidth: 150, padding: "10px 14px", background: "linear-gradient(135deg,#a78bfa,#7c3aed)", border: "none", borderRadius: 9, color: "#0a0e17", fontSize: 13, fontWeight: 800, cursor: "pointer" },
-  confirmNo: { padding: "10px 16px", background: "#1e293b", border: "1px solid #334155", borderRadius: 9, color: "#cbd5e1", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  pickerTitle: { fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#94a3b8", marginBottom: 10, textTransform: "uppercase" },
-  pickerCard: { width: 38, height: 34, background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 5, fontSize: 12, fontWeight: 800, padding: 0 },
-  pickerClear: { padding: "7px 16px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, cursor: "pointer" },
-
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 40, padding: 20 },
-  modal: { width: 560, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", background: "#0d1320", border: "1px solid #1e293b", borderRadius: 14, padding: 22, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
-  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 15, fontWeight: 800, color: "#f8fafc" },
-  checkRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1", cursor: "pointer" },
-  genBtn: { padding: "12px", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", border: "none", borderRadius: 9, fontSize: 14, fontWeight: 800, letterSpacing: 1, cursor: "pointer" },
-  preview: { margin: 0, padding: 14, background: "#06090f", color: "#a5d6a7", fontSize: 12, lineHeight: 1.6, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 8, border: "1px solid #1e293b", maxHeight: 320, overflowY: "auto", minHeight: 140 },
-  modalBtns: { display: "flex", gap: 10 },
-  modalNote: { fontSize: 11, color: "#64748b", textAlign: "center" },
-  potBreakdown: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 },
-  potRow: { display: "flex", justifyContent: "space-between", fontSize: 13, color: "#e2e8f0" },
-  potWinner: { color: "#4ade80", fontWeight: 700 },
-  chopTag: { color: "#fbbf24", fontWeight: 800, letterSpacing: 1 },
-  dlBtn: { flex: 1, padding: 12, background: "#22c55e", color: "#06210f", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 800, letterSpacing: 1, cursor: "pointer" },
-  nextBtn: { flex: 1, padding: 12, background: "#1e293b", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 8, fontSize: 13, fontWeight: 700, letterSpacing: 1, cursor: "pointer" },
+  confirmYes: { flex: 1, minWidth: 150, padding: "10px 14px", ...goldBtn, fontSize: 12.5 },
+  confirmNo: { padding: "10px 16px", ...ghostBtn, fontSize: 12.5 },
+  pickerTitle: { fontSize: 9.5, fontWeight: 600, letterSpacing: 2.4, color: "var(--gold)", marginBottom: 12, textTransform: "uppercase" },
+  pickerCard: { width: 38, height: 36, background: "#f4ecd8", border: "1px solid #d8ccb0", borderRadius: 3, fontSize: 13, fontWeight: 700, padding: 0, fontFamily: "var(--font-display)", transition: "transform .12s ease, box-shadow .15s ease, opacity .15s" },
+  pickerClear: { padding: "7px 16px", ...ghostBtn, fontSize: 12 },
+  buyBox: { background: PANEL_BG, border: "1px solid var(--line-gold)", borderRadius: 3, padding: 20, maxWidth: 440, boxShadow: "var(--shadow-lg)" },
+  buyNote: { fontSize: 12, color: "var(--text-dim)", marginBottom: 14, lineHeight: 1.5 },
+  buyBtn: { flex: 1, padding: "12px 10px", border: "1px solid transparent", borderRadius: 3, color: "var(--text-strong)", fontSize: 13.5, fontWeight: 700, letterSpacing: 0.6 },
+  buySub: { fontSize: 10, fontWeight: 400, opacity: 0.85, marginTop: 3, letterSpacing: 0 },
 };
 
 // ── Top nav: switch between Hand Builder and Calendar ────────────────────────
-function NavItem({ to, label, icon, active, navigate, tour }) {
+function NavItem({ to, label, active, navigate, tour }) {
   return (
     <button
       data-tour={tour}
+      className="ui-nav"
       onClick={() => navigate(to)}
       style={{ ...navStyles.item, ...(active ? navStyles.itemActive : {}) }}
     >
-      <span style={{ marginRight: 6 }}>{icon}</span>{label}
+      {label}
     </button>
   );
 }
@@ -3064,17 +3114,20 @@ function NavBar({ route, navigate, me, onLogout, onRedoTutorial }) {
   return (
     <nav style={navStyles.bar}>
       <div style={navStyles.brand}>
-        <span style={navStyles.chip}>♠</span> POKER SUITE
+        <span style={navStyles.chip}>♠</span>
+        <span>Poker <em style={navStyles.brandEm}>Suite</em></span>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <NavItem to="/" label="Hand Builder" icon="🛠" active={route === "builder"} navigate={navigate} />
-        <NavItem to="/calendar" label="Calendar" icon="📅" active={route === "calendar"} navigate={navigate} tour="nav-calendar" />
-        <NavItem to="/dashboard" label="Dashboard" icon="📊" active={route === "dashboard"} navigate={navigate} tour="nav-dashboard" />
+      <div style={navStyles.items}>
+        <NavItem to="/" label="Hand Builder" active={route === "builder"} navigate={navigate} />
+        <NavItem to="/calendar" label="Calendar" active={route === "calendar"} navigate={navigate} tour="nav-calendar" />
+        <NavItem to="/dashboard" label="Dashboard" active={route === "dashboard"} navigate={navigate} tour="nav-dashboard" />
         {me.user.is_admin && (
-          <NavItem to="/admin" label="Admin" icon="🛡" active={route === "admin"} navigate={navigate} />
+          <NavItem to="/admin" label="Admin" active={route === "admin"} navigate={navigate} />
         )}
-        <button style={navStyles.logout} title="Switch to the original site" onClick={() => switchUi("classic")}>Classic view</button>
-        <span style={navStyles.user}>{me.user.username}</span>
+      </div>
+      <div style={navStyles.right}>
+        <button style={navStyles.switchBtn} title="Switch to the original site" onClick={() => switchUi("classic")}>Classic view</button>
+        <span style={navStyles.user}><span style={navStyles.userDot} />{me.user.username}</span>
         <button style={navStyles.help} title="Redo the tutorial" onClick={onRedoTutorial}>?</button>
         <button style={navStyles.logout} onClick={onLogout}>Log out</button>
       </div>
@@ -3192,20 +3245,26 @@ export default function App() {
 }
 
 const navStyles = {
-  root: { display: "flex", flexDirection: "column", minHeight: "100vh", background: "#070b12" },
-  view: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+  root: { display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg)" },
+  view: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" },
   bar: {
-    position: "sticky", top: 0, zIndex: 100, height: 46, boxSizing: "border-box",
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "0 18px", background: "#0a0f1a", borderBottom: "1px solid #1e293b",
-    fontFamily: "'Inter','Segoe UI',system-ui,sans-serif",
+    position: "relative", zIndex: 100, height: 52, flexShrink: 0, boxSizing: "border-box",
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16,
+    padding: "0 20px", background: "linear-gradient(180deg, #13120f 0%, var(--bg) 100%)",
+    borderBottom: "1px solid var(--line)", boxShadow: "0 1px 0 rgba(200,168,90,.07)",
+    fontFamily: "var(--font-ui)",
   },
-  brand: { display: "flex", alignItems: "center", gap: 8, fontWeight: 800, letterSpacing: 1.5, fontSize: 14, color: "#e2e8f0" },
-  chip: { display: "inline-flex", width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#0a0e17", alignItems: "center", justifyContent: "center", fontSize: 13 },
-  item: { padding: "7px 16px", background: "transparent", border: "1px solid transparent", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  itemActive: { background: "#16243a", border: "1px solid #2b3a52", color: "#f8fafc" },
-  user: { fontSize: 12.5, fontWeight: 700, color: "#7dd3fc", marginLeft: 6, padding: "0 4px" },
-  help: { width: 28, height: 28, borderRadius: "50%", background: "#16243a", border: "1px solid #2b3a52", color: "#7dd3fc", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" },
-  logout: { padding: "7px 14px", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  loading: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "#64748b", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", fontSize: 14 },
+  brand: { display: "flex", alignItems: "center", gap: 10, fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, letterSpacing: 0.3, color: "var(--text-strong)", whiteSpace: "nowrap" },
+  brandEm: { color: "var(--gold)", fontStyle: "italic" },
+  chip: { display: "inline-flex", width: 26, height: 26, borderRadius: "50%", background: "var(--gold-grad)", color: "var(--ink)", alignItems: "center", justifyContent: "center", fontSize: 14, fontFamily: "var(--font-ui)", boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 16px rgba(200,168,90,.2)" },
+  items: { display: "flex", gap: 4, alignItems: "center", height: "100%" },
+  item: { height: 34, padding: "0 14px", background: "transparent", border: "none", borderRadius: 3, color: "var(--text-dim)", fontSize: 12.5, fontWeight: 500, letterSpacing: 0.4, fontFamily: "inherit" },
+  itemActive: { color: "var(--text-strong)", background: "var(--gold-wash)", boxShadow: "inset 0 -2px 0 var(--gold)" },
+  right: { display: "flex", gap: 10, alignItems: "center" },
+  switchBtn: { padding: "6px 11px", background: "transparent", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text-mute)", fontSize: 11.5, fontFamily: "inherit" },
+  user: { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 500, color: "var(--text-2)", padding: "0 4px" },
+  userDot: { width: 6, height: 6, borderRadius: "50%", background: "var(--gold)", boxShadow: "0 0 8px rgba(200,168,90,.6)" },
+  help: { width: 28, height: 28, borderRadius: "50%", background: "transparent", border: "1px solid var(--line-strong)", color: "var(--gold)", fontSize: 13, fontWeight: 600, fontFamily: "inherit" },
+  logout: { padding: "7px 13px", background: "transparent", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 12, fontWeight: 500, fontFamily: "inherit" },
+  loading: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: "60vh", color: "var(--text-mute)", fontFamily: "var(--font-display)", fontStyle: "italic", fontSize: 20 },
 };

@@ -2,10 +2,10 @@ import { fmtMoney, fmtMonth } from "./api.js";
 
 const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", incomplete: "In progress" };
 const BONUS_STYLE = {
-  full: { background: "#16a34a", color: "#06210f" },
-  half: { background: "#f59e0b", color: "#0a0e17" },
-  forfeited: { background: "#7f1d1d", color: "#fecaca" },
-  incomplete: { background: "#1e293b", color: "#cbd5e1" },
+  full: { background: "var(--gain-deep)", color: "var(--ink)" },
+  half: { background: "var(--gold)", color: "var(--ink)" },
+  forfeited: { background: "var(--loss-deep)", color: "var(--loss-bright)" },
+  incomplete: { background: "var(--raised-2)", color: "var(--text-2)" },
 };
 
 // Read-only worker dashboard rendered from the /api/me dashboard payload.
@@ -33,7 +33,7 @@ export default function Dashboard({ user, dashboard: d }) {
 
       {/* Your month */}
       {am ? (
-        <div style={{ ...st.panel, border: "1px solid #2b3a52" }}>
+        <div style={{ ...st.panel, border: "1px solid var(--line-strong)" }}>
           <div style={st.monthHead}>
             <span style={st.yourMonthBadge}>YOUR MONTH</span>
             <span style={st.monthTitle}>{fmtMonth(am.month)}</span>
@@ -45,8 +45,8 @@ export default function Dashboard({ user, dashboard: d }) {
           </div>
           <div style={st.progressTrack}><div style={{ ...st.progressFill, width: `${Math.min(100, am.pct)}%` }} /></div>
           <div style={st.monthMeta}>
-            <span>Month bonus: <strong style={{ color: am.amount ? "#4ade80" : "#94a3b8" }}>{fmtMoney(am.amount)}</strong> of {fmtMoney(am.bonus_amount)}</span>
-            <span>Your error rate: <strong style={{ color: am.error_rate < 0.10 ? "#4ade80" : am.error_rate <= 0.20 ? "#fbbf24" : "#fca5a5" }}>{(am.error_rate * 100).toFixed(1)}%</strong> ({am.error_count} errors)</span>
+            <span>Month bonus: <strong style={{ color: am.amount ? "var(--gain-bright)" : "var(--text-dim)" }}>{fmtMoney(am.amount)}</strong> of {fmtMoney(am.bonus_amount)}</span>
+            <span>Your error rate: <strong style={{ color: am.error_rate < 0.10 ? "var(--gain-bright)" : am.error_rate <= 0.20 ? "var(--gold-bright)" : "var(--loss-bright)" }}>{(am.error_rate * 100).toFixed(1)}%</strong> ({am.error_count} errors)</span>
           </div>
           {!am.is_complete && <div style={st.monthNote}>Complete every stream in {fmtMonth(am.month)} to unlock the bonus (helpers count toward completion).</div>}
         </div>
@@ -101,9 +101,9 @@ export default function Dashboard({ user, dashboard: d }) {
               <span style={st.lineTitle}>
                 {h.youtube_url ? (
                   <a style={st.link} href={`${h.youtube_url}${h.youtube_url.includes("?") ? "&" : "?"}t=${h.timestamp_seconds || 0}`} target="_blank" rel="noreferrer">
-                    ⏱ {clock(h.timestamp_seconds)} ↗
+                    {clock(h.timestamp_seconds)} ↗
                   </a>
-                ) : `⏱ ${clock(h.timestamp_seconds)}`}
+                ) : clock(h.timestamp_seconds)}
                 <span style={st.dim}> · {h.stream_id || "—"}</span>
               </span>
               <span style={st.lineMeta}>{fmtMoney(h.earnings)}</span>
@@ -119,7 +119,7 @@ function Stat({ label, value, accent }) {
   return (
     <div style={st.statCard}>
       <div style={st.statLabel}>{label}</div>
-      <div style={{ ...st.statValue, color: accent || "#f8fafc" }}>{value}</div>
+      <div style={{ ...st.statValue, color: accent || "var(--text-strong)" }}>{value}</div>
     </div>
   );
 }
@@ -127,39 +127,39 @@ function Row({ k, v, sub, accent, bold }) {
   return (
     <div style={st.row}>
       <span style={st.rowK}>{k}{sub ? <span style={st.dim}> · {sub}</span> : null}</span>
-      <span style={{ ...st.rowV, color: accent || "#e2e8f0", fontWeight: bold ? 800 : 700 }}>{v}</span>
+      <span style={{ ...st.rowV, color: accent || "var(--text)", fontWeight: bold ? 800 : 700 }}>{v}</span>
     </div>
   );
 }
 
 const st = {
-  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", maxWidth: 1000, margin: "0 auto", width: "100%", boxSizing: "border-box" },
+  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "var(--text)", fontFamily: "var(--font-ui)", maxWidth: 1000, margin: "0 auto", width: "100%", boxSizing: "border-box" },
   h1: { fontSize: 22, fontWeight: 800, margin: "4px 0 16px" },
   cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 16 },
-  statCard: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: "14px 16px" },
-  statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#64748b" },
+  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px" },
+  statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
   statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
-  panel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: 16, marginBottom: 16 },
+  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 16, marginBottom: 16 },
   monthHead: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" },
-  yourMonthBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 1, color: "#0a0e17", background: "#f59e0b", borderRadius: 6, padding: "3px 8px" },
-  monthTitle: { fontSize: 18, fontWeight: 800, color: "#f8fafc" },
-  bonusPill: { fontSize: 10.5, fontWeight: 800, borderRadius: 8, padding: "3px 10px" },
-  monthSub: { fontSize: 12.5, color: "#94a3b8", marginBottom: 8 },
-  progressTrack: { height: 10, borderRadius: 6, background: "#0a0f1a", border: "1px solid #1e293b", overflow: "hidden", marginBottom: 8 },
-  progressFill: { height: "100%", background: "linear-gradient(90deg,#16a34a,#4ade80)" },
-  monthMeta: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12.5, color: "#cbd5e1" },
-  monthNote: { fontSize: 11.5, color: "#64748b", marginTop: 8 },
-  panelHead: { fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "#f59e0b", marginBottom: 10 },
+  yourMonthBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 1, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "3px 8px" },
+  monthTitle: { fontSize: 18, fontWeight: 800, color: "var(--text-strong)" },
+  bonusPill: { fontSize: 10.5, fontWeight: 800, borderRadius: 3, padding: "3px 10px" },
+  monthSub: { fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8 },
+  progressTrack: { height: 10, borderRadius: 3, background: "var(--field)", border: "1px solid var(--line)", overflow: "hidden", marginBottom: 8 },
+  progressFill: { height: "100%", background: "linear-gradient(90deg,var(--gold-deep),var(--gold-bright))" },
+  monthMeta: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12.5, color: "var(--text-2)" },
+  monthNote: { fontSize: 11.5, color: "var(--text-mute)", marginTop: 8 },
+  panelHead: { fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", marginBottom: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13.5 },
-  rowK: { color: "#94a3b8" },
+  rowK: { color: "var(--text-dim)" },
   rowV: { },
-  divider: { height: 1, background: "#1e293b", margin: "8px 0" },
+  divider: { height: 1, background: "var(--raised-2)", margin: "8px 0" },
   two: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px,1fr))", gap: 16 },
-  lineRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #141e2e", fontSize: 13, gap: 10 },
-  lineTitle: { color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  lineMeta: { display: "flex", alignItems: "center", gap: 8, color: "#94a3b8", whiteSpace: "nowrap" },
-  doneTag: { fontSize: 10, fontWeight: 800, color: "#0a0e17", background: "#16a34a", borderRadius: 8, padding: "1px 6px" },
-  empty: { fontSize: 12.5, color: "#64748b", padding: "6px 0" },
-  link: { color: "#7dd3fc", textDecoration: "none", fontWeight: 600 },
-  dim: { color: "#64748b" },
+  lineRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--line)", fontSize: 13, gap: 10 },
+  lineTitle: { color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  lineMeta: { display: "flex", alignItems: "center", gap: 8, color: "var(--text-dim)", whiteSpace: "nowrap" },
+  doneTag: { fontSize: 10, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 6px" },
+  empty: { fontSize: 12.5, color: "var(--text-mute)", padding: "6px 0" },
+  link: { color: "var(--steel)", textDecoration: "none", fontWeight: 600 },
+  dim: { color: "var(--text-mute)" },
 };

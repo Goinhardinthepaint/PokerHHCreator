@@ -1,0 +1,194 @@
+/* The redesign's theme — Sophia's palette and finish, carried over from
+ * sophia-dashboard (src/components/constants.js + src/polish.css):
+ * warm black, gold, warm off-white text, hairline borders, DM Sans for the UI
+ * and Cormorant Garamond for display type. Every colour in the app comes from
+ * the tokens below; the classic UI (src-classic/) doesn't load this file.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap");
+
+:root {
+  color-scheme: dark;
+
+  /* surfaces — warm blacks, darkest first */
+  --bg-deep: #080706;
+  --bg: #0d0c0a;
+  --surface: #11100d;
+  --surface-2: #15130f;
+  --surface-3: #1a1814;
+  --raised: #1f1c17;
+  --raised-2: #26221b;
+  --field: #14120e;
+  --overlay: rgba(6, 5, 4, 0.72);
+
+  /* lines */
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --line-gold: rgba(200, 168, 90, 0.28);
+
+  /* gold */
+  --gold: #c8a85a;
+  --gold-bright: #dec078;
+  --gold-pale: #f0dca0;
+  --gold-deep: #9c8040;
+  --gold-dim: rgba(200, 168, 90, 0.4);
+  --gold-faint: rgba(200, 168, 90, 0.12);
+  --gold-wash: rgba(200, 168, 90, 0.06);
+  --gold-grad: linear-gradient(135deg, #e6cb85 0%, #c8a85a 52%, #a8893f 100%);
+
+  /* text */
+  --text-strong: #f6eedc;
+  --text: rgba(232, 224, 208, 0.92);
+  --text-2: rgba(232, 224, 208, 0.76);
+  --text-dim: rgba(232, 224, 208, 0.55);
+  --text-mute: rgba(232, 224, 208, 0.4);
+  --text-faint: rgba(232, 224, 208, 0.26);
+  --ink: #0d0c0a; /* text on gold */
+
+  /* signal colours, muted for a dark room */
+  --gain: #7eb88a;
+  --gain-bright: #a3d2ac;
+  --gain-deep: #4a7d57;
+  --gain-wash: rgba(126, 184, 138, 0.1);
+  --loss: #c67878;
+  --loss-bright: #e2a3a3;
+  --loss-deep: #7a3e3e;
+  --loss-wash: rgba(198, 120, 120, 0.1);
+  --steel: #8fb0cf;
+  --steel-deep: #3e5a74;
+  --steel-wash: rgba(107, 142, 174, 0.12);
+  --violet: #a99cd8;
+  --violet-deep: #5a4e8c;
+  --violet-wash: rgba(139, 126, 200, 0.12);
+  --copper: #d4815f;
+
+  --radius: 3px;
+  --radius-card: 2px;
+  --ease: cubic-bezier(0.2, 0.8, 0.25, 1);
+  --font-ui: "DM Sans", system-ui, "Segoe UI", sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-mono: "DM Mono", ui-monospace, "Cascadia Mono", monospace;
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden; /* the app shell owns scrolling: panels scroll, the table never does */
+}
+#root { display: flex; flex-direction: column; }
+::selection { background: rgba(200, 168, 90, 0.3); color: var(--text-strong); }
+
+/* Numbers that change in place (stacks, pot, money) don't jiggle. */
+.tnum, input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* ── native controls in the dark ─────────────────────────────────────────── */
+select, option, optgroup,
+input[type="date"], input[type="time"], input[type="number"] {
+  color-scheme: dark;
+}
+option { background: var(--field); color: var(--text); }
+option:checked { background: rgba(200, 168, 90, 0.22); }
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.75) sepia(0.4) saturate(3) hue-rotate(5deg);
+  opacity: 0.85;
+  cursor: pointer;
+}
+input[type="checkbox"], input[type="range"] { accent-color: var(--gold); }
+input[type="checkbox"] { cursor: pointer; }
+
+/* ── motion: controls ease instead of snapping (inline transitions still win) ── */
+button, a, [role="button"], input, select, textarea {
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+    box-shadow 0.25s ease, opacity 0.18s ease, transform 0.14s ease, filter 0.18s ease;
+}
+button { font-family: inherit; }
+button:not(:disabled) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+/* Hover: every button warms a little, whatever its own colours. */
+button:not(:disabled):hover { filter: brightness(1.13) saturate(1.05); }
+/* A press you can feel — a hair down and in. */
+button:not(:disabled):active, [role="button"]:active { transform: translateY(1px) scale(0.985); }
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, summary:focus-visible {
+  outline: 1px solid rgba(200, 168, 90, 0.65);
+  outline-offset: 2px;
+}
+/* Fields: a soft gold glow on focus instead of a hard outline. */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--gold-dim) !important;
+  box-shadow: 0 0 0 1px rgba(200, 168, 90, 0.35), 0 0 18px rgba(200, 168, 90, 0.08);
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint); transition: color 0.2s ease; }
+input:focus::placeholder, textarea:focus::placeholder { color: rgba(232, 224, 208, 0.16); }
+a { color: var(--gold-bright); }
+
+/* ── scrollbars: slim, warmer when reached for ───────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(200, 168, 90, 0.14); border-radius: 3px; transition: background 0.2s ease; }
+::-webkit-scrollbar-thumb:hover { background: rgba(200, 168, 90, 0.34); }
+* { scrollbar-width: thin; scrollbar-color: rgba(200, 168, 90, 0.18) transparent; }
+
+/* ── entrances ───────────────────────────────────────────────────────────── */
+@keyframes uiFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes uiRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes uiPop { from { opacity: 0; transform: translateY(6px) scale(0.975); } to { opacity: 1; transform: none; } }
+@keyframes uiSlideLeft { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes uiToast { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes uiPulseGold {
+  0%, 100% { box-shadow: 0 0 0 1px var(--gold), 0 0 18px rgba(200, 168, 90, 0.35); }
+  50% { box-shadow: 0 0 0 1px var(--gold-bright), 0 0 30px rgba(222, 192, 120, 0.55); }
+}
+@keyframes ytFlash {
+  0%, 100% { border-color: var(--gold-dim); box-shadow: 0 0 0 0 rgba(200, 168, 90, 0); }
+  50% { border-color: var(--gold-bright); box-shadow: 0 0 0 3px rgba(200, 168, 90, 0.16); }
+}
+.ui-fade { animation: uiFade 0.22s ease both; }
+.ui-rise { animation: uiRise 0.45s var(--ease) both; }
+.ui-pop { animation: uiPop 0.26s var(--ease) both; }
+.ui-slide-left { animation: uiSlideLeft 0.34s var(--ease) both; }
+.ui-toast { animation: uiToast 0.3s var(--ease) both; }
+.yt-empty-flash { animation: ytFlash 1.6s ease-in-out infinite; }
+.seat-actor { animation: uiPulseGold 1.6s ease-in-out infinite; }
+
+/* ── hover affordances inline styles can't express ───────────────────────── */
+/* A thread of gold light along the top edge of a card on hover (Sophia's tiles). */
+.ui-card { position: relative; }
+.ui-card::before {
+  content: ""; position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(222, 192, 120, 0.7), transparent);
+  opacity: 0; transform: scaleX(0.6);
+  transition: opacity 0.35s ease, transform 0.5s var(--ease);
+  pointer-events: none;
+}
+.ui-card:hover::before { opacity: 1; transform: scaleX(1); }
+.ui-hover-row { transition: background-color 0.15s ease, border-color 0.15s ease; }
+.ui-hover-row:hover { background-color: var(--gold-wash) !important; }
+.ui-hover-lift { transition: transform 0.18s var(--ease), box-shadow 0.25s ease, border-color 0.2s ease; }
+.ui-hover-lift:hover { transform: translateY(-1px); border-color: var(--line-gold) !important; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35); }
+.ui-nav:hover { color: var(--text-strong) !important; background: var(--gold-wash) !important; }
+/* A slow sheen crosses the primary gold buttons on hover (Sophia's briefing buttons). */
+.ui-sheen { position: relative; overflow: hidden; }
+.ui-sheen::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 245, 210, 0.32) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 0.8s var(--ease);
+  pointer-events: none;
+}
+.ui-sheen:hover::after { transform: translateX(120%); }
+.ui-card-pick:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45); }
+.ui-kbd {
+  display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 6px;
+  border: 1px solid currentColor; border-radius: 3px; opacity: 0.55;
+  font: 600 9.5px/14px var(--font-mono); text-align: center; vertical-align: 1px;
+}

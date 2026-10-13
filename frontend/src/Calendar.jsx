@@ -504,11 +504,11 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResum
                 {st.youtubeUrl ? (
                   <a href={st.youtubeUrl} target="_blank" rel="noreferrer" style={s.streamUrl} title={st.youtubeUrl}>{st.youtubeUrl}</a>
                 ) : (
-                  <div style={{ ...s.streamUrl, color: "#64748b" }}>No URL</div>
+                  <div style={{ ...s.streamUrl, color: "var(--text-mute)" }}>No URL</div>
                 )}
                 <div style={s.streamMetaRow}>
-                  <span>⏱ {fmtDuration(st.durationMinutes)}</span>
-                  <span>🃏 {(st.handsCompleted || 0)}/~{st.handsEstimated || DEFAULT_ESTIMATE} hands</span>
+                  <span>{fmtDuration(st.durationMinutes)}</span>
+                  <span>{(st.handsCompleted || 0)}/~{st.handsEstimated || DEFAULT_ESTIMATE} hands</span>
                 </div>
 
                 <div style={s.progressRow}>
@@ -624,7 +624,7 @@ function ImportModal({ onClose, onImport }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button style={s.fileBtn} onClick={() => fileRef.current && fileRef.current.click()}>📁 Upload CSV file</button>
+          <button style={s.fileBtn} onClick={() => fileRef.current && fileRef.current.click()}>Upload CSV file</button>
           <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" style={{ display: "none" }} onChange={onFile} />
         </div>
 
@@ -638,7 +638,7 @@ function ImportModal({ onClose, onImport }) {
 
         {result && (
           <div style={s.importResult}>
-            Parsed {result.parsed} row{result.parsed === 1 ? "" : "s"} · added <strong style={{ color: "#4ade80" }}>{result.added}</strong>
+            Parsed {result.parsed} row{result.parsed === 1 ? "" : "s"} · added <strong style={{ color: "var(--gain-bright)" }}>{result.added}</strong>
             {result.skipped > 0 ? ` · skipped ${result.skipped} (duplicate/invalid)` : ""}
           </div>
         )}
@@ -654,93 +654,93 @@ function ImportModal({ onClose, onImport }) {
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 const s = {
-  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 32px", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
+  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 32px", color: "var(--text)", fontFamily: "var(--font-ui)" },
 
   // Stats banner
-  banner: { display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "space-between", background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: "14px 20px", marginBottom: 16 },
+  banner: { display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 20px", marginBottom: 16 },
   statGroup: { display: "flex", gap: 28, flexWrap: "wrap" },
   statBlock: { display: "flex", flexDirection: "column", gap: 3 },
-  statLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#64748b" },
-  statValue: { fontSize: 20, fontWeight: 800, color: "#f8fafc" },
-  statPct: { fontSize: 13, fontWeight: 700, color: "#4ade80" },
-  statSub: { fontSize: 13, fontWeight: 600, color: "#64748b" },
+  statLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
+  statValue: { fontSize: 20, fontWeight: 800, color: "var(--text-strong)" },
+  statPct: { fontSize: 13, fontWeight: 700, color: "var(--gain-bright)" },
+  statSub: { fontSize: 13, fontWeight: 600, color: "var(--text-mute)" },
   progressWrap: { flex: "1 1 240px", minWidth: 200 },
-  progressTrack: { height: 10, borderRadius: 6, background: "#0a0f1a", border: "1px solid #1e293b", overflow: "hidden" },
-  progressFill: { height: "100%", background: "linear-gradient(90deg,#16a34a,#4ade80)", transition: "width .3s" },
-  progressCaption: { fontSize: 11, color: "#94a3b8", marginTop: 4, textAlign: "right" },
+  progressTrack: { height: 10, borderRadius: 3, background: "var(--field)", border: "1px solid var(--line)", overflow: "hidden" },
+  progressFill: { height: "100%", background: "linear-gradient(90deg,var(--gold-deep),var(--gold-bright))", transition: "width .3s" },
+  progressCaption: { fontSize: 11, color: "var(--text-dim)", marginTop: 4, textAlign: "right" },
 
   // Toolbar
   toolbar: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   monthNav: { display: "flex", alignItems: "center", gap: 10 },
-  navArrow: { width: 34, height: 34, borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#e2e8f0", fontSize: 20, lineHeight: 1, cursor: "pointer" },
-  monthTitle: { fontSize: 18, fontWeight: 800, color: "#f8fafc", minWidth: 170, textAlign: "center" },
-  yourMonth: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", background: "#f59e0b", borderRadius: 8, padding: "4px 10px" },
-  ownedBy: { fontSize: 10.5, fontWeight: 700, color: "#cbd5e1", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, padding: "4px 10px" },
-  monthDone: { fontSize: 10, fontWeight: 800, color: "#06210f", background: "#16a34a", borderRadius: 8, padding: "3px 8px" },
-  todayBtn: { padding: "7px 14px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  addBtn: { padding: "8px 14px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#7dd3fc", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  importBtn: { padding: "8px 14px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  navArrow: { width: 34, height: 34, borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text)", fontSize: 20, lineHeight: 1, cursor: "pointer" },
+  monthTitle: { fontSize: 18, fontWeight: 800, color: "var(--text-strong)", minWidth: 170, textAlign: "center" },
+  yourMonth: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "4px 10px" },
+  ownedBy: { fontSize: 10.5, fontWeight: 700, color: "var(--text-2)", background: "var(--raised)", border: "1px solid var(--line-strong)", borderRadius: 3, padding: "4px 10px" },
+  monthDone: { fontSize: 10, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "3px 8px" },
+  todayBtn: { padding: "7px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  addBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--steel)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  importBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
 
   // Grid
   weekRow: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 },
-  weekCell: { textAlign: "center", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "#64748b", textTransform: "uppercase" },
+  weekCell: { textAlign: "center", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--text-mute)", textTransform: "uppercase" },
   grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(108px, auto)", gap: 6 },
-  cell: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 9, padding: 6, display: "flex", flexDirection: "column", gap: 4, cursor: "pointer", overflow: "hidden", transition: "border-color .12s" },
+  cell: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, padding: 6, display: "flex", flexDirection: "column", gap: 4, cursor: "pointer", overflow: "hidden", transition: "border-color .12s" },
   cellOut: { background: "#0a0d15", opacity: 0.5 },
-  cellToday: { borderColor: "#f59e0b", boxShadow: "0 0 0 1px #f59e0b55" },
+  cellToday: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px #f59e0b55" },
   cellHead: { display: "flex", alignItems: "center", justifyContent: "space-between" },
-  cellDay: { fontSize: 12, fontWeight: 700, color: "#94a3b8" },
-  cellDayToday: { background: "#f59e0b", color: "#0a0e17", borderRadius: "50%", width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" },
-  cellMulti: { fontSize: 9, fontWeight: 800, color: "#0a0e17", background: "#7dd3fc", borderRadius: 8, padding: "1px 6px" },
+  cellDay: { fontSize: 12, fontWeight: 700, color: "var(--text-dim)" },
+  cellDayToday: { background: "var(--gold)", color: "var(--ink)", borderRadius: "50%", width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  cellMulti: { fontSize: 9, fontWeight: 800, color: "var(--ink)", background: "#7dd3fc", borderRadius: 3, padding: "1px 6px" },
   cellStreams: { display: "flex", flexDirection: "column", gap: 3, overflow: "hidden" },
-  streamChip: { background: "#0e1626", borderRadius: 5, padding: "3px 5px", overflow: "hidden" },
-  chipTitle: { fontSize: 10.5, fontWeight: 700, color: "#e2e8f0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  chipMeta: { display: "flex", alignItems: "center", gap: 4, fontSize: 9.5, color: "#94a3b8", marginTop: 1 },
+  streamChip: { background: "var(--surface-2)", borderRadius: 3, padding: "3px 5px", overflow: "hidden" },
+  chipTitle: { fontSize: 10.5, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  chipMeta: { display: "flex", alignItems: "center", gap: 4, fontSize: 9.5, color: "var(--text-dim)", marginTop: 1 },
   statusDot: { width: 7, height: 7, borderRadius: "50%", flexShrink: 0 },
-  moreRow: { fontSize: 9.5, color: "#64748b", fontWeight: 600, paddingLeft: 2 },
+  moreRow: { fontSize: 9.5, color: "var(--text-mute)", fontWeight: 600, paddingLeft: 2 },
 
   // Day drawer
-  drawerOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
-  drawer: { width: 400, maxWidth: "100%", height: "100%", background: "#0d1320", borderLeft: "1px solid #1e293b", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
-  drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid #1e293b" },
-  drawerTitle: { fontSize: 16, fontWeight: 800, color: "#f8fafc" },
-  drawerSub: { fontSize: 12, color: "#64748b", marginTop: 2 },
-  closeBtn: { width: 30, height: 30, borderRadius: 7, background: "#1e293b", border: "1px solid #334155", color: "#cbd5e1", fontSize: 13, cursor: "pointer" },
+  drawerOverlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
+  drawer: { width: 400, maxWidth: "100%", height: "100%", background: "var(--surface)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
+  drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--line)" },
+  drawerTitle: { fontSize: 16, fontWeight: 800, color: "var(--text-strong)" },
+  drawerSub: { fontSize: 12, color: "var(--text-mute)", marginTop: 2 },
+  closeBtn: { width: 30, height: 30, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, cursor: "pointer" },
   drawerBody: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 },
-  emptyDay: { fontSize: 13, color: "#64748b", textAlign: "center", padding: "12px 0" },
+  emptyDay: { fontSize: 13, color: "var(--text-mute)", textAlign: "center", padding: "12px 0" },
 
-  streamCard: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 10, padding: 12 },
+  streamCard: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 4, padding: 12 },
   streamCardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
-  statusBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: "#0a0e17", borderRadius: 8, padding: "2px 8px" },
-  miniX: { width: 22, height: 22, borderRadius: 6, background: "#1e293b", border: "1px solid #334155", color: "#94a3b8", fontSize: 11, cursor: "pointer" },
-  streamTitle: { fontSize: 14, fontWeight: 700, color: "#f1f5f9", marginBottom: 3 },
-  streamUrl: { display: "block", fontSize: 11, color: "#7dd3fc", textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 8 },
-  streamMetaRow: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "#94a3b8", marginBottom: 8 },
+  statusBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: "var(--ink)", borderRadius: 3, padding: "2px 8px" },
+  miniX: { width: 22, height: 22, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-dim)", fontSize: 11, cursor: "pointer" },
+  streamTitle: { fontSize: 14, fontWeight: 700, color: "var(--text-strong)", marginBottom: 3 },
+  streamUrl: { display: "block", fontSize: 11, color: "var(--steel)", textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 8 },
+  streamMetaRow: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-dim)", marginBottom: 8 },
   progressRow: { display: "flex", alignItems: "center", gap: 6, marginBottom: 10 },
-  numInput: { width: 64, padding: "5px 7px", background: "#0a0f1a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12, textAlign: "center", outline: "none" },
-  doneCount: { fontSize: 14, fontWeight: 800, color: "#4ade80", minWidth: 28, textAlign: "center" },
+  numInput: { width: 64, padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text)", fontSize: 12, textAlign: "center", outline: "none" },
+  doneCount: { fontSize: 14, fontWeight: 800, color: "var(--gain-bright)", minWidth: 28, textAlign: "center" },
   streamActions: { display: "flex", gap: 8 },
-  completeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  completeOn: { flex: 1, padding: "8px", borderRadius: 8, background: "#16a34a", border: "1px solid #16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, cursor: "pointer" },
-  openBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "#0e7490", border: "1px solid #155e75", color: "#e0f2fe", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  resumeBtn: { flex: 1, padding: "8px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 12, fontWeight: 800, cursor: "pointer" },
-  downloadBtn: { display: "block", textAlign: "center", marginTop: 6, padding: "8px", borderRadius: 8, background: "#16a34a", color: "#06210f", fontSize: 12, fontWeight: 800, textDecoration: "none" },
+  completeBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  completeOn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", border: "1px solid var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 800, cursor: "pointer" },
+  openBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--steel-deep)", border: "1px solid var(--steel-deep)", color: "var(--text-strong)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  resumeBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12, fontWeight: 800, cursor: "pointer" },
+  downloadBtn: { display: "block", textAlign: "center", marginTop: 6, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 800, textDecoration: "none" },
 
-  addForm: { background: "#0e1626", border: "1px dashed #334155", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
-  addFormTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase" },
-  fieldLabel: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748b" },
-  textInput: { padding: "8px 10px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%", marginBottom: 4 },
-  saveBtn: { flex: 1, padding: "9px", borderRadius: 8, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", color: "#0a0e17", fontSize: 13, fontWeight: 800, cursor: "pointer" },
-  cancelBtn: { flex: 1, padding: "9px", borderRadius: 8, background: "#1e293b", border: "1px solid #334155", color: "#cbd5e1", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  addAnother: { padding: "9px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#7dd3fc", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  addForm: { background: "var(--surface-2)", border: "1px dashed var(--line-strong)", borderRadius: 4, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
+  addFormTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "var(--gold)", marginBottom: 4, textTransform: "uppercase" },
+  fieldLabel: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-mute)" },
+  textInput: { padding: "8px 10px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%", marginBottom: 4 },
+  saveBtn: { flex: 1, padding: "9px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 13, fontWeight: 800, cursor: "pointer" },
+  cancelBtn: { flex: 1, padding: "9px", borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  addAnother: { padding: "9px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--steel)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
 
   // Import modal
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 20 },
-  modal: { width: 580, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", background: "#0d1320", border: "1px solid #1e293b", borderRadius: 14, padding: 22, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
-  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 16, fontWeight: 800, color: "#f8fafc" },
-  modalNote: { fontSize: 12, color: "#94a3b8", lineHeight: 1.6 },
-  code: { background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 4, padding: "1px 5px", fontSize: 11, color: "#fbbf24", fontFamily: "'JetBrains Mono',monospace" },
-  fileBtn: { padding: "8px 14px", borderRadius: 8, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  csvBox: { width: "100%", height: 180, boxSizing: "border-box", padding: 12, background: "#06090f", border: "1px solid #1e293b", borderRadius: 8, color: "#a5d6a7", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", outline: "none", resize: "vertical" },
-  importResult: { fontSize: 12.5, color: "#cbd5e1", background: "#0e1626", border: "1px solid #1e293b", borderRadius: 8, padding: "8px 12px" },
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 20 },
+  modal: { width: 580, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 22, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
+  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 16, fontWeight: 800, color: "var(--text-strong)" },
+  modalNote: { fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 },
+  code: { background: "var(--field)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px", fontSize: 11, color: "var(--gold-bright)", fontFamily: "var(--font-mono)" },
+  fileBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  csvBox: { width: "100%", height: 180, boxSizing: "border-box", padding: 12, background: "var(--bg-deep)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--gold-pale)", fontSize: 12, fontFamily: "var(--font-mono)", outline: "none", resize: "vertical" },
+  importResult: { fontSize: 12.5, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 3, padding: "8px 12px" },
 };

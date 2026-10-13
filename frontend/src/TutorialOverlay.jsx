@@ -31,16 +31,16 @@ function position(r, placement, W) {
     const leftEdge = Math.min(Math.max(cx - W / 2, 8), vw - W - 8);
     const arrowX = Math.min(Math.max(cx - leftEdge, 18), W - 18);
     if (placement === "below") {
-      return { box: { top: r.top + r.height + GAP, left: leftEdge }, arrow: { top: -7, left: arrowX - 7, borderWidth: "0 7px 8px 7px", borderColor: "transparent transparent #f59e0b transparent" } };
+      return { box: { top: r.top + r.height + GAP, left: leftEdge }, arrow: { top: -7, left: arrowX - 7, borderWidth: "0 7px 8px 7px", borderColor: "transparent transparent var(--gold) transparent" } };
     }
-    return { box: { top: r.top - GAP, left: leftEdge, transform: "translateY(-100%)" }, arrow: { bottom: -7, left: arrowX - 7, borderWidth: "8px 7px 0 7px", borderColor: "#f59e0b transparent transparent transparent" } };
+    return { box: { top: r.top - GAP, left: leftEdge, transform: "translateY(-100%)" }, arrow: { bottom: -7, left: arrowX - 7, borderWidth: "8px 7px 0 7px", borderColor: "var(--gold) transparent transparent transparent" } };
   }
   // left / right — vertically centred on the target
   const top = Math.min(Math.max(cy, 130), window.innerHeight - 130);
   if (placement === "right") {
-    return { box: { top, left: r.left + r.width + GAP, transform: "translateY(-50%)" }, arrow: { left: -7, top: "calc(50% - 7px)", borderWidth: "7px 8px 7px 0", borderColor: "transparent #f59e0b transparent transparent" } };
+    return { box: { top, left: r.left + r.width + GAP, transform: "translateY(-50%)" }, arrow: { left: -7, top: "calc(50% - 7px)", borderWidth: "7px 8px 7px 0", borderColor: "transparent var(--gold) transparent transparent" } };
   }
-  return { box: { top, left: r.left - GAP, transform: "translate(-100%,-50%)" }, arrow: { right: -7, top: "calc(50% - 7px)", borderWidth: "7px 0 7px 8px", borderColor: "transparent transparent transparent #f59e0b" } };
+  return { box: { top, left: r.left - GAP, transform: "translate(-100%,-50%)" }, arrow: { right: -7, top: "calc(50% - 7px)", borderWidth: "7px 0 7px 8px", borderColor: "transparent transparent transparent var(--gold)" } };
 }
 
 export default function TutorialOverlay({ steps, onFinish, bonusAwarded }) {
@@ -94,7 +94,7 @@ export default function TutorialOverlay({ steps, onFinish, bonusAwarded }) {
       <div style={{ ...st.box, ...pos.box, width: W }}>
         {pos.arrow && <div style={{ ...st.arrow, ...pos.arrow }} />}
         <div style={st.stepNo}>Step {i + 1} of {steps.length}</div>
-        <div style={st.title}>{step.final ? (bonusAwarded ? "🎉 Tutorial complete!" : "🎉 Tutorial complete!") : step.title}</div>
+        <div style={st.title}>{step.final ? "Tutorial complete" : step.title}</div>
 
         {step.howto ? (
           <>
@@ -169,22 +169,22 @@ const SLIDES = [
 ];
 
 const st = {
-  root: { position: "fixed", inset: 0, zIndex: 1000, pointerEvents: "none", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" },
-  spot: { position: "fixed", borderRadius: 10, border: "3px solid #f59e0b", boxShadow: "0 0 0 9999px rgba(3,6,12,.66), 0 0 22px 4px rgba(245,158,11,.6)", transition: "all .25s cubic-bezier(.4,0,.2,1)", pointerEvents: "none" },
-  dim: { position: "fixed", inset: 0, background: "rgba(3,6,12,.66)", pointerEvents: "none" },
-  box: { position: "fixed", width: TOOLTIP_W, boxSizing: "border-box", background: "#0e1626", border: "1px solid #f59e0b", borderRadius: 12, padding: "14px 16px 12px", boxShadow: "0 20px 60px rgba(0,0,0,.6)", pointerEvents: "auto", transition: "top .25s, left .25s", color: "#e2e8f0" },
+  root: { position: "fixed", inset: 0, zIndex: 1000, pointerEvents: "none", fontFamily: "var(--font-ui)" },
+  spot: { position: "fixed", borderRadius: 4, border: "3px solid var(--gold)", boxShadow: "0 0 0 9999px rgba(6,5,4,.66), 0 0 22px 4px rgba(200,168,90,.6)", transition: "all .25s cubic-bezier(.4,0,.2,1)", pointerEvents: "none" },
+  dim: { position: "fixed", inset: 0, background: "rgba(6,5,4,.66)", pointerEvents: "none" },
+  box: { position: "fixed", width: TOOLTIP_W, boxSizing: "border-box", background: "var(--surface-2)", border: "1px solid var(--gold)", borderRadius: 4, padding: "14px 16px 12px", boxShadow: "0 20px 60px rgba(0,0,0,.6)", pointerEvents: "auto", transition: "top .25s, left .25s", color: "var(--text)" },
   arrow: { position: "absolute", width: 0, height: 0, borderStyle: "solid" },
-  stepNo: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "#f59e0b", marginBottom: 4 },
-  title: { fontSize: 15, fontWeight: 800, color: "#f8fafc", marginBottom: 5 },
-  desc: { fontSize: 12.5, lineHeight: 1.5, color: "#cbd5e1" },
-  slideFrame: { background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 8, padding: 8, marginBottom: 6 },
+  stepNo: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", marginBottom: 4 },
+  title: { fontSize: 15, fontWeight: 800, color: "var(--text-strong)", marginBottom: 5 },
+  desc: { fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" },
+  slideFrame: { background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, padding: 8, marginBottom: 6 },
   slideNav: { display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 },
-  slideArrow: { width: 24, height: 24, borderRadius: 6, background: "#16243a", border: "1px solid #2b3a52", color: "#cbd5e1", fontSize: 14, fontWeight: 800, cursor: "pointer", lineHeight: 1 },
+  slideArrow: { width: 24, height: 24, borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 14, fontWeight: 800, cursor: "pointer", lineHeight: 1 },
   dots: { display: "flex", gap: 6 },
-  dot: { width: 8, height: 8, borderRadius: "50%", background: "#334155", cursor: "pointer" },
-  dotOn: { background: "#f59e0b" },
+  dot: { width: 8, height: 8, borderRadius: "50%", background: "var(--raised-2)", cursor: "pointer" },
+  dotOn: { background: "var(--gold)" },
   actions: { display: "flex", alignItems: "center", gap: 8, marginTop: 12 },
-  back: { padding: "6px 12px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  next: { padding: "7px 18px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
-  skip: { display: "block", margin: "8px auto 0", background: "none", border: "none", color: "#64748b", fontSize: 11, fontWeight: 600, cursor: "pointer", textDecoration: "underline" },
+  back: { padding: "6px 12px", background: "var(--raised-2)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  next: { padding: "7px 18px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  skip: { display: "block", margin: "8px auto 0", background: "none", border: "none", color: "var(--text-mute)", fontSize: 11, fontWeight: 600, cursor: "pointer", textDecoration: "underline" },
 };

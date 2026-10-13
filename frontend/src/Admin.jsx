@@ -110,12 +110,12 @@ export default function Admin() {
                 return (
                   <tr key={u.id} style={st.tr} onClick={() => openUser(u.id)}>
                     <td style={st.td}>{u.username}{u.is_admin ? <span style={st.adminTag}>ADMIN</span> : null}</td>
-                    <td style={{ ...st.td, color: "#94a3b8" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}` : "—"}</td>
+                    <td style={{ ...st.td, color: "var(--text-dim)" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}` : "—"}</td>
                     <td style={st.td}>{u.hands}</td>
-                    <td style={{ ...st.td, color: u.error_rate > 0.20 ? "#fca5a5" : u.error_rate >= 0.10 ? "#fbbf24" : "#64748b" }}>{u.error_count} ({(u.error_rate * 100).toFixed(0)}%)</td>
-                    <td style={{ ...st.td, color: "#4ade80" }}>{fmtMoney(u.earnings)}</td>
-                    <td style={{ ...st.td, color: u.owed > 0 ? "#fbbf24" : "#64748b" }}>{fmtMoney(u.owed)}</td>
-                    <td style={{ ...st.td, color: "#64748b" }}>{(u.last_active || "").slice(0, 10)}</td>
+                    <td style={{ ...st.td, color: u.error_rate > 0.20 ? "var(--loss-bright)" : u.error_rate >= 0.10 ? "var(--gold-bright)" : "var(--text-mute)" }}>{u.error_count} ({(u.error_rate * 100).toFixed(0)}%)</td>
+                    <td style={{ ...st.td, color: "var(--gain-bright)" }}>{fmtMoney(u.earnings)}</td>
+                    <td style={{ ...st.td, color: u.owed > 0 ? "var(--gold-bright)" : "var(--text-mute)" }}>{fmtMoney(u.owed)}</td>
+                    <td style={{ ...st.td, color: "var(--text-mute)" }}>{(u.last_active || "").slice(0, 10)}</td>
                     <td style={st.td}>
                       <div style={st.rowActions}>
                         <button style={st.resetBtn} title="Set a new password for this user"
@@ -153,7 +153,7 @@ export default function Admin() {
                   {s.contributors.map((c) => `${c.username} (${c.hands})`).join(", ") || "no contributors"}
                 </div>
               </div>
-              <span style={{ ...st.badge, background: s.is_complete ? "#16a34a" : "#475569" }}>
+              <span style={{ ...st.badge, background: s.is_complete ? "var(--gain-deep)" : "var(--raised-2)" }}>
                 {s.is_complete ? "complete" : "in progress"}
               </span>
             </div>
@@ -207,7 +207,7 @@ function ImportHands({ onImported }) {
       <div style={st.section}>Import Hands</div>
       <div style={st.importRow}>
         <label style={st.fileBtn}>
-          📁 Choose .txt file(s)
+          Choose .txt file(s)
           <input type="file" accept=".txt,text/plain" multiple style={{ display: "none" }}
             onChange={(e) => setFiles(Array.from(e.target.files || []))} />
         </label>
@@ -358,11 +358,11 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                     {mb ? (
                       <div style={st.bonusLine}>
                         <span>{fmtMonth(mb.month)} — {mb.hands_done}/{mb.hands_estimated} ({mb.pct}%) · {mb.is_complete ? "complete" : "in progress"}</span>
-                        <span style={{ color: mb.amount ? "#4ade80" : "#94a3b8", fontWeight: 800 }}>{BONUS_LABEL[mb.status]} {fmtMoney(mb.amount)}</span>
+                        <span style={{ color: mb.amount ? "var(--gain-bright)" : "var(--text-dim)", fontWeight: 800 }}>{BONUS_LABEL[mb.status]} {fmtMoney(mb.amount)}</span>
                       </div>
                     ) : <div style={st.dim}>No month assigned.</div>}
                     <div style={st.bonusLine}>
-                      <span>Error rate: <strong style={{ color: detail.user.error_rate > 0.20 ? "#fca5a5" : detail.user.error_rate >= 0.10 ? "#fbbf24" : "#4ade80" }}>{(detail.user.error_rate * 100).toFixed(1)}%</strong> ({detail.user.error_count} errors / {detail.stats.hands} hands)</span>
+                      <span>Error rate: <strong style={{ color: detail.user.error_rate > 0.20 ? "var(--loss-bright)" : detail.user.error_rate >= 0.10 ? "var(--gold-bright)" : "var(--gain-bright)" }}>{(detail.user.error_rate * 100).toFixed(1)}%</strong> ({detail.user.error_count} errors / {detail.stats.hands} hands)</span>
                     </div>
                     <div style={st.payForm}>
                       <input style={st.input} type="number" min={0} placeholder={`set total errors (now ${detail.user.error_count})`} value={errCount} onChange={(e) => setErrCount(e.target.value)} />
@@ -441,7 +441,7 @@ function Stat({ label, value, accent }) {
   return (
     <div style={st.statCard}>
       <div style={st.statLabel}>{label}</div>
-      <div style={{ ...st.statValue, color: accent || "#f8fafc" }}>{value}</div>
+      <div style={{ ...st.statValue, color: accent || "var(--text-strong)" }}>{value}</div>
     </div>
   );
 }
@@ -449,78 +449,78 @@ function Mini({ k, v, c }) {
   return (
     <div style={st.mini}>
       <div style={st.miniK}>{k}</div>
-      <div style={{ ...st.miniV, color: c || "#f8fafc" }}>{v}</div>
+      <div style={{ ...st.miniV, color: c || "var(--text-strong)" }}>{v}</div>
     </div>
   );
 }
 
 const st = {
-  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "#e2e8f0", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", maxWidth: 1040, margin: "0 auto", width: "100%", boxSizing: "border-box" },
+  page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "var(--text)", fontFamily: "var(--font-ui)", maxWidth: 1040, margin: "0 auto", width: "100%", boxSizing: "border-box" },
   headRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   h1: { fontSize: 22, fontWeight: 800, margin: 0 },
-  exportBtn: { padding: "9px 16px", background: "#16a34a", color: "#06210f", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 800, cursor: "pointer", textDecoration: "none" },
+  exportBtn: { padding: "9px 16px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 13, fontWeight: 800, cursor: "pointer", textDecoration: "none" },
   cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 16 },
-  statCard: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: "14px 16px" },
-  statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#64748b" },
+  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px" },
+  statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
   statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
   tabs: { display: "flex", gap: 6, marginBottom: 12 },
-  tab: { padding: "8px 16px", background: "#0d1320", border: "1px solid #1e293b", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  tabOn: { background: "#16243a", color: "#f8fafc", borderColor: "#2b3a52" },
-  panel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: 8 },
+  tab: { padding: "8px 16px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text-dim)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  tabOn: { background: "var(--raised)", color: "var(--text-strong)", borderColor: "var(--line-strong)" },
+  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 8 },
   table: { width: "100%", borderCollapse: "collapse" },
-  thr: { borderBottom: "1px solid #1e293b" },
-  th: { textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "#64748b", padding: "8px 10px" },
-  tr: { cursor: "pointer", borderBottom: "1px solid #141e2e" },
+  thr: { borderBottom: "1px solid var(--line)" },
+  th: { textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--text-mute)", padding: "8px 10px" },
+  tr: { cursor: "pointer", borderBottom: "1px solid var(--line)" },
   td: { padding: "9px 10px", fontSize: 13 },
-  adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 800, color: "#0a0e17", background: "#f59e0b", borderRadius: 6, padding: "1px 5px" },
-  importPanel: { background: "#0d1320", border: "1px solid #1e293b", borderRadius: 12, padding: "12px 16px", marginBottom: 16 },
+  adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 800, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "1px 5px" },
+  importPanel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "12px 16px", marginBottom: 16 },
   importRow: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "8px 0" },
-  fileBtn: { display: "inline-block", padding: "8px 14px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 8, color: "#cbd5e1", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  importArea: { width: "100%", minHeight: 110, boxSizing: "border-box", padding: "10px 11px", background: "#06090f", border: "1px solid #1e293b", borderRadius: 8, color: "#a5d6a7", fontSize: 11.5, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.5, resize: "vertical", outline: "none" },
-  importResult: { fontSize: 13, color: "#cbd5e1" },
-  importErrList: { marginTop: 8, fontSize: 11.5, color: "#fbbf24", background: "#241a06", border: "1px solid #5a4410", borderRadius: 8, padding: "8px 10px", maxHeight: 140, overflowY: "auto" },
+  fileBtn: { display: "inline-block", padding: "8px 14px", background: "var(--raised)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  importArea: { width: "100%", minHeight: 110, boxSizing: "border-box", padding: "10px 11px", background: "var(--bg-deep)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--gold-pale)", fontSize: 11.5, fontFamily: "var(--font-mono)", lineHeight: 1.5, resize: "vertical", outline: "none" },
+  importResult: { fontSize: 13, color: "var(--text-2)" },
+  importErrList: { marginTop: 8, fontSize: 11.5, color: "var(--gold-bright)", background: "var(--gold-wash)", border: "1px solid var(--line-gold)", borderRadius: 3, padding: "8px 10px", maxHeight: 140, overflowY: "auto" },
   rowActions: { display: "flex", gap: 6 },
-  resetBtn: { padding: "5px 9px", background: "#16243a", border: "1px solid #2b3a52", borderRadius: 6, color: "#cbd5e1", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
-  delBtn: { padding: "5px 9px", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 6, color: "#fca5a5", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
-  streamRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid #141e2e" },
-  monthRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "12px 10px", borderBottom: "1px solid #141e2e", flexWrap: "wrap" },
-  monthTitle: { fontSize: 14, fontWeight: 800, color: "#f1f5f9", display: "flex", alignItems: "center", gap: 8, marginBottom: 3 },
-  completeTag: { fontSize: 9.5, fontWeight: 800, color: "#06210f", background: "#16a34a", borderRadius: 7, padding: "1px 7px" },
-  neglectTag: { fontSize: 9.5, fontWeight: 800, color: "#fecaca", background: "#7f1d1d", borderRadius: 7, padding: "1px 7px" },
-  monthMeta: { fontSize: 11.5, color: "#94a3b8", marginBottom: 6 },
-  progressTrack: { height: 7, borderRadius: 5, background: "#0a0f1a", border: "1px solid #1e293b", overflow: "hidden", maxWidth: 360 },
-  progressFill: { height: "100%", background: "linear-gradient(90deg,#16a34a,#4ade80)" },
+  resetBtn: { padding: "5px 9px", background: "var(--raised)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" },
+  delBtn: { padding: "5px 9px", background: "var(--loss-wash)", border: "1px solid var(--loss-deep)", borderRadius: 3, color: "var(--loss-bright)", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  streamRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid var(--line)" },
+  monthRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "12px 10px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" },
+  monthTitle: { fontSize: 14, fontWeight: 800, color: "var(--text-strong)", display: "flex", alignItems: "center", gap: 8, marginBottom: 3 },
+  completeTag: { fontSize: 9.5, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 7px" },
+  neglectTag: { fontSize: 9.5, fontWeight: 800, color: "var(--loss-bright)", background: "var(--loss-deep)", borderRadius: 3, padding: "1px 7px" },
+  monthMeta: { fontSize: 11.5, color: "var(--text-dim)", marginBottom: 6 },
+  progressTrack: { height: 7, borderRadius: 3, background: "var(--field)", border: "1px solid var(--line)", overflow: "hidden", maxWidth: 360 },
+  progressFill: { height: "100%", background: "linear-gradient(90deg,var(--gold-deep),var(--gold-bright))" },
   assignBox: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" },
-  bonusCard: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 9, padding: 10, display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 },
-  bonusLine: { display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: "#cbd5e1" },
-  streamTitle: { fontSize: 13.5, fontWeight: 700, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  streamMeta: { fontSize: 11.5, color: "#94a3b8", marginTop: 2 },
-  badge: { fontSize: 10, fontWeight: 800, color: "#0a0e17", borderRadius: 8, padding: "3px 9px", whiteSpace: "nowrap" },
-  empty: { fontSize: 12.5, color: "#64748b", padding: 12 },
+  bonusCard: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 3, padding: 10, display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 },
+  bonusLine: { display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: "var(--text-2)" },
+  streamTitle: { fontSize: 13.5, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  streamMeta: { fontSize: 11.5, color: "var(--text-dim)", marginTop: 2 },
+  badge: { fontSize: 10, fontWeight: 800, color: "var(--ink)", borderRadius: 3, padding: "3px 9px", whiteSpace: "nowrap" },
+  empty: { fontSize: 12.5, color: "var(--text-mute)", padding: 12 },
 
-  overlay: { position: "fixed", inset: 0, background: "rgba(3,6,12,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
-  drawer: { width: 460, maxWidth: "100%", height: "100%", background: "#0d1320", borderLeft: "1px solid #1e293b", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
-  drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid #1e293b" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
+  drawer: { width: 460, maxWidth: "100%", height: "100%", background: "var(--surface)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
+  drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--line)" },
   drawerTitle: { fontSize: 17, fontWeight: 800 },
-  drawerSub: { fontSize: 12, color: "#64748b", marginTop: 2 },
-  closeBtn: { width: 30, height: 30, borderRadius: 7, background: "#1e293b", border: "1px solid #334155", color: "#cbd5e1", fontSize: 13, cursor: "pointer" },
+  drawerSub: { fontSize: 12, color: "var(--text-mute)", marginTop: 2 },
+  closeBtn: { width: 30, height: 30, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, cursor: "pointer" },
   drawerBody: { flex: 1, overflowY: "auto", padding: 16 },
   miniStats: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 },
-  mini: { background: "#0e1626", border: "1px solid #1e293b", borderRadius: 8, padding: "8px 6px", textAlign: "center" },
-  miniK: { fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "#64748b" },
+  mini: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 3, padding: "8px 6px", textAlign: "center" },
+  miniK: { fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-mute)" },
   miniV: { fontSize: 15, fontWeight: 800, marginTop: 2 },
-  section: { fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "#f59e0b", margin: "14px 0 8px" },
+  section: { fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", margin: "14px 0 8px" },
   handsHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  dlBtn: { padding: "6px 12px", background: "#16a34a", color: "#06210f", border: "none", borderRadius: 7, fontSize: 11.5, fontWeight: 800, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" },
+  dlBtn: { padding: "6px 12px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 11.5, fontWeight: 800, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" },
   payForm: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" },
-  input: { flex: 1, minWidth: 80, padding: "8px 9px", background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" },
-  payBtn: { padding: "8px 14px", background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 7, color: "#0a0e17", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
-  payRow: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid #141e2e" },
-  handBlock: { borderBottom: "1px solid #141e2e" },
-  handRow: { display: "flex", justifyContent: "space-between", padding: "8px 2px", fontSize: 12.5, cursor: "pointer", color: "#cbd5e1" },
+  input: { flex: 1, minWidth: 80, padding: "8px 9px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" },
+  payBtn: { padding: "8px 14px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  payRow: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid var(--line)" },
+  handBlock: { borderBottom: "1px solid var(--line)" },
+  handRow: { display: "flex", justifyContent: "space-between", padding: "8px 2px", fontSize: 12.5, cursor: "pointer", color: "var(--text-2)" },
   handDetail: { padding: "4px 2px 10px" },
-  pre: { margin: "6px 0 0", padding: 10, background: "#06090f", color: "#a5d6a7", fontSize: 11, lineHeight: 1.5, fontFamily: "'JetBrains Mono',monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 6, border: "1px solid #1e293b", maxHeight: 260, overflowY: "auto" },
-  link: { color: "#7dd3fc", textDecoration: "none", fontSize: 12, fontWeight: 600 },
-  dim: { color: "#64748b" },
-  err: { marginTop: 8, fontSize: 12.5, color: "#fca5a5", background: "#3a1416", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 10px" },
+  pre: { margin: "6px 0 0", padding: 10, background: "var(--bg-deep)", color: "var(--gold-pale)", fontSize: 11, lineHeight: 1.5, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word", borderRadius: 3, border: "1px solid var(--line)", maxHeight: 260, overflowY: "auto" },
+  link: { color: "var(--steel)", textDecoration: "none", fontSize: 12, fontWeight: 600 },
+  dim: { color: "var(--text-mute)" },
+  err: { marginTop: 8, fontSize: 12.5, color: "var(--loss-bright)", background: "var(--loss-wash)", border: "1px solid var(--loss-deep)", borderRadius: 3, padding: "8px 10px" },
 };
