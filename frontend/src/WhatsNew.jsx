@@ -34,15 +34,17 @@ export default function WhatsNew({ ui = {}, current, onNewLook, onClose }) {
         </div>
 
         <div style={s.section}>
-          <div style={s.head}>Squid and Bounty games</div>
+          <div style={s.head}>Squid, Bounty and 7-2 games</div>
           <div style={s.text}>
             <span style={s.strong}>Side Game</span> in the hand builder now offers <span style={s.strong}>Squid Game</span>,{" "}
-            <span style={s.strong}>Progressive Squid Game</span> and <span style={s.strong}>Bounty Game</span>. Picking one asks for its
-            structure: how many buttons and what each is worth, or how many wins in a row start the bounty and what each win pays.
+            <span style={s.strong}>Progressive Squid Game</span>, <span style={s.strong}>Bounty Game</span> and{" "}
+            <span style={s.strong}>7-2 Game</span>. Picking one asks for its structure: how many buttons and what each is worth, how
+            many wins in a row start the bounty and what each win pays, or what each player pays a 7-2 winner.
           </div>
           <div style={s.text}>
             From then on the game keeps itself: buttons and streaks are written into each player&apos;s name in the hand history,
-            and the chip in the top bar shows who holds what. When a hand pays a bounty or ends a squid round, you&apos;re asked to
+            and the chip in the top bar shows who holds what. 7-2 hands are now transcribed in full like any other hand (no more
+            converting them to a side-game count). When a hand pays a bounty or a 7-2, or ends a squid round, you&apos;re asked to
             confirm it first, then the payouts go into the next hand&apos;s stacks.
           </div>
         </div>
@@ -50,8 +52,8 @@ export default function WhatsNew({ ui = {}, current, onNewLook, onClose }) {
         <div style={s.section}>
           <div style={s.head}>Pay for side games</div>
           <div style={s.text}>
-            Squid and Bounty hands are transcribed and paid like any other hand, plus <span style={s.strong}>$0.25</span> every
-            time you record a bounty payout or a squid round being settled.
+            Side-game hands are transcribed and paid like any other hand, plus <span style={s.strong}>$0.25</span> every time you
+            record a bounty payout, a 7-2 payout or a squid round being settled.
           </div>
         </div>
 

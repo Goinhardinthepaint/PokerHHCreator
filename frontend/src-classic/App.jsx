@@ -44,6 +44,7 @@ import {
 import {
   applySideGameNames, mainPotWinners, settleBounty, settleSquid, sideGameDeltas, sideGamePayload,
   DEFAULT_BOUNTY, DEFAULT_SQUID, SIDE_GAMES, squidGameKey, SIDE_PAYOUT_BONUS,
+  DEFAULT_SEVEN_TWO, is72, settleSevenTwo,
 } from "../src/sideGames.js";
 import SideGameDialog, { SidePayConfirm } from "../src/SideGameDialog.jsx";
 import Calendar from "./Calendar.jsx";
@@ -86,18 +87,6 @@ const PIECE_RATE = 0.03; // per filled card / per voluntary action
 const COMPLETION_BONUS = 0.1; // per completed hand
 const BLIND_POSTS = new Set(["posts_sb", "posts_bb", "posts_ante", "posts_straddle"]);
 
-// A hole-card pair is "7-2" if its two ranks are a 7 and a 2 (suited or not).
-// Cards are "<rank><suit>", e.g. "7h", "2c" — rank is the first char.
-function is72(cards) {
-  if (!cards || cards.length < 2 || !cards[0] || !cards[1]) return false;
-  const ranks = [cards[0][0], cards[1][0]];
-  return ranks.includes("7") && ranks.includes("2");
-}
-// A preflop VPIP is any voluntary money-in — not a blind/ante/straddle post,
-// not a fold, not a check.
-function isVpipAction(action) {
-  return !BLIND_POSTS.has(action) && action !== "folds" && action !== "checks";
-}
 
 // Side-game pricing: a flat base per counted hand + a stream-completion bonus.
 // Backend-wise a side-game hand is just a 0-piece submission, which already
@@ -812,12 +801,14 @@ function HandBuilder({ me, refreshMe }) {
   const [endingSideGame, setEndingSideGame] = useState(false); // showing the adjust-stacks prompt
   const [sideStackDraft, setSideStackDraft] = useState({}); // seat -> stack string while confirming
 
-  // 7-2 game: when active, a player who VPIPs holding 7-2 converts the hand into
-  // a side-game record. sevenTwoActive persists across hands until toggled off.
-  const [sevenTwoActive, setSevenTwoActive] = useState(() => pick("sevenTwoActive", false));
-  const [sevenTwoDetect, setSevenTwoDetect] = useState(null); // {seat,name,cards} — "enable?" popup
-  const [sevenTwoVpip, setSevenTwoVpip] = useState(null);     // {name,cards,src} — "convert?" popup
-  const [sevenTwoHandled, setSevenTwoHandled] = useState(false); // VPIP prompt already answered this hand
+  // 7-2 game: the sole winner of a hand holding 7-2 collects sevenTwoValue from
+  // every other player dealt in. Hands are transcribed in full; the SIDE GAME
+  // block records the holders and payouts. Started from the Side Game popup.
+  const [sevenTwoActive, setSevenTwoActive] = useState(() =>
+    pendingResume?.sevenTwoActive != null ? !!pendingResume.sevenTwoActive : pick("sevenTwoActive", false));
+  const [sevenTwoValue, setSevenTwoValue] = useState(() =>
+    pendingResume?.sevenTwoValue ?? pick("sevenTwoValue", DEFAULT_SEVEN_TWO.value));
+  const [sevenTwoDetect, setSevenTwoDetect] = useState(null); // {seat,name,cards}: "is the 7-2 game on?" popup
 
   // Bounty game: each player's win streak going into the hand is written into
   // their PT4 name (raver2bounty). Keyed by base name, advanced on every saved
@@ -884,7 +875,10 @@ function HandBuilder({ me, refreshMe }) {
   // Start a side game with the structure the popup asked for. A new game starts
   // clean: no streaks, every button back in play, round 1.
   function startSideGameType(game, cfg) {
-    if (game === "bounty") {
+    if (game === "sevenTwo") {
+      setSevenTwoValue(cfg.value);
+      setSevenTwoActive(true);
+    } else if (game === "bounty") {
       setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
       setBountyStreaks({});
       setBountyActive(true);
@@ -901,12 +895,15 @@ function HandBuilder({ me, refreshMe }) {
   // Change a running game's structure, or switch between the two squid games;
   // everything already won stays won.
   function saveSideGameType(game, cfg) {
-    if (game === "bounty") setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
+    if (game === "sevenTwo") setSevenTwoValue(cfg.value);
+    else if (game === "bounty") setBountySchedule({ start: cfg.start, first: cfg.first, step: cfg.step });
     else setSquidConfig({ total: cfg.total, value: cfg.value, mode: SIDE_GAMES[game].mode });
     setSideDialog(null);
   }
   function endSideGameType(game) {
-    if (game === "bounty") {
+    if (game === "sevenTwo") {
+      setSevenTwoActive(false);
+    } else if (game === "bounty") {
       setBountyActive(false);
       setBountyStreaks({});
     } else {
@@ -1203,22 +1200,6 @@ function HandBuilder({ me, refreshMe }) {
   const setRunWinner = (i, name) => setRunWinners((w) => { const c = [...w]; c[i] = name; return c; });
   const runBoardsAll = numRuns >= 2 ? [board, ...extraBoards] : [board];
 
-  // ── 7-2 game ───────────────────────────────────────────────────────────────
-  // The first seated player currently holding 7-2, with their cards.
-  const sevenTwoHolder = useMemo(() => {
-    for (const p of named) {
-      if (is72(holeCards[p.seat])) return { seat: p.seat, name: p.name, cards: holeCards[p.seat] };
-    }
-    return null;
-  }, [named, holeCards]);
-  // Whether that holder voluntarily put money in preflop (called/bet/raised).
-  const holderVpiped = useMemo(() => {
-    if (!sevenTwoHolder || !eng) return false;
-    return (eng.actionsByStreet.preflop || []).some(
-      (a) => a.player === sevenTwoHolder.name && isVpipAction(a.action)
-    );
-  }, [sevenTwoHolder, eng]);
-
   // ── Piece-rate earnings tracker ───────────────────────────────────────────
   // Live count of billable pieces for the CURRENT hand: each filled hole/board
   // card + each voluntary action (auto blind/ante/straddle posts don't count).
@@ -1288,13 +1269,13 @@ function HandBuilder({ me, refreshMe }) {
           stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber,
           phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners,
           winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult,
-          sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey,
+          sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, sevenTwoValue, lastHandKey,
           bountyActive, bountyStreaks, bountySchedule,
           squidActive, squidConfig, squidRound, squidLeft, squidButtons, lastSideGame,
     };
     const t = setTimeout(() => saveSession(persistRef.current), 400);
     return () => clearTimeout(t);
-  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, lastHandKey, bountyActive, bountyStreaks, bountySchedule, squidActive, squidConfig, squidRound, squidLeft, squidButtons, lastSideGame]);
+  }, [stakes, ante, buttonSeat, straddleCount, tripleBlind, anteGame, anteAmount, buyButton, customStraddle, roster, autoNumber, phase, eng, engHistory, holeCards, board, numRuns, runsChosen, extraBoards, runWinners, winner, handNumber, youtubeLink, videoDate, sessionLabel, sessionHands, preview, evalResult, sideGameMode, sideGameType, sideGameOther, sideGameHands, sevenTwoActive, sevenTwoValue, lastHandKey, bountyActive, bountyStreaks, bountySchedule, squidActive, squidConfig, squidRound, squidLeft, squidButtons, lastSideGame]);
   useEffect(() => {
     const flush = () => { if (persistRef.current) saveSession(persistRef.current); };
     window.addEventListener("pagehide", flush);
@@ -1408,7 +1389,6 @@ function HandBuilder({ me, refreshMe }) {
     setWinner("");
     setPreview("");
     setError("");
-    setSevenTwoHandled(false); // re-arm 7-2 VPIP detection for the new hand
     setPhase("holecards");
   }
 
@@ -1484,75 +1464,13 @@ function HandBuilder({ me, refreshMe }) {
     setEngHistory((h) => [...h, eng]);
     setEng((s) => applyAction(s, { type, amount }));
   };
-  const doAdvanceStreet = () => {
-    setEngHistory((h) => [...h, eng]);
-    setEng((s) => advanceStreet(s));
-  };
   const dealNextStreet = () => {
-    // Preflop just closed — if the 7-2 game is on and the 7-2 holder VPIPed,
-    // offer to convert before dealing the flop.
-    if (eng && eng.street === "preflop" && trySevenTwoVpip("advance")) return;
-    doAdvanceStreet();
+    setEngHistory((h) => [...h, eng]);
+    setEng((st) => advanceStreet(st));
   };
-
-  // If the 7-2 game is active and the 7-2 holder VPIPed preflop, surface the
-  // "convert to side game?" popup (once per hand). Returns true when shown.
-  function trySevenTwoVpip(src) {
-    if (!sevenTwoActive || sevenTwoHandled || !holderVpiped || !sevenTwoHolder) return false;
-    setSevenTwoHandled(true);
-    setSevenTwoVpip({ name: sevenTwoHolder.name, cards: sevenTwoHolder.cards, src });
-    return true;
-  }
-
-  // Advance to the next hand WITHOUT computing end stacks (the hand wasn't played
-  // out) — rotate the button, clear entry, bump the hand number.
-  function advanceToNextHand() {
-    const occ = roster.filter((p) => p.name.trim()).sort((a, b) => a.seat - b.seat);
-    if (occ.length) {
-      const i = occ.findIndex((p) => p.seat === Number(buttonSeat));
-      const nextSeat = i >= 0 ? occ[(i + 1) % occ.length].seat : (occ.find((p) => p.seat > Number(buttonSeat)) || occ[0]).seat;
-      setButtonSeat(nextSeat);
-    }
-    setEng(null); setEngHistory([]); setHoleCards({});
-    setBoard(["", "", "", "", ""]); setNumRuns(1); setRunsChosen(false);
-    setExtraBoards([]); setRunWinners([]); setWinner(""); setPreview("");
-    setError(""); setYoutubeLink(""); setBuyButton(null); setBuyMenuSeat(null); setCustomStraddle(null); setSevenTwoHandled(false);
-    setPhase("setup");
-    setHandNumber((h) => h + 1);
-  }
-
-  // Convert the current hand to a 7-2 side-game record: save the timestamp (cards
-  // + preflop action are kept in the local record), submit a 0-piece hand so it
-  // pays the side-game rate, show a brief summary, and advance to the next hand.
-  async function convertSevenTwoHand() {
-    const holder = sevenTwoHolder;
-    setSevenTwoVpip(null);
-    const { url, startSec, id: videoId } = parseYouTube(youtubeLink.trim());
-    const cardsStr = (holder?.cards || []).filter(Boolean).join(" ");
-    const n = handNumber;
-    setSideGameHands((hs) => [...hs, {
-      type: "72_game", gameType: "7-2 Game", player: holder?.name || "",
-      cards: cardsStr, timestamp: startSec > 0 ? fmtClock(startSec) : "", handNumber: n, videoId,
-    }]);
-    if (videoId) {
-      try {
-        await api("/api/hands/submit", { method: "POST", body: {
-          stream_id: videoId, youtube_url: url, timestamp_seconds: startSec,
-          pt4_text: "", cards_count: 0, actions_count: 0,
-          hand_type: "72_game", side_game: `7-2 Game (${holder?.name || "?"})`,
-        } });
-        if (refreshMe) refreshMe();
-      } catch { /* offline — the local record still stands */ }
-    }
-    if (videoId) setLastHandKey({ videoId, startSec }); // block re-using this exact timestamp
-    showFlash(`7-2 side game — ${holder?.name || "?"} VPIPed with ${cardsStr || "7-2"} · +$${SIDE_GAME_RATE.toFixed(2)}`, 2800);
-    advanceToNextHand();
-  }
 
   // One click: validate the YouTube link, auto-generate the PT4 text, save it to
-  // the session, flash confirmation, and advance to the next hand. If the 7-2
-  // game is on and the 7-2 holder VPIPed (hand ended preflop), offer to convert
-  // to a side game first.
+  // the session, flash confirmation, and advance to the next hand.
   // A second click while the first save is in flight would submit (and pay
   // for) the same hand twice.
   const submittingRef = useRef(false);
@@ -1561,7 +1479,6 @@ function HandBuilder({ me, refreshMe }) {
   async function completeHand(opts) {
     if (submittingRef.current) return;
     const sideConfirmed = opts?.sideConfirmed === true;
-    if (!sideConfirmed && trySevenTwoVpip("complete")) return;
     submittingRef.current = true;
     try { await runCompleteHand({ sideConfirmed }); } finally { submittingRef.current = false; }
   }
@@ -1608,23 +1525,31 @@ function HandBuilder({ me, refreshMe }) {
       // Streaks and buttons move on their own; money waits for a yes. A bounty
       // being paid or the squid round settling asks first, and No goes back
       // unsaved so the streaks or buttons can be fixed.
-      if (!sideConfirmed && (bountyRes?.payouts.length || squidRes?.settled)) {
+      const sevenTwoRes = sevenTwoActive
+        ? settleSevenTwo({ dealtIn, holeCards, value: sevenTwoValue, winners: won })
+        : null;
+      if (!sideConfirmed && (bountyRes?.payouts.length || squidRes?.settled || sevenTwoRes?.payouts.length)) {
         setSidePayConfirm({
           bounty: bountyRes?.payouts.length ? bountyRes : null,
           squid: squidRes?.settled ? squidRes : null,
+          sevenTwo: sevenTwoRes?.payouts.length ? sevenTwoRes : null,
+          sevenTwoValue,
           squidValue: squidConfig.value,
           squidTotal: squidConfig.total,
         });
         return;
       }
       const outHand = applySideGameNames(hand, bountyActive ? bountyStreaks : {}, squidActive ? squidButtons : {});
-      if (bountyRes || squidRes) {
-        outHand.side_game = sideGamePayload({ bounty: bountyRes, bountySchedule, squid: squidRes, squidConfig, squidRound });
+      if (bountyRes || squidRes || sevenTwoRes) {
+        outHand.side_game = sideGamePayload({
+          bounty: bountyRes, bountySchedule, squid: squidRes, squidConfig, squidRound,
+          sevenTwo: sevenTwoRes, sevenTwoValue,
+        });
       }
       const side = {
         streaks: bountyRes ? bountyRes.nextStreaks : bountyStreaks,
         squid: squidRes ? squidRes.next : null,
-        deltas: sideGameDeltas(bountyRes?.payouts, squidRes?.payouts),
+        deltas: sideGameDeltas(bountyRes?.payouts, squidRes?.payouts, sevenTwoRes?.payouts),
       };
 
       const n = handNumber;
@@ -1684,9 +1609,9 @@ function HandBuilder({ me, refreshMe }) {
       // Earnings breakdown toast.
       const cardPay = (cards * PIECE_RATE).toFixed(2);
       const actPay = (actions * PIECE_RATE).toFixed(2);
-      const sideEvents = (bountyRes?.payouts.length ? 1 : 0) + (squidRes?.settled ? 1 : 0);
+      const sideEvents = (bountyRes?.payouts.length ? 1 : 0) + (squidRes?.settled ? 1 : 0) + (sevenTwoRes?.payouts.length ? 1 : 0);
       const total = (cards * PIECE_RATE + actions * PIECE_RATE + COMPLETION_BONUS + sideEvents * SIDE_PAYOUT_BONUS).toFixed(2);
-      const sidePaid = [...(bountyRes?.payouts || []), ...(squidRes?.payouts || [])].reduce((a, p) => a + p.amount, 0);
+      const sidePaid = [...(bountyRes?.payouts || []), ...(squidRes?.payouts || []), ...(sevenTwoRes?.payouts || [])].reduce((a, p) => a + p.amount, 0);
       showFlash(`Hand #${n}: ${cards} cards ($${cardPay}) + ${actions} actions ($${actPay}) + bonus ($${COMPLETION_BONUS.toFixed(2)})`
         + (sideEvents ? ` + side-game payout ($${(sideEvents * SIDE_PAYOUT_BONUS).toFixed(2)})` : "") + ` = $${total}`
         + (sidePaid ? ` · side games moved $${sidePaid.toLocaleString()} (in the next stacks)` : ""), sidePaid ? 4200 : 2800);
@@ -1696,11 +1621,12 @@ function HandBuilder({ me, refreshMe }) {
         setSquidRound(squidRes.next.round);
         setSquidLeft(squidRes.next.left);
       }
-      if (bountyRes || squidRes) {
+      if (bountyRes || squidRes || sevenTwoRes) {
         setLastSideGame({
           hand: n,
           bounty: bountyRes && { payouts: bountyRes.payouts },
           squid: squidRes && { payouts: squidRes.payouts, settled: squidRes.settled },
+          sevenTwo: sevenTwoRes && { payouts: sevenTwoRes.payouts },
         });
       }
       nextHand(side.deltas); // carries over stacks (+ side-game money), rotates button, clears, increments hand #
@@ -1789,8 +1715,6 @@ function HandBuilder({ me, refreshMe }) {
     setEndingSideGame(false);
     setSevenTwoActive(false);
     setSevenTwoDetect(null);
-    setSevenTwoVpip(null);
-    setSevenTwoHandled(false);
     setLastHandKey(null);
     setBountyActive(false);
     setBountyStreaks({});
@@ -1844,6 +1768,8 @@ function HandBuilder({ me, refreshMe }) {
       squidRound: side.squid ? side.squid.round : squidRound,
       squidLeft: side.squid ? side.squid.left : squidLeft,
       squidButtons: side.squid ? side.squid.buttons : squidButtons,
+      sevenTwoActive,
+      sevenTwoValue,
     };
   }
 
@@ -1864,6 +1790,8 @@ function HandBuilder({ me, refreshMe }) {
     if (snap.bountyActive != null) setBountyActive(!!snap.bountyActive);
     setBountyStreaks(snap.bountyStreaks || {});
     if (snap.bountySchedule) setBountySchedule(snap.bountySchedule);
+    if (snap.sevenTwoActive != null) setSevenTwoActive(!!snap.sevenTwoActive);
+    if (snap.sevenTwoValue != null) setSevenTwoValue(snap.sevenTwoValue);
     // A snapshot without squid data (older, or imported) means no buttons held.
     if (snap.squidActive != null) setSquidActive(!!snap.squidActive);
     const cfg = snap.squidConfig || squidConfig;
@@ -1990,7 +1918,7 @@ function HandBuilder({ me, refreshMe }) {
   const histKeys = useRef(null);
   useEffect(() => {
     histKeys.current = {
-      modal: !!(editor || sevenTwoDetect || sevenTwoVpip || straddleMenuOpen || buyMenuSeat != null || sideDialog || sidePayConfirm),
+      modal: !!(editor || sevenTwoDetect || straddleMenuOpen || buyMenuSeat != null || sideDialog || sidePayConfirm),
       undo: undoChange, redo: redoChange,
     };
   });
@@ -2228,10 +2156,6 @@ function HandBuilder({ me, refreshMe }) {
             </label>
             )}
 
-            <label style={{ ...styles.checkRow, marginTop: 4 }} title="When on, a player who voluntarily plays 7-2 converts the hand into a side game.">
-              <input type="checkbox" checked={sevenTwoActive} onChange={(e) => setSevenTwoActive(e.target.checked)} />
-              <span>7-2 Game Active <span style={styles.sideHint}>· VPIP with 7-2 → side game</span></span>
-            </label>
             {!anteGame && straddleCount > 0 && (
               <div style={styles.straddleBox}>
                 {!tripleBlind && (
@@ -2486,6 +2410,11 @@ function HandBuilder({ me, refreshMe }) {
                 {squidActive && (
                   <button style={styles.sideChip} title="Squid buttons, who holds them, and the structure" onClick={() => setSideDialog(squidGame)}>
                     {SIDE_GAMES[squidGame].short} · {squidLeft}/{squidConfig.total} left
+                  </button>
+                )}
+                {sevenTwoActive && (
+                  <button style={styles.sideChip} title="7-2 game: what each player pays" onClick={() => setSideDialog("sevenTwo")}>
+                    7-2 · ${sevenTwoValue.toLocaleString()} each
                   </button>
                 )}
                 {bountyActive && (
@@ -2864,6 +2793,8 @@ function HandBuilder({ me, refreshMe }) {
           squidRound={squidRound}
           squidLeft={squidLeft}
           squidButtons={squidButtons}
+          sevenTwoActive={sevenTwoActive}
+          sevenTwoValue={sevenTwoValue}
           lastSideGame={lastSideGame}
           onStart={startSideGameType}
           onSave={saveSideGameType}
@@ -2892,34 +2823,11 @@ function HandBuilder({ me, refreshMe }) {
             <div style={styles.confirmBody}>
               <strong>{sevenTwoDetect.name || `Seat ${sevenTwoDetect.seat}`}</strong> was dealt{" "}
               <span style={styles.confirmCards}>{(sevenTwoDetect.cards || []).filter(Boolean).join(" ")}</span>.
-              <br />Is the 7-2 game active?
+              <br />Is the 7-2 game on?
             </div>
             <div style={styles.confirmBtnRow}>
-              <button style={styles.confirmYes} onClick={() => { setSevenTwoActive(true); setSevenTwoDetect(null); }}>Yes, enable 7-2 game</button>
+              <button style={styles.confirmYes} onClick={() => { setSevenTwoDetect(null); setSideDialog("sevenTwo"); }}>Yes, set it up</button>
               <button style={styles.confirmNo} onClick={() => setSevenTwoDetect(null)}>No</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 7-2 VPIP: offer to convert this hand to a side game */}
-      {sevenTwoVpip && (
-        <div style={styles.pickerOverlay}>
-          <div style={styles.confirmBox} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.confirmTitle}>7-2 VPIP!</div>
-            <div style={styles.confirmBody}>
-              <strong>{sevenTwoVpip.name}</strong> VPIPed with{" "}
-              <span style={styles.confirmCards}>{(sevenTwoVpip.cards || []).filter(Boolean).join(" ")}</span>!
-              <br />Switch to side game mode for this hand?
-            </div>
-            <div style={styles.confirmBtnRow}>
-              <button style={styles.confirmYes} onClick={convertSevenTwoHand}>Yes, convert to side game</button>
-              <button style={styles.confirmNo} onClick={() => {
-                const src = sevenTwoVpip.src;
-                setSevenTwoVpip(null);
-                if (src === "advance") doAdvanceStreet();
-                else if (src === "complete") runCompleteHand();
-              }}>No, record normally</button>
             </div>
           </div>
         </div>

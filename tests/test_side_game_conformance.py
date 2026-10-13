@@ -2,7 +2,7 @@
 built from (docs/SIDE_GAME_HH_FORMAT.md): every line matches exactly one of the
 spec's regexes, display names are base + suffixes for the counts entering the
 hand, the bounty and squid invariants hold, and with the block stripped the hand
-is ordinary PokerStars that passes the PT4 linter.
+is ordinary PokerStars that passes the PT4 linter. The 7-2 game runs too.
 
 Hands come from a long random session (frontend/tests/dump-side-game-hands.mjs)
 with both games running. Needs node; skipped otherwise.
@@ -108,6 +108,25 @@ def check_hand(text):
             for m in pays:
                 if int(m.group(5)) != value * int(m.group(6)):
                     problems.append(f"bad squid payout: {m.group(0)!r}")
+
+    # 7-2 invariants: the game line comes with holder lines; only a sole winner
+    # holding 7-2 is paid, by every other seat, the full value.
+    game = next((m for k, m in parsed if k == "T_GAME"), None)
+    holders = [m for k, m in parsed if k == "T_HAND"]
+    if bool(game) != bool(holders):
+        problems.append("7-2: game line without holders, or holders without it")
+    if game:
+        value = int(game.group(1))
+        won = {int(m.group(1)) for m in holders if m.group(5) == "won"}
+        for m in holders:
+            if not ({m.group(3)[0], m.group(4)[0]} == {"7", "2"}):
+                problems.append(f"7-2 holder without 7-2: {m.group(0)!r}")
+        pays = [m for k, m in parsed if k == "T_PAYOUT"]
+        if len(pays) != len(won) * (len(seat_names) - 1):
+            problems.append(f"7-2: {len(pays)} payouts for {len(won)} winners")
+        for m in pays:
+            if int(m.group(3)) not in won or int(m.group(5)) != value or m.group(1) == m.group(3):
+                problems.append(f"bad 7-2 payout: {m.group(0)!r}")
     return problems
 
 
@@ -120,10 +139,11 @@ def test_side_game_block_matches_the_parser_spec(tmp_path):
     from src.export.pt4_formatter import format_hand
     from src.validate.pt4_linter import lint_hand
 
-    assert {"B_SCHED", "B_STREAK", "B_PAYOUT", "S_ROUND", "S_LEFT", "S_BUTTONS", "S_SETTLED", "S_PAYOUT"} <= set(PATS)
+    assert {"B_SCHED", "B_STREAK", "B_PAYOUT", "S_ROUND", "S_LEFT", "S_BUTTONS", "S_SETTLED", "S_PAYOUT",
+            "T_GAME", "T_HAND", "T_PAYOUT"} <= set(PATS)
     out = subprocess.run(["node", os.path.join(ROOT, "frontend", "tests", "dump-side-game-hands.mjs"), str(N)],
                          capture_output=True, text=True, check=True, cwd=os.path.join(ROOT, "frontend")).stdout
-    failures, settled, away, chops = [], 0, 0, 0
+    failures, settled, away, chops, sevens, sevens_paid = [], 0, 0, 0, 0, 0
     for line in out.splitlines():
         rec = json.loads(line)
         hand = rec["hand"]
@@ -139,6 +159,8 @@ def test_side_game_block_matches_the_parser_spec(tmp_path):
         settled += "Squid settled:" in text
         away += "Away (" in text
         chops += " chopped" in text
+        sevens += "7-2 hand:" in text
+        sevens_paid += "7-2 payout:" in text
     assert not failures, f"{len(failures)}/{N} hands broke the spec:\n" + "\n".join(failures[:12])
     # The random session must actually exercise the interesting paths.
-    assert settled >= 3 and away >= 3 and chops >= 1, (settled, away, chops)
+    assert settled >= 3 and away >= 3 and chops >= 1 and sevens >= 20 and sevens_paid >= 2, (settled, away, chops, sevens, sevens_paid)

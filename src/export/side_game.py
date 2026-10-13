@@ -1,5 +1,5 @@
 """
-Render a hand's bounty / squid side games as the `*** SIDE GAME ***` block.
+Render a hand's bounty / squid / 7-2 side games as the `*** SIDE GAME ***` block.
 
 The notation is a contract with Cole's separate database parser — see
 docs/SIDE_GAME_HH_FORMAT.md. The builder (frontend/src/sideGames.js) works out
@@ -19,7 +19,10 @@ def _who(seat, base) -> str:
 
 def side_game_lines(sg) -> list[str]:
     """Lines for the SIDE GAME section, or [] when no side game was on."""
-    if not sg or not (sg.get("bounty") or sg.get("squid")):
+    t = (sg or {}).get("seven_two")
+    if t and not t.get("rows"):
+        t = None  # 7-2 lines appear only when someone dealt in holds 7-2
+    if not sg or not (sg.get("bounty") or sg.get("squid") or t):
         return []
     out = ["*** SIDE GAME ***"]
 
@@ -68,4 +71,15 @@ def side_game_lines(sg) -> list[str]:
                     f"{_who(p.get('holder_seat'), p['holder'])} ${_money(p['amount'])} "
                     f"for {b_} button{'' if b_ == 1 else 's'}"
                 )
+
+    if t:
+        out.append(f"7-2 game: ${_money(t['value'])} from each player dealt in")
+        for r in t["rows"]:
+            c1, c2 = (r.get("cards") or ["", ""])[:2]
+            out.append(f"7-2 hand: {_who(r['seat'], r['base'])} [{c1} {c2}] {r['result']}")
+        for p in t.get("payouts") or []:
+            out.append(
+                f"7-2 payout: {_who(p['payer_seat'], p['payer'])} pays "
+                f"{_who(p['winner_seat'], p['winner'])} ${_money(p['amount'])} for 7-2"
+            )
     return out

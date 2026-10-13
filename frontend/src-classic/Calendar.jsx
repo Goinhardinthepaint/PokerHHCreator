@@ -307,6 +307,8 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
         squidRound: r.resume_state?.squidRound,
         squidLeft: r.resume_state?.squidLeft,
         squidButtons: r.resume_state?.squidButtons,
+        sevenTwoActive: r.resume_state?.sevenTwoActive,
+        sevenTwoValue: r.resume_state?.sevenTwoValue,
       };
     } catch { /* fall back to just the URL */ }
     onResumeStream(payload);

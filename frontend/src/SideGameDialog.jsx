@@ -2,7 +2,7 @@ import { useState } from "react";
 import { bountyAmount, SIDE_GAMES, squidGameKey } from "./sideGames.js";
 
 // The side-game popup, shared by both UIs. Side Game opens a menu of the games
-// (Squid, Progressive Squid, Bounty); picking one asks for that game's reward
+// (Squid, Progressive Squid, Bounty, 7-2); picking one asks for that game's reward
 // structure, then shows who holds what while it runs. The host passes its own
 // look in `ui`; anything it leaves out falls back to the classic styling.
 
@@ -44,11 +44,11 @@ const money = (n) => "$" + Number(n || 0).toLocaleString();
 export default function SideGameDialog({
   ui = {}, view, setView, onClose, seatedNames = [],
   bountyActive, bountySchedule, bountyStreaks,
-  squidActive, squidConfig, squidRound, squidLeft, squidButtons,
+  squidActive, squidConfig, squidRound, squidLeft, squidButtons, sevenTwoActive, sevenTwoValue,
   lastSideGame, onStart, onSave, onEnd, onSquidButton, onNewSquidRound, onCountOnly,
 }) {
   const s = { ...CLASSIC, ...ui };
-  const isOn = (k) => (k === "bounty" ? !!bountyActive : !!squidActive && squidGameKey(squidConfig) === k);
+  const isOn = (k) => (k === "sevenTwo" ? !!sevenTwoActive : k === "bounty" ? !!bountyActive : !!squidActive && squidGameKey(squidConfig) === k);
   return (
     <div className="ui-fade" style={s.overlay} onClick={onClose}>
       <div className="ui-pop" style={s.box} onClick={(e) => e.stopPropagation()}>
@@ -75,6 +75,7 @@ export default function SideGameDialog({
             seatedNames={seatedNames}
             bountyActive={bountyActive} bountySchedule={bountySchedule} bountyStreaks={bountyStreaks}
             squidActive={squidActive} squidConfig={squidConfig} squidRound={squidRound} squidLeft={squidLeft} squidButtons={squidButtons}
+            sevenTwoActive={sevenTwoActive} sevenTwoValue={sevenTwoValue}
             lastSideGame={lastSideGame} onStart={onStart} onSave={onSave} onEnd={onEnd}
             onSquidButton={onSquidButton} onNewSquidRound={onNewSquidRound}
           />
@@ -87,18 +88,22 @@ export default function SideGameDialog({
 function GameView({
   s, game, isOn, setView, onClose, seatedNames,
   bountyActive, bountySchedule, bountyStreaks,
-  squidActive, squidConfig, squidRound, squidLeft, squidButtons,
+  squidActive, squidConfig, squidRound, squidLeft, squidButtons, sevenTwoActive, sevenTwoValue,
   lastSideGame, onStart, onSave, onEnd, onSquidButton, onNewSquidRound,
 }) {
   const g = SIDE_GAMES[game];
   const isBounty = game === "bounty";
-  const familyOn = isBounty ? !!bountyActive : !!squidActive; // this game, or the other squid game
+  const isSeven = game === "sevenTwo";
+  // On already: this game, or (for squid) the other squid game.
+  const familyOn = isSeven ? !!sevenTwoActive : isBounty ? !!bountyActive : !!squidActive;
   const thisOn = isOn(game);
   const seated = seatedNames.length;
   // Start from the structure last used (a new squid game defaults to one button
   // fewer than the players seated).
   const [form, setForm] = useState(() =>
-    isBounty
+    isSeven
+      ? { value: sevenTwoValue }
+      : isBounty
       ? { start: bountySchedule.start, first: bountySchedule.first, step: bountySchedule.step }
       : { total: squidActive || seated < 2 ? squidConfig.total : seated - 1, value: squidConfig.value });
   const set = (k, min) => (e) => setForm((f) => ({ ...f, [k]: num(e.target.value, min) }));
@@ -110,7 +115,7 @@ function GameView({
   const streakers = Object.entries(bountyStreaks || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
 
   const end = () => {
-    const what = isBounty ? "Every streak is cleared." : "Every button held is cleared.";
+    const what = isSeven ? "Hands stop recording 7-2." : isBounty ? "Every streak is cleared." : "Every button held is cleared.";
     if (window.confirm(`End the ${g.label}? ${what}`)) onEnd(game);
   };
 
@@ -119,8 +124,20 @@ function GameView({
       <div style={s.title}>{g.label}{thisOn && <> <span style={s.badge}>ON</span></>}</div>
       <div style={s.sub}>{g.blurb}</div>
 
-      <div style={s.head}>{isBounty ? "BOUNTY STRUCTURE" : "BUTTONS"}</div>
-      {isBounty ? (
+      <div style={s.head}>{isSeven ? "7-2 PAYOUT" : isBounty ? "BOUNTY STRUCTURE" : "BUTTONS"}</div>
+      {isSeven ? (
+        <>
+          <div style={s.field}>
+            <span style={s.label}>Each player dealt in pays $</span>
+            <input style={s.input} type="number" min={0} value={form.value} onChange={set("value", 0)} />
+          </div>
+          <div style={s.preview}>
+            Win a hand holding 7-2 and every other player dealt in pays you <span style={s.accent}>{money(form.value)}</span>
+            {seated >= 2 ? <> ({money(form.value * (seated - 1))} from {seated - 1} players)</> : null}.
+            <div style={s.hint}>Any suits. Only the sole winner of the hand collects (first board if it&apos;s run twice); a chop pays nothing. Hands with a 7-2 dealt are recorded in the hand history.</div>
+          </div>
+        </>
+      ) : isBounty ? (
         <>
           <div style={s.field}>
             <span style={s.label}>Bounty starts at</span>
@@ -182,7 +199,7 @@ function GameView({
         {!thisOn && <button style={s.btn} onClick={onClose}>Cancel</button>}
       </div>
 
-      {thisOn && !isBounty && (
+      {thisOn && !isBounty && !isSeven && (
         <>
           <div style={s.head}>ROUND {squidRound}</div>
           <div style={s.value}>
@@ -230,7 +247,7 @@ function GameView({
 // include it.
 function LastHand({ s, last }) {
   const lines = [];
-  for (const [game, payouts, toKey] of [["Bounty", last.bounty?.payouts, "winner"], ["Squid", last.squid?.payouts, "holder"]]) {
+  for (const [game, payouts, toKey] of [["Bounty", last.bounty?.payouts, "winner"], ["Squid", last.squid?.payouts, "holder"], ["7-2", last.sevenTwo?.payouts, "winner"]]) {
     if (!payouts || !payouts.length) continue;
     const net = {};
     for (const p of payouts) {
@@ -257,12 +274,12 @@ function LastHand({ s, last }) {
 }
 
 // Side games run on their own, but a hand that moves side-game money waits for
-// a yes: a bounty being paid, or the last squid button going (the round
+// a yes: a bounty or 7-2 being paid, or the last squid button going (the round
 // settles). Yes saves the hand and pays; No goes back unsaved so the streaks
 // or buttons can be fixed, and completing the hand asks again.
 export function SidePayConfirm({ ui = {}, confirm, onYes, onNo }) {
   const s = { ...CLASSIC, ...ui };
-  const { bounty, squid, squidValue, squidTotal } = confirm;
+  const { bounty, squid, squidValue, squidTotal, sevenTwo, sevenTwoValue } = confirm;
   const winners = bounty ? [...new Set(bounty.payouts.map((p) => p.winner))] : [];
   const taker = squid?.rows.find((r) => r.won);
   const holders = squid ? squid.rows.filter((r) => r.after > 0) : [];
@@ -300,11 +317,21 @@ export function SidePayConfirm({ ui = {}, confirm, onYes, onNo }) {
             <NetLine s={s} payouts={squid.payouts} toKey="holder" />
           </div>
         )}
+        {sevenTwo && sevenTwo.rows.filter((r) => r.result === "won").map((r) => (
+          <div key={r.base} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={s.title}>Did {r.base} just win the 7-2 game?</div>
+            <div style={s.sub}>
+              {r.base} won the hand holding <span style={s.accent}>{r.cards.join(" ")}</span>, so each player dealt in pays{" "}
+              <span style={s.accent}>{money(sevenTwoValue)}</span>.
+            </div>
+            <NetLine s={s} payouts={sevenTwo.payouts.filter((p) => p.winner === r.base)} toKey="winner" />
+          </div>
+        ))}
         <div style={s.actions}>
           <button style={s.primary} onClick={onYes}>Yes, pay it out</button>
           <button style={s.btn} onClick={onNo}>No, let me fix it</button>
         </div>
-        <div style={s.hint}>Yes saves the hand and pays it out (recording a payout earns you $0.25). No saves nothing: fix the streaks or buttons with the ± on the seats or the side-game chip in the top bar, then complete the hand again.</div>
+        <div style={s.hint}>Yes saves the hand and pays it out (recording a payout earns you $0.25). No saves nothing: fix what's wrong (the cards, or streaks and buttons with the ± on the seats or the side-game chip in the top bar), then complete the hand again.</div>
       </div>
     </div>
   );

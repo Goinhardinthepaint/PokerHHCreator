@@ -452,15 +452,16 @@ def _piece_caps(hand):
 
 def _side_payouts(hand):
     """Side-game payouts recorded in this hand, each worth SIDE_PAYOUT_BONUS to
-    the worker: a bounty paid out, and a squid round settled. Read from the
-    hand's own SIDE GAME data (what the hand history says happened), never a
-    count the browser claims; at most one of each per hand."""
+    the worker: a bounty paid out, a squid round settled, a 7-2 paid. Read from
+    the hand's own SIDE GAME data (what the hand history says happened), never
+    a count the browser claims; at most one of each per hand."""
     sg = hand.get("side_game") if isinstance(hand, dict) else None
     if not isinstance(sg, dict):
         return 0
-    b, q = sg.get("bounty"), sg.get("squid")
+    b, q, t = sg.get("bounty"), sg.get("squid"), sg.get("seven_two")
     return int(isinstance(b, dict) and bool(b.get("payouts"))) + \
-        int(isinstance(q, dict) and bool(q.get("settled")) and bool(q.get("payouts")))
+        int(isinstance(q, dict) and bool(q.get("settled")) and bool(q.get("payouts"))) + \
+        int(isinstance(t, dict) and bool(t.get("payouts")))
 
 
 def _clamp_count(value, cap):

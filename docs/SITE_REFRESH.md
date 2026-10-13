@@ -10,18 +10,22 @@
   - In the new look, **Classic view** in the top bar switches back; in the original, **✨ New look** switches forward.
   - The choice is remembered per browser.
   - To make the new look the default for everyone, set `UI_DEFAULT=new` on Railway.
-- **Side Game** opens a menu: **Squid Game** (one button each), **Progressive Squid Game** or **Bounty Game**.
-  - Picking one asks for its structure: buttons and $ per button, or when bounties start and what each win pays.
+- **Side Game** opens a menu: **Squid Game** (one button each), **Progressive Squid Game**, **Bounty Game** or **7-2 Game**.
+  - Picking one asks for its structure: buttons and $ per button, when bounties start and what each win pays, or what each player pays a 7-2 winner.
   - A chip in the top bar reopens the game, with holders, streaks, a new round and End game.
   - Each seat shows a small round marker: violet for squid buttons, copper for the bounty streak.
   - The setup panel no longer sits in the sidebar.
 - **Side games run on their own, but money waits for a yes.**
   - A hand that pays a bounty asks "Did *player* just win the bounty game?"
   - A hand that ends a squid round asks "Has squid ended, and are all squids correct?"
+  - A hand won holding 7-2 asks "Did *player* just win the 7-2 game?"
   - Each question shows exactly who pays whom. **Yes** saves the hand and pays out. **No** saves nothing so the streaks or buttons can be fixed.
 - **Undo / Redo** under the builder title (both looks), also on **Ctrl+Z** and **Ctrl+Y**.
   - Steps back or forward through every change to the hand in progress: actions and bets, cards, board, runs, button, stacks, and side-game corrections.
   - A saved hand starts a fresh history.
+- **7-2 hands are transcribed in full.** Before, a 7-2 VPIP turned the hand into an untranscribed count.
+  - The SIDE GAME section lists each 7-2 holder, their cards and any payouts.
+  - The parser update is in `docs/SIDE_GAME_PARSER_UPDATE_7-2.md`.
 - **New deck (new look):** each card face is its suit's color, with a large white rank and a small suit in the corner.
 - Keyboard play in the new look: `F` fold, `C` check/call, `R`/`B` raise, `A` all-in, `Enter` deal or next, `Z` undo.
 
@@ -31,7 +35,7 @@
 |---|---|
 | Per piece (filled card or action) | $0.03 |
 | Per hand | $0.10 |
-| Per bounty payout or squid round settled in a hand | **$0.25** (new) |
+| Per bounty payout, 7-2 payout or squid round settled in a hand | **$0.25** (new) |
 | Per hand in a stream once it's marked complete | $0.05 |
 | Month bonus (assigned month, error tiers) | $150 default |
 | Tutorial | $1 |
@@ -55,5 +59,5 @@
 3. **Stream bonus:** no stream has ever been marked complete, so it has paid $0 so far. The What's New popup and the dashboard now remind workers.
 4. **Stream auto-refresh is blocked in production.** YouTube's bot check rejects Railway. Add a free YouTube Data API key as `YOUTUBE_API_KEY` on the PokerHHCreator service.
 5. **Railway's `railway.json` stops working on 2026-12-01.** Migrate it with `railway config migrate` before then.
-6. **Side-game rule call:** "won the hand" means the main pot on the first board.
+6. **Side-game rule call:** "won the hand" means the main pot on the first board, for all three games. 7-2 counts with any suits and pays every other player dealt in; a chop pays nothing.
 7. **The `staging` Railway environment** is still running and bills while it runs. Remove it with `railway environment delete staging`.

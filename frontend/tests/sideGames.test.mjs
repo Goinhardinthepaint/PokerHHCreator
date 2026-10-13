@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   displayName, applySideGameNames, mainPotWinners, bountyAmount, bountyLevels, settleBounty,
-  settleSquid, sideGameDeltas, sideGamePayload, DEFAULT_BOUNTY,
+  settleSquid, sideGameDeltas, sideGamePayload, DEFAULT_BOUNTY, is72, settleSevenTwo,
 } from "../src/sideGames.js";
 
 const seats = (...names) => names.map((name, i) => ({ seat: i + 1, name }));
@@ -134,4 +134,33 @@ test("payload carries snake_case fields for the server", () => {
   assert.deepEqual(p.bounty.levels, { 3: 300, 4: 400, 5: 500 });
   assert.deepEqual(p.bounty.payouts[0], { payer_seat: 2, payer: "raver", winner_seat: 1, winner: "JT", amount: 300, streak: 3 });
   assert.deepEqual([p.squid.left_before, p.squid.left_after, p.squid.mode], [7, 6, "progressive"]);
+});
+
+test("7-2: any suits count; nobody holding 7-2 means no 7-2 lines", () => {
+  assert.ok(is72(["7h", "2c"]) && is72(["2d", "7d"]));
+  assert.ok(!is72(["7h", "3c"]) && !is72(["7h", ""]) && !is72(undefined));
+  const dealtIn = seats("JT", "raver", "Nik");
+  assert.equal(settleSevenTwo({ dealtIn, holeCards: { 1: ["Ah", "Kd"] }, value: 200, winners: ["JT"] }), null);
+});
+
+test("7-2 example G: raver wins holding 7-2, $200 from each other player", () => {
+  const dealtIn = seats("JT", "raver", "Nik", "Britney");
+  const r = settleSevenTwo({ dealtIn, holeCards: { 2: ["7h", "2c"], 4: ["2d", "7d"] }, value: 200, winners: ["raver"] });
+  assert.deepEqual(r.rows.map((x) => [x.seat, x.base, x.cards.join(" "), x.result]),
+    [[2, "raver", "7h 2c", "won"], [4, "Britney", "2d 7d", "lost"]]);
+  assert.deepEqual(r.payouts.map((p) => [p.payer, p.winner, p.amount]),
+    [["JT", "raver", 200], ["Nik", "raver", 200], ["Britney", "raver", 200]]);
+  assert.deepEqual(sideGameDeltas(r.payouts), { JT: -200, raver: 600, Nik: -200, Britney: -200 });
+  const pl = sideGamePayload({ sevenTwo: r, sevenTwoValue: 200 });
+  assert.deepEqual(pl.seven_two.payouts[0], { payer_seat: 1, payer: "JT", winner_seat: 2, winner: "raver", amount: 200 });
+});
+
+test("7-2: a chop or a loss pays nothing", () => {
+  const dealtIn = seats("JT", "raver", "Nik");
+  const chop = settleSevenTwo({ dealtIn, holeCards: { 2: ["7s", "2s"] }, value: 200, winners: ["raver", "Nik"] });
+  assert.equal(chop.rows[0].result, "chopped");
+  assert.equal(chop.payouts.length, 0);
+  const lost = settleSevenTwo({ dealtIn, holeCards: { 2: ["7s", "2s"] }, value: 200, winners: ["JT"] });
+  assert.equal(lost.rows[0].result, "lost");
+  assert.equal(lost.payouts.length, 0);
 });

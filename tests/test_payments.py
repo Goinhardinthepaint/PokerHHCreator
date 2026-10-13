@@ -213,3 +213,30 @@ def test_each_side_game_payout_pays_the_worker_a_quarter(env):
     assert claimed["earnings"] == plain
     # and the square-up counts it
     assert auth_db.earned_through(uid, date(2999, 1, 1))["earned"] == round(d["total"] + plain, 2)
+
+
+SEVEN_TWO_PAID = {
+    "value": 200,
+    "rows": [{"seat": 2, "base": "B", "cards": ["7h", "2c"], "result": "won"}],
+    "payouts": [{"payer_seat": 1, "payer": "A", "winner_seat": 2, "winner": "B", "amount": 200},
+                {"payer_seat": 3, "payer": "C", "winner_seat": 2, "winner": "B", "amount": 200}],
+}
+
+
+def test_seven_two_lines_and_the_payout_quarter(env):
+    _, auth_db = env
+    from src.export.side_game import side_game_lines
+    assert side_game_lines({"seven_two": SEVEN_TWO_PAID}) == [
+        "*** SIDE GAME ***",
+        "7-2 game: $200 from each player dealt in",
+        "7-2 hand: Seat 2 (B) [7h 2c] won",
+        "7-2 payout: Seat 1 (A) pays Seat 2 (B) $200 for 7-2",
+        "7-2 payout: Seat 3 (A) pays Seat 2 (B) $200 for 7-2".replace("(A)", "(C)"),
+    ]
+    assert side_game_lines({"seven_two": {"value": 200, "rows": [], "payouts": []}}) == []   # no 7-2 dealt
+    uid, c = new_worker(env)
+    plain = submit(c, timestamp_seconds=20).get_json()["earnings"]
+    paid = submit(c, hand=_side_hand({"seven_two": SEVEN_TWO_PAID}), timestamp_seconds=21).get_json()["earnings"]
+    lost = {**SEVEN_TWO_PAID, "rows": [{**SEVEN_TWO_PAID["rows"][0], "result": "lost"}], "payouts": []}
+    quiet = submit(c, hand=_side_hand({"seven_two": lost}), timestamp_seconds=22).get_json()["earnings"]
+    assert paid == round(plain + 0.25, 2) and quiet == plain

@@ -1,11 +1,11 @@
-// A long random "session" with the bounty AND squid games running, as the
+// A long random "session" with the bounty, squid AND 7-2 games running, as the
 // builder would submit it: streaks and buttons carry from hand to hand, players
 // come and go (so squid holders end up Away), rounds settle and restart.
 // Usage: node tests/dump-side-game-hands.mjs 2000 [seed] > hands.jsonl
 import { buildHandDict, positionLabels, survivors } from "../src/engine.js";
 import { evaluateBest, cmpScore } from "../src/evaluator.js";
 import {
-  applySideGameNames, mainPotWinners, settleBounty, settleSquid, sideGamePayload, DEFAULT_BOUNTY,
+  applySideGameNames, mainPotWinners, settleBounty, settleSquid, settleSevenTwo, sideGamePayload, DEFAULT_BOUNTY,
 } from "../src/sideGames.js";
 import { rng, randomHand } from "./fuzz-helpers.mjs";
 
@@ -49,7 +49,8 @@ for (let i = 0; i < N; i++) {
   const bounty = settleBounty({ dealtIn, streaks, schedule, winners: won });
   const squid = settleSquid({ dealtIn, buttons, config, round, left, winners: won });
   const out = applySideGameNames(hand, streaks, buttons);
-  out.side_game = sideGamePayload({ bounty, bountySchedule: schedule, squid, squidConfig: config, squidRound: round });
+  const sevenTwo = settleSevenTwo({ dealtIn, holeCards, value: 250, winners: won });
+  out.side_game = sideGamePayload({ bounty, bountySchedule: schedule, squid, squidConfig: config, squidRound: round, sevenTwo, sevenTwoValue: 250 });
   process.stdout.write(JSON.stringify({ i, hand: out }) + "\n");
 
   streaks = bounty.nextStreaks;

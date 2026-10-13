@@ -12,7 +12,7 @@ export function switchUi(to) {
 // The What's New popup shows once per browser (both UIs share localStorage).
 // Bump WHATS_NEW_ID to announce something new.
 const WHATS_NEW_KEY = "pokerhh_whats_new_seen";
-const WHATS_NEW_ID = "2026-10-side-games";
+const WHATS_NEW_ID = "2026-10-side-games-72";
 export function whatsNewSeen() {
   try { return localStorage.getItem(WHATS_NEW_KEY) === WHATS_NEW_ID; } catch { return true; }
 }

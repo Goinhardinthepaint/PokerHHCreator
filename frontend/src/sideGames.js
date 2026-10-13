@@ -1,17 +1,19 @@
-// Bounty and squid side games — the pure logic, shared by both UIs.
+// Bounty, squid and 7-2 side games — the pure logic, shared by both UIs.
 //
 // Rules (confirmed by Cole, 2026-10-12) and the hand-history notation they're
 // written in: docs/SIDE_GAME_HH_FORMAT.md. Cole's database parser is built from
 // that spec, so the names and the SIDE GAME block produced here must match it.
 //
-// Who "won the hand", for both games: the winner(s) of the MAIN pot on the FIRST
+// Who "won the hand", for every game: the winner(s) of the MAIN pot on the FIRST
 // board. Run it twice → only board one counts. Several main-pot winners → a chop.
 // A player who wins only a side pot did not win the hand.
 
 export const DEFAULT_BOUNTY = { start: 3, first: 300, step: 100 };
 export const DEFAULT_SQUID = { total: 7, value: 200, mode: "progressive" };
-// What the worker earns for recording a bounty payout or a squid round
-// settling (the server pays it, from the hand's SIDE GAME data).
+export const DEFAULT_SEVEN_TWO = { value: 200 };
+// What the worker earns for recording a side-game payout: a bounty paid, a
+// squid round settling, or a 7-2 paid (the server pays it, from the hand's
+// SIDE GAME data).
 export const SIDE_PAYOUT_BONUS = 0.25;
 
 // ── Display names ────────────────────────────────────────────────────────────
@@ -145,7 +147,37 @@ export function sideGameDeltas(...payoutLists) {
 }
 
 // ── What the server renders into the *** SIDE GAME *** block ─────────────────
-export function sideGamePayload({ bounty, bountySchedule, squid, squidConfig, squidRound }) {
+// ── 7-2 ──────────────────────────────────────────────────────────────────────
+// A hole-card pair is "7-2" if its ranks are a 7 and a 2, suited or not.
+export function is72(cards) {
+  if (!cards || cards.length < 2 || !cards[0] || !cards[1]) return false;
+  const ranks = [cards[0][0], cards[1][0]];
+  return ranks.includes("7") && ranks.includes("2");
+}
+
+// Settle one hand. holeCards: {seat: [c1, c2]}. Returns null when nobody dealt
+// in holds 7-2 (the hand then carries no 7-2 lines). The sole winner of the
+// hand holding 7-2 collects `value` from every other player dealt in; a chop
+// pays nothing.
+export function settleSevenTwo({ dealtIn, holeCards = {}, value = DEFAULT_SEVEN_TWO.value, winners }) {
+  const holders = dealtIn.filter((p) => is72(holeCards[p.seat]));
+  if (!holders.length) return null;
+  const outright = winners.length === 1;
+  const rows = holders.map((p) => ({
+    seat: p.seat, base: p.name, cards: holeCards[p.seat].slice(0, 2),
+    result: winners.includes(p.name) ? (outright ? "won" : "chopped") : "lost",
+  }));
+  const payouts = [];
+  for (const w of rows) {
+    if (w.result !== "won" || !(value > 0)) continue;
+    for (const o of dealtIn) {
+      if (o.seat !== w.seat) payouts.push({ payerSeat: o.seat, payer: o.name, winnerSeat: w.seat, winner: w.base, amount: value });
+    }
+  }
+  return { rows, payouts };
+}
+
+export function sideGamePayload({ bounty, bountySchedule, squid, squidConfig, squidRound, sevenTwo, sevenTwoValue }) {
   const out = {};
   if (bounty) {
     out.bounty = {
@@ -161,6 +193,13 @@ export function sideGamePayload({ bounty, bountySchedule, squid, squidConfig, sq
       left_before: squid.leftBefore, left_after: squid.leftAfter,
       rows: squid.rows, settled: squid.settled,
       payouts: squid.payouts.map((p) => ({ payer_seat: p.payerSeat, payer: p.payer, holder_seat: p.holderSeat, holder: p.holder, amount: p.amount, buttons: p.buttons })),
+    };
+  }
+  if (sevenTwo) {
+    out.seven_two = {
+      value: sevenTwoValue,
+      rows: sevenTwo.rows,
+      payouts: sevenTwo.payouts.map((p) => ({ payer_seat: p.payerSeat, payer: p.payer, winner_seat: p.winnerSeat, winner: p.winner, amount: p.amount })),
     };
   }
   return out;
@@ -180,6 +219,10 @@ export const SIDE_GAMES = {
   bounty: {
     label: "Bounty Game", short: "Bounty",
     blurb: "Win enough hands in a row and everyone dealt in pays you, more for each further win. A chop extends the streak but pays nothing.",
+  },
+  sevenTwo: {
+    label: "7-2 Game", short: "7-2",
+    blurb: "Win a hand holding 7-2 (any suits) and every other player dealt in pays you. A chop pays nothing.",
   },
 };
 

@@ -1,4 +1,4 @@
-# Side-game hand-history format (Bounty + Squid)
+# Side-game hand-history format (Bounty + Squid + 7-2)
 
 Canonical spec for how the Hand Builder writes bounty and squid games into hand
 histories. Cole's separate database parser is built from this exact text, so a
@@ -6,7 +6,7 @@ change to the notation must be made here AND in that parser together.
 
 ---
 
-Build a parser for PokerStars-format No-Limit Hold'em hand histories exported by my PokerHHCreator app, including two side games — the BOUNTY game and the SQUID game — that are recorded with the extensions below. PT4 compatibility is NOT a goal for side-game hands; this parser is their consumer. Hands without a side game are plain PokerStars format and must parse exactly as normal.
+Build a parser for PokerStars-format No-Limit Hold'em hand histories exported by my PokerHHCreator app, including three side games — the BOUNTY game, the SQUID game and the 7-2 game — that are recorded with the extensions below. PT4 compatibility is NOT a goal for side-game hands; this parser is their consumer. Hands without a side game are plain PokerStars format and must parse exactly as normal.
 
 ## 1. File and hand layout
 
@@ -24,6 +24,7 @@ In the poker part of a side-game hand, each player's name has the state they hel
 - Bounty: `<base><streak>bounty` when streak ≥ 1. `JT3bounty` = JT won (or chopped) the previous 3 hands in a row.
 - Squid: `<base><buttons>squid` when holding ≥ 1 squid button. `raver2squid` = raver holds 2 buttons.
 - Both games at once: bounty suffix first, e.g. `JT3bounty1squid`.
+- The 7-2 game carries no state between hands, so it never changes a name.
 - Count 0 → no suffix (plain base name).
 
 So one real player appears under several display names across hands (`JT`, `JT1bounty`, `JT2bounty`, …). Group players by BASE name.
@@ -32,7 +33,7 @@ So one real player appears under several display names across hands (`JT`, `JT1b
 
 ## 3. SIDE GAME section — line grammar
 
-Every seat listed in the hand's `Seat <n>:` lines was dealt in, and gets exactly one state line per active game, in ascending seat order. Bounty lines come before squid lines. Line order within a game is as listed.
+Every seat listed in the hand's `Seat <n>:` lines was dealt in, and gets exactly one state line per active bounty or squid game, in ascending seat order. Bounty lines come first, then squid, then 7-2. Line order within a game is as listed. 7-2 lines are different: only players holding 7-2 get a line (see below).
 
 Squid buttons belong to the player, not the seat: a player who leaves the table keeps their buttons and is still paid at settlement. Such a player isn't in the seat lines, so they appear as `Away (<base>)` instead of `Seat <n> (<base>)`. Away lines come after the seated lines, sorted by base name, and only appear while the player holds ≥ 1 button. Bounty never uses `Away`: only players dealt into the hand pay or collect bounties.
 
@@ -50,6 +51,12 @@ Squid game:
     Squid settled: <k> player[s] without a button pay[s] $<value> per button held
     Squid payout: Seat <p> (<payer base>) pays <Seat <h>|Away> (<holder base>) $<amount> for <b> button[s]
 
+7-2 game (only in a hand where at least one player dealt in holds a 7 and a 2):
+
+    7-2 game: $<value> from each player dealt in
+    7-2 hand: Seat <n> (<base>) [<card> <card>] <won|chopped|lost>
+    7-2 payout: Seat <p> (<payer base>) pays Seat <w> (<winner base>) $<amount> for 7-2
+
 Python regexes (anchored, one line each):
 
     SECTION   = r"^\*\*\* SIDE GAME \*\*\*$"
@@ -61,6 +68,9 @@ Python regexes (anchored, one line each):
     S_BUTTONS = r"^Squid buttons: (?:Seat (\d+)|Away) \((.+)\) (\d+) -> (\d+)( won)?$"
     S_SETTLED = r"^Squid settled: (\d+) players? without a button pays? \$(\d+(?:\.\d{1,2})?) per button held$"
     S_PAYOUT  = r"^Squid payout: Seat (\d+) \((.+?)\) pays (?:Seat (\d+)|Away) \((.+?)\) \$(\d+(?:\.\d{1,2})?) for (\d+) buttons?$"
+    T_GAME    = r"^7-2 game: \$(\d+(?:\.\d{1,2})?) from each player dealt in$"
+    T_HAND    = r"^7-2 hand: Seat (\d+) \((.+)\) \[([2-9TJQKA][shdc]) ([2-9TJQKA][shdc])\] (won|chopped|lost)$"
+    T_PAYOUT  = r"^7-2 payout: Seat (\d+) \((.+?)\) pays Seat (\d+) \((.+?)\) \$(\d+(?:\.\d{1,2})?) for 7-2$"
 
 B_SCHED group 1 is a space-separated list of `<level>=$<amount>` pairs. For seated players the seat number is the key within a hand; names in parentheses are the base names (use them for grouping, and cross-check them against the seat lines). In S_BUTTONS and S_PAYOUT the holder's seat group is `None` for an `Away` holder; key those by base name. Payers are always seated.
 
@@ -85,13 +95,21 @@ B_SCHED group 1 is a space-separated list of `<level>=$<amount>` pairs. For seat
   - Example: $200/button, 7 buttons. Player 1 holds 2, players 2–6 hold 1 each, players 7 and 8 hold none. Players 7 and 8 each pay player 1 $400 and each of players 2–6 $200 ($1400 each). Every button is paid twice. If only one player is left without a button, every button is paid once.
 - After a settlement, the next squid hand (if the game continues) starts a new round: `Squid round: <round+1>`, buttons left back to `total`, every count 0, and the `squid` suffixes disappear from names.
 
-### Both games
+### 7-2 game
+
+- While the 7-2 game is on, a hand gets 7-2 lines ONLY if a player dealt in holds a 7 and a 2 (any suits). Hands where nobody holds 7-2 have no 7-2 lines; if no other side game is on either, they have no SIDE GAME section at all and are plain PokerStars hands. So a missing 7-2 line does NOT mean the game was off.
+- `7-2 game` gives the amount every other player dealt in pays the winner. One `7-2 hand` line per holder, in seat order, with their two cards as `<rank><suit>` (`T` for ten). Two players can both hold 7-2.
+- Result, by the same "who won the hand" rule as the other games (sole winner of the main pot on the first board): `won` = sole winner, `chopped` = among several winners, `lost` = everything else, including folding. Whether the holder chose to play the hand is in the actions as usual.
+- Only `won` pays: one `7-2 payout` line from every OTHER seat dealt in, each for the full `value`. A chop pays nothing.
+- Validation: a `7-2 payout` exists exactly for each `won` holder, once per other dealt-in seat, amount = value. The cards on the `7-2 hand` line should match the holder's cards shown elsewhere in the hand, when they are.
+
+### All games
 
 - Side-game payouts happen after the pot is awarded. The next hand on the same stream starts with stacks that already include them. Amounts are the full amounts owed even when larger than the payer's remaining stack (live players top up from their pocket).
 
 ## 5. Validation (warn, never crash)
 
-- The section exists if and only if some name carries a suffix or a side-game line exists. Each seat has exactly one state line per active game. Rebuilding each display name from base + the `before` counts reproduces the seat-line name exactly.
+- The section exists if and only if some name carries a suffix or a side-game line exists (7-2 lines only appear when a 7-2 is dealt). Each seat has exactly one state line per active game. Rebuilding each display name from base + the `before` counts reproduces the seat-line name exactly.
 - Bounty: `after` follows the won/chopped/lost rule. Payouts appear only for `won` seats at qualifying levels, one per other dealt-in seat, with amounts matching the schedule. Chopped seats have no payouts.
 - Squid: the invariant in §4 holds (seated + Away). At most one ` won` flag per hand, never on a seat that tied at showdown. Settlement lines appear exactly when `left_after == 0`, and the payout pairs are complete (every seated non-holder × every holder, Away included). Every holder from the previous hand of the same round appears again, seated or Away.
 - Cross-hand continuity, per stream (video id) in timestamp order: a hand's `before` values should equal the previous side-game hand's `after` values. Hands can be skipped or edited, so report mismatches but don't fail.
@@ -248,12 +266,28 @@ Raver and Nik split the pot. Nobody takes a button, and `buttons left` is unchan
 
 (Run it twice is different: only the first board decides the button, so the first board's sole winner gets ` won` even if the second board went the other way.)
 
+### G. 7-2: raver wins holding 7-2 and collects $200 from each of 3 opponents
+
+    *** SIDE GAME ***
+    7-2 game: $200 from each player dealt in
+    7-2 hand: Seat 2 (raver) [7h 2c] won
+    7-2 payout: Seat 1 (JT) pays Seat 2 (raver) $200 for 7-2
+    7-2 payout: Seat 3 (Nik) pays Seat 2 (raver) $200 for 7-2
+    7-2 payout: Seat 4 (Britney) pays Seat 2 (raver) $200 for 7-2
+
+With the bounty or squid game also on, their lines come first in the same section. A 7-2 that folds or loses shows `lost` and has no payout lines:
+
+    *** SIDE GAME ***
+    7-2 game: $200 from each player dealt in
+    7-2 hand: Seat 4 (Britney) [2d 7d] lost
+
 ## 8. What to build
 
 1. A parser that returns, per hand: hand id, stream video id, timestamp seconds, stakes, button seat, players (seat, display name, BASE name, starting stack), actions, board, showdown, pots, and a `side_game` object:
    `bounty: {schedule: {levels: {3: 300, …}, step: 100}, streaks: [{seat, base, before, after, result}], payouts: [{payer_seat, payer, winner_seat, winner, amount, streak}]}`
    `squid: {round, total, value, mode, left_before, left_after, buttons: [{seat|None, away: bool, base, before, after, won}], settled: bool, payouts: [{payer_seat, payer, holder_seat|None, holder, amount, buttons}]}`
+   `seven_two: {value, holders: [{seat, base, cards: [c1, c2], result}], payouts: [{payer_seat, payer, winner_seat, winner, amount}]}`
    plus `legacy: bool` and a list of validation warnings.
 2. Player grouping by base name across every display variant.
 3. Per-player side-game P&L, kept separate from pot winnings: payouts received − payouts paid, per game, per stream and overall.
-4. Unit tests built from examples A–F (exact parse + zero warnings), from a deliberately broken variant of each (expect the matching warning), and from the `Adam221bounty` legacy case.
+4. Unit tests built from examples A–G (exact parse + zero warnings), from a deliberately broken variant of each (expect the matching warning), and from the `Adam221bounty` legacy case.
