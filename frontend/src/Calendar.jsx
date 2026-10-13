@@ -114,7 +114,7 @@ function streamStatus(s) {
   if ((s.handsCompleted || 0) > 0) return "yellow";
   return "red";
 }
-const STATUS_COLOR = { grey: "#475569", red: "#dc2626", yellow: "#f59e0b", green: "#16a34a" };
+const STATUS_COLOR = { grey: "rgba(232,224,208,.28)", red: "#c67878", yellow: "#c8a85a", green: "#7eb88a" };
 const STATUS_LABEL = { grey: "No stream", red: "Not started", yellow: "In progress", green: "Complete" };
 
 // Build a 6×7 grid (always 42 cells) for the given month, including the
@@ -380,6 +380,7 @@ export default function Calendar({ me, onOpenInBuilder, onResumeStream, refreshM
           return (
             <div
               key={cell.date}
+              className="ui-hover-lift"
               style={{ ...s.cell, ...(cell.inMonth ? {} : s.cellOut), ...(cell.isToday ? s.cellToday : {}) }}
               onClick={() => setSelectedDate(cell.date)}
             >
@@ -477,8 +478,8 @@ function DayPanel({ date, streams, onClose, onAdd, onUpdate, onComplete, onResum
   };
 
   return (
-    <div style={s.drawerOverlay} onClick={onClose}>
-      <div style={s.drawer} onClick={(e) => e.stopPropagation()}>
+    <div className="ui-fade" style={s.drawerOverlay} onClick={onClose}>
+      <div className="ui-slide-left" style={s.drawer} onClick={(e) => e.stopPropagation()}>
         <div style={s.drawerHead}>
           <div>
             <div style={s.drawerTitle}>{fmtDateLong(date)}</div>
@@ -612,8 +613,8 @@ function ImportModal({ onClose, onImport }) {
   };
 
   return (
-    <div style={s.modalOverlay} onClick={onClose}>
-      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+    <div className="ui-fade" style={s.modalOverlay} onClick={onClose}>
+      <div className="ui-pop" style={s.modal} onClick={(e) => e.stopPropagation()}>
         <div style={s.modalHead}>
           <span>Import Stream List</span>
           <button style={s.closeBtn} onClick={onClose}>✕</button>
@@ -657,11 +658,11 @@ const s = {
   page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 32px", color: "var(--text)", fontFamily: "var(--font-ui)" },
 
   // Stats banner
-  banner: { display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 20px", marginBottom: 16 },
+  banner: { display: "flex", flexWrap: "wrap", gap: 18, alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: "14px 20px", marginBottom: 16 },
   statGroup: { display: "flex", gap: 28, flexWrap: "wrap" },
   statBlock: { display: "flex", flexDirection: "column", gap: 3 },
   statLabel: { fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
-  statValue: { fontSize: 20, fontWeight: 800, color: "var(--text-strong)" },
+  statValue: { fontSize: 26, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)", fontVariantNumeric: "tabular-nums" },
   statPct: { fontSize: 13, fontWeight: 700, color: "var(--gain-bright)" },
   statSub: { fontSize: 13, fontWeight: 600, color: "var(--text-mute)" },
   progressWrap: { flex: "1 1 240px", minWidth: 200 },
@@ -673,25 +674,25 @@ const s = {
   toolbar: { display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   monthNav: { display: "flex", alignItems: "center", gap: 10 },
   navArrow: { width: 34, height: 34, borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text)", fontSize: 20, lineHeight: 1, cursor: "pointer" },
-  monthTitle: { fontSize: 18, fontWeight: 800, color: "var(--text-strong)", minWidth: 170, textAlign: "center" },
-  yourMonth: { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "4px 10px" },
+  monthTitle: { fontSize: 28, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)", minWidth: 200, textAlign: "center", letterSpacing: 0.3 },
+  yourMonth: { fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "4px 10px" },
   ownedBy: { fontSize: 10.5, fontWeight: 700, color: "var(--text-2)", background: "var(--raised)", border: "1px solid var(--line-strong)", borderRadius: 3, padding: "4px 10px" },
-  monthDone: { fontSize: 10, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "3px 8px" },
+  monthDone: { fontSize: 10, fontWeight: 600, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "3px 8px" },
   todayBtn: { padding: "7px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   addBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--steel)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  importBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  importBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
 
   // Grid
   weekRow: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 },
   weekCell: { textAlign: "center", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--text-mute)", textTransform: "uppercase" },
   grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "minmax(108px, auto)", gap: 6 },
   cell: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, padding: 6, display: "flex", flexDirection: "column", gap: 4, cursor: "pointer", overflow: "hidden", transition: "border-color .12s" },
-  cellOut: { background: "#0a0d15", opacity: 0.5 },
-  cellToday: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px #f59e0b55" },
+  cellOut: { background: "rgba(8,7,6,.55)", opacity: 0.45 },
+  cellToday: { borderColor: "var(--gold)", boxShadow: "0 0 0 1px rgba(200,168,90,.35), 0 0 18px rgba(200,168,90,.12)" },
   cellHead: { display: "flex", alignItems: "center", justifyContent: "space-between" },
   cellDay: { fontSize: 12, fontWeight: 700, color: "var(--text-dim)" },
   cellDayToday: { background: "var(--gold)", color: "var(--ink)", borderRadius: "50%", width: 20, height: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" },
-  cellMulti: { fontSize: 9, fontWeight: 800, color: "var(--ink)", background: "#7dd3fc", borderRadius: 3, padding: "1px 6px" },
+  cellMulti: { fontSize: 9, fontWeight: 600, color: "var(--ink)", background: "#7dd3fc", borderRadius: 3, padding: "1px 6px" },
   cellStreams: { display: "flex", flexDirection: "column", gap: 3, overflow: "hidden" },
   streamChip: { background: "var(--surface-2)", borderRadius: 3, padding: "3px 5px", overflow: "hidden" },
   chipTitle: { fontSize: 10.5, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
@@ -700,44 +701,44 @@ const s = {
   moreRow: { fontSize: 9.5, color: "var(--text-mute)", fontWeight: 600, paddingLeft: 2 },
 
   // Day drawer
-  drawerOverlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
+  drawerOverlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(2px)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
   drawer: { width: 400, maxWidth: "100%", height: "100%", background: "var(--surface)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
   drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--line)" },
-  drawerTitle: { fontSize: 16, fontWeight: 800, color: "var(--text-strong)" },
+  drawerTitle: { fontSize: 24, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)" },
   drawerSub: { fontSize: 12, color: "var(--text-mute)", marginTop: 2 },
   closeBtn: { width: 30, height: 30, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, cursor: "pointer" },
   drawerBody: { flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 },
   emptyDay: { fontSize: 13, color: "var(--text-mute)", textAlign: "center", padding: "12px 0" },
 
-  streamCard: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 4, padding: 12 },
+  streamCard: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 2, padding: 12 },
   streamCardTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
-  statusBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: "var(--ink)", borderRadius: 3, padding: "2px 8px" },
+  statusBadge: { fontSize: 10, fontWeight: 600, letterSpacing: 0.5, color: "var(--ink)", borderRadius: 3, padding: "2px 8px" },
   miniX: { width: 22, height: 22, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-dim)", fontSize: 11, cursor: "pointer" },
   streamTitle: { fontSize: 14, fontWeight: 700, color: "var(--text-strong)", marginBottom: 3 },
   streamUrl: { display: "block", fontSize: 11, color: "var(--steel)", textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 8 },
   streamMetaRow: { display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-dim)", marginBottom: 8 },
   progressRow: { display: "flex", alignItems: "center", gap: 6, marginBottom: 10 },
   numInput: { width: 64, padding: "5px 7px", background: "var(--field)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text)", fontSize: 12, textAlign: "center", outline: "none" },
-  doneCount: { fontSize: 14, fontWeight: 800, color: "var(--gain-bright)", minWidth: 28, textAlign: "center" },
+  doneCount: { fontSize: 14, fontWeight: 600, color: "var(--gain-bright)", minWidth: 28, textAlign: "center" },
   streamActions: { display: "flex", gap: 8 },
   completeBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  completeOn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", border: "1px solid var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 800, cursor: "pointer" },
+  completeOn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", border: "1px solid var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 600, cursor: "pointer" },
   openBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--steel-deep)", border: "1px solid var(--steel-deep)", color: "var(--text-strong)", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  resumeBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12, fontWeight: 800, cursor: "pointer" },
-  downloadBtn: { display: "block", textAlign: "center", marginTop: 6, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 800, textDecoration: "none" },
+  resumeBtn: { flex: 1, padding: "8px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 12, fontWeight: 600, cursor: "pointer" },
+  downloadBtn: { display: "block", textAlign: "center", marginTop: 6, padding: "8px", borderRadius: 3, background: "var(--gain-deep)", color: "var(--ink)", fontSize: 12, fontWeight: 600, textDecoration: "none" },
 
-  addForm: { background: "var(--surface-2)", border: "1px dashed var(--line-strong)", borderRadius: 4, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
-  addFormTitle: { fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "var(--gold)", marginBottom: 4, textTransform: "uppercase" },
+  addForm: { background: "var(--surface-2)", border: "1px dashed var(--line-strong)", borderRadius: 2, padding: 12, display: "flex", flexDirection: "column", gap: 4 },
+  addFormTitle: { fontSize: 12, fontWeight: 600, letterSpacing: 0.5, color: "var(--gold)", marginBottom: 4, textTransform: "uppercase" },
   fieldLabel: { fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-mute)" },
   textInput: { padding: "8px 10px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", width: "100%", marginBottom: 4 },
-  saveBtn: { flex: 1, padding: "9px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 13, fontWeight: 800, cursor: "pointer" },
+  saveBtn: { flex: 1, padding: "9px", borderRadius: 3, background: "var(--gold-grad)", border: "none", color: "var(--ink)", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   cancelBtn: { flex: 1, padding: "9px", borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
   addAnother: { padding: "9px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--steel)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
 
   // Import modal
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 20 },
+  modalOverlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 20 },
   modal: { width: 580, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 22, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
-  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 16, fontWeight: 800, color: "var(--text-strong)" },
+  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 22, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)" },
   modalNote: { fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 },
   code: { background: "var(--field)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px", fontSize: 11, color: "var(--gold-bright)", fontFamily: "var(--font-mono)" },
   fileBtn: { padding: "8px 14px", borderRadius: 3, background: "var(--raised)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },

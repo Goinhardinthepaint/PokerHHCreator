@@ -31,8 +31,8 @@ export default function Auth({ onAuthed }) {
 
   return (
     <div style={s.page}>
-      <form style={s.card} onSubmit={submit}>
-        <div style={s.brand}><span style={s.chip}>♠</span> POKER SUITE</div>
+      <form className="ui-pop" style={s.card} onSubmit={submit}>
+        <div style={s.brand}><span style={s.chip}>♠</span> <span>Poker <em style={{ color: "var(--gold)" }}>Suite</em></span></div>
         <div style={s.tabs}>
           <button type="button" style={{ ...s.tab, ...(mode === "login" ? s.tabOn : {}) }} onClick={() => { setMode("login"); setError(""); }}>Log in</button>
           <button type="button" style={{ ...s.tab, ...(mode === "register" ? s.tabOn : {}) }} onClick={() => { setMode("register"); setError(""); }}>Register</button>
@@ -53,7 +53,7 @@ export default function Auth({ onAuthed }) {
 
         {error && <div style={s.error}>⚠ {error}</div>}
 
-        <button style={s.submit} disabled={busy || !username || !password}>
+        <button className="ui-sheen" style={s.submit} disabled={busy || !username || !password}>
           {busy ? "…" : mode === "login" ? "Log in" : "Create account"}
         </button>
         <div style={s.hint}>
@@ -68,9 +68,9 @@ export default function Auth({ onAuthed }) {
 }
 
 const s = {
-  page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-ui)" },
-  card: { width: 360, maxWidth: "92vw", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 26, display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 30px 80px rgba(0,0,0,.6)" },
-  brand: { display: "flex", alignItems: "center", gap: 10, fontWeight: 800, letterSpacing: 1.5, fontSize: 18, justifyContent: "center", marginBottom: 8 },
+  page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(ellipse at 50% 35%, #1a1712 0%, var(--bg) 60%)", color: "var(--text)", fontFamily: "var(--font-ui)" },
+  card: { width: 380, maxWidth: "92vw", background: "linear-gradient(180deg, #1a1814 0%, #12110e 100%)", border: "1px solid var(--line-gold)", borderRadius: 3, padding: "30px 28px 26px", display: "flex", flexDirection: "column", gap: 6, boxShadow: "0 30px 80px rgba(0,0,0,.65), 0 0 60px rgba(200,168,90,.06)" },
+  brand: { display: "flex", alignItems: "center", gap: 11, fontWeight: 500, fontFamily: "var(--font-display)", fontSize: 30, justifyContent: "center", marginBottom: 14, color: "var(--text-strong)" },
   chip: { display: "inline-flex", width: 28, height: 28, borderRadius: "50%", background: "var(--gold-grad)", color: "var(--ink)", alignItems: "center", justifyContent: "center", fontSize: 16 },
   tabs: { display: "flex", gap: 6, marginBottom: 10, background: "var(--field)", borderRadius: 3, padding: 4 },
   tab: { flex: 1, padding: "8px", background: "transparent", border: "none", borderRadius: 3, color: "var(--text-dim)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
@@ -78,7 +78,7 @@ const s = {
   label: { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "var(--text-mute)", marginTop: 6 },
   input: { padding: "9px 11px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" },
   error: { marginTop: 8, fontSize: 12.5, color: "var(--loss-bright)", background: "var(--loss-wash)", border: "1px solid var(--loss-deep)", borderRadius: 3, padding: "8px 10px" },
-  submit: { marginTop: 14, padding: "11px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, cursor: "pointer" },
+  submit: { marginTop: 14, padding: "11px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 14, fontWeight: 600, letterSpacing: 0.5, cursor: "pointer" },
   hint: { fontSize: 12, color: "var(--text-mute)", textAlign: "center", marginTop: 10 },
   linkBtn: { background: "none", border: "none", color: "var(--steel)", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 },
 };

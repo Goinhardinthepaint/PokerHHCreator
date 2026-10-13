@@ -2,10 +2,10 @@ import { fmtMoney, fmtMonth } from "./api.js";
 
 const BONUS_LABEL = { full: "Full bonus", half: "Half bonus", forfeited: "Forfeited (errors)", incomplete: "In progress" };
 const BONUS_STYLE = {
-  full: { background: "var(--gain-deep)", color: "var(--ink)" },
-  half: { background: "var(--gold)", color: "var(--ink)" },
-  forfeited: { background: "var(--loss-deep)", color: "var(--loss-bright)" },
-  incomplete: { background: "var(--raised-2)", color: "var(--text-2)" },
+  full: { background: "var(--gain-wash)", color: "var(--gain-bright)", border: "1px solid rgba(126,184,138,.4)" },
+  half: { background: "var(--gold-wash)", color: "var(--gold-bright)", border: "1px solid var(--gold-dim)" },
+  forfeited: { background: "var(--loss-wash)", color: "var(--loss-bright)", border: "1px solid rgba(198,120,120,.4)" },
+  incomplete: { background: "transparent", color: "var(--text-dim)", border: "1px solid var(--line-strong)" },
 };
 
 // Read-only worker dashboard rendered from the /api/me dashboard payload.
@@ -21,7 +21,7 @@ export default function Dashboard({ user, dashboard: d }) {
   const am = d.assigned_month;
   return (
     <div style={st.page}>
-      <h1 style={st.h1}>Welcome, {user.username}</h1>
+      <h1 className="ui-rise" style={st.h1}>Welcome, <em style={{ color: "var(--gold)" }}>{user.username}</em></h1>
 
       {/* headline numbers */}
       <div style={st.cards}>
@@ -117,7 +117,7 @@ export default function Dashboard({ user, dashboard: d }) {
 
 function Stat({ label, value, accent }) {
   return (
-    <div style={st.statCard}>
+    <div className="ui-card" style={st.statCard}>
       <div style={st.statLabel}>{label}</div>
       <div style={{ ...st.statValue, color: accent || "var(--text-strong)" }}>{value}</div>
     </div>
@@ -134,22 +134,22 @@ function Row({ k, v, sub, accent, bold }) {
 
 const st = {
   page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "var(--text)", fontFamily: "var(--font-ui)", maxWidth: 1000, margin: "0 auto", width: "100%", boxSizing: "border-box" },
-  h1: { fontSize: 22, fontWeight: 800, margin: "4px 0 16px" },
+  h1: { fontSize: 34, fontWeight: 500, fontFamily: "var(--font-display)", margin: "6px 0 18px", color: "var(--text-strong)", letterSpacing: 0.2 },
   cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 16 },
-  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px" },
+  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: "14px 16px" },
   statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
-  statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
-  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 16, marginBottom: 16 },
+  statValue: { fontSize: 30, fontWeight: 500, fontFamily: "var(--font-display)", marginTop: 4, fontVariantNumeric: "tabular-nums" },
+  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: 16, marginBottom: 16 },
   monthHead: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" },
-  yourMonthBadge: { fontSize: 10, fontWeight: 800, letterSpacing: 1, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "3px 8px" },
-  monthTitle: { fontSize: 18, fontWeight: 800, color: "var(--text-strong)" },
-  bonusPill: { fontSize: 10.5, fontWeight: 800, borderRadius: 3, padding: "3px 10px" },
+  yourMonthBadge: { fontSize: 10, fontWeight: 600, letterSpacing: 1, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "3px 8px" },
+  monthTitle: { fontSize: 24, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)" },
+  bonusPill: { fontSize: 10.5, fontWeight: 600, borderRadius: 3, padding: "3px 10px" },
   monthSub: { fontSize: 12.5, color: "var(--text-dim)", marginBottom: 8 },
   progressTrack: { height: 10, borderRadius: 3, background: "var(--field)", border: "1px solid var(--line)", overflow: "hidden", marginBottom: 8 },
   progressFill: { height: "100%", background: "linear-gradient(90deg,var(--gold-deep),var(--gold-bright))" },
   monthMeta: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, fontSize: 12.5, color: "var(--text-2)" },
   monthNote: { fontSize: 11.5, color: "var(--text-mute)", marginTop: 8 },
-  panelHead: { fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", marginBottom: 10 },
+  panelHead: { fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", marginBottom: 10 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13.5 },
   rowK: { color: "var(--text-dim)" },
   rowV: { },
@@ -158,7 +158,7 @@ const st = {
   lineRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--line)", fontSize: 13, gap: 10 },
   lineTitle: { color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   lineMeta: { display: "flex", alignItems: "center", gap: 8, color: "var(--text-dim)", whiteSpace: "nowrap" },
-  doneTag: { fontSize: 10, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 6px" },
+  doneTag: { fontSize: 10, fontWeight: 600, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 6px" },
   empty: { fontSize: 12.5, color: "var(--text-mute)", padding: "6px 0" },
   link: { color: "var(--steel)", textDecoration: "none", fontWeight: 600 },
   dim: { color: "var(--text-mute)" },

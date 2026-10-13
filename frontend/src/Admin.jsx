@@ -108,7 +108,7 @@ export default function Admin() {
               {overview.users.map((u) => {
                 const mb = u.month_bonus_detail;
                 return (
-                  <tr key={u.id} style={st.tr} onClick={() => openUser(u.id)}>
+                  <tr key={u.id} className="ui-hover-row" style={st.tr} onClick={() => openUser(u.id)}>
                     <td style={st.td}>{u.username}{u.is_admin ? <span style={st.adminTag}>ADMIN</span> : null}</td>
                     <td style={{ ...st.td, color: "var(--text-dim)" }}>{mb ? `${fmtMonth(mb.month)} · ${BONUS_LABEL[mb.status]}` : "—"}</td>
                     <td style={st.td}>{u.hands}</td>
@@ -328,8 +328,8 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
   };
 
   return (
-    <div style={st.overlay} onClick={onClose}>
-      <div style={st.drawer} onClick={(e) => e.stopPropagation()}>
+    <div className="ui-fade" style={st.overlay} onClick={onClose}>
+      <div className="ui-slide-left" style={st.drawer} onClick={(e) => e.stopPropagation()}>
         {loading || !detail ? (
           <div style={{ padding: 20 }}>Loading…</div>
         ) : (
@@ -358,7 +358,7 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
                     {mb ? (
                       <div style={st.bonusLine}>
                         <span>{fmtMonth(mb.month)} — {mb.hands_done}/{mb.hands_estimated} ({mb.pct}%) · {mb.is_complete ? "complete" : "in progress"}</span>
-                        <span style={{ color: mb.amount ? "var(--gain-bright)" : "var(--text-dim)", fontWeight: 800 }}>{BONUS_LABEL[mb.status]} {fmtMoney(mb.amount)}</span>
+                        <span style={{ color: mb.amount ? "var(--gain-bright)" : "var(--text-dim)", fontWeight: 600 }}>{BONUS_LABEL[mb.status]} {fmtMoney(mb.amount)}</span>
                       </div>
                     ) : <div style={st.dim}>No month assigned.</div>}
                     <div style={st.bonusLine}>
@@ -439,7 +439,7 @@ function UserDetail({ detail, loading, onClose, onPaid }) {
 
 function Stat({ label, value, accent }) {
   return (
-    <div style={st.statCard}>
+    <div className="ui-card" style={st.statCard}>
       <div style={st.statLabel}>{label}</div>
       <div style={{ ...st.statValue, color: accent || "var(--text-strong)" }}>{value}</div>
     </div>
@@ -457,23 +457,23 @@ function Mini({ k, v, c }) {
 const st = {
   page: { flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 24px 40px", color: "var(--text)", fontFamily: "var(--font-ui)", maxWidth: 1040, margin: "0 auto", width: "100%", boxSizing: "border-box" },
   headRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  h1: { fontSize: 22, fontWeight: 800, margin: 0 },
-  exportBtn: { padding: "9px 16px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 13, fontWeight: 800, cursor: "pointer", textDecoration: "none" },
+  h1: { fontSize: 34, fontWeight: 500, fontFamily: "var(--font-display)", margin: 0, color: "var(--text-strong)" },
+  exportBtn: { padding: "9px 16px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "none" },
   cards: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 16 },
-  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px" },
+  statCard: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: "14px 16px" },
   statLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--text-mute)" },
-  statValue: { fontSize: 24, fontWeight: 800, marginTop: 4 },
+  statValue: { fontSize: 30, fontWeight: 500, fontFamily: "var(--font-display)", marginTop: 4, fontVariantNumeric: "tabular-nums" },
   tabs: { display: "flex", gap: 6, marginBottom: 12 },
   tab: { padding: "8px 16px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text-dim)", fontSize: 13, fontWeight: 700, cursor: "pointer" },
   tabOn: { background: "var(--raised)", color: "var(--text-strong)", borderColor: "var(--line-strong)" },
-  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: 8 },
+  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: 8 },
   table: { width: "100%", borderCollapse: "collapse" },
   thr: { borderBottom: "1px solid var(--line)" },
   th: { textAlign: "left", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--text-mute)", padding: "8px 10px" },
   tr: { cursor: "pointer", borderBottom: "1px solid var(--line)" },
   td: { padding: "9px 10px", fontSize: 13 },
-  adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 800, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "1px 5px" },
-  importPanel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 4, padding: "12px 16px", marginBottom: 16 },
+  adminTag: { marginLeft: 6, fontSize: 9, fontWeight: 600, color: "var(--ink)", background: "var(--gold)", borderRadius: 3, padding: "1px 5px" },
+  importPanel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 2, padding: "12px 16px", marginBottom: 16 },
   importRow: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "8px 0" },
   fileBtn: { display: "inline-block", padding: "8px 14px", background: "var(--raised)", border: "1px solid var(--line-strong)", borderRadius: 3, color: "var(--text-2)", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
   importArea: { width: "100%", minHeight: 110, boxSizing: "border-box", padding: "10px 11px", background: "var(--bg-deep)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--gold-pale)", fontSize: 11.5, fontFamily: "var(--font-mono)", lineHeight: 1.5, resize: "vertical", outline: "none" },
@@ -484,9 +484,9 @@ const st = {
   delBtn: { padding: "5px 9px", background: "var(--loss-wash)", border: "1px solid var(--loss-deep)", borderRadius: 3, color: "var(--loss-bright)", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
   streamRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "10px", borderBottom: "1px solid var(--line)" },
   monthRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "12px 10px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" },
-  monthTitle: { fontSize: 14, fontWeight: 800, color: "var(--text-strong)", display: "flex", alignItems: "center", gap: 8, marginBottom: 3 },
-  completeTag: { fontSize: 9.5, fontWeight: 800, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 7px" },
-  neglectTag: { fontSize: 9.5, fontWeight: 800, color: "var(--loss-bright)", background: "var(--loss-deep)", borderRadius: 3, padding: "1px 7px" },
+  monthTitle: { fontSize: 18, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)", display: "flex", alignItems: "center", gap: 8, marginBottom: 3 },
+  completeTag: { fontSize: 9.5, fontWeight: 600, color: "var(--ink)", background: "var(--gain-deep)", borderRadius: 3, padding: "1px 7px" },
+  neglectTag: { fontSize: 9.5, fontWeight: 600, color: "var(--loss-bright)", background: "var(--loss-deep)", borderRadius: 3, padding: "1px 7px" },
   monthMeta: { fontSize: 11.5, color: "var(--text-dim)", marginBottom: 6 },
   progressTrack: { height: 7, borderRadius: 3, background: "var(--field)", border: "1px solid var(--line)", overflow: "hidden", maxWidth: 360 },
   progressFill: { height: "100%", background: "linear-gradient(90deg,var(--gold-deep),var(--gold-bright))" },
@@ -495,26 +495,26 @@ const st = {
   bonusLine: { display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: "var(--text-2)" },
   streamTitle: { fontSize: 13.5, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   streamMeta: { fontSize: 11.5, color: "var(--text-dim)", marginTop: 2 },
-  badge: { fontSize: 10, fontWeight: 800, color: "var(--ink)", borderRadius: 3, padding: "3px 9px", whiteSpace: "nowrap" },
+  badge: { fontSize: 10, fontWeight: 600, color: "var(--ink)", borderRadius: 3, padding: "3px 9px", whiteSpace: "nowrap" },
   empty: { fontSize: 12.5, color: "var(--text-mute)", padding: 12 },
 
-  overlay: { position: "fixed", inset: 0, background: "rgba(6,5,4,.6)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
+  overlay: { position: "fixed", inset: 0, background: "var(--overlay)", backdropFilter: "blur(2px)", zIndex: 120, display: "flex", justifyContent: "flex-end" },
   drawer: { width: 460, maxWidth: "100%", height: "100%", background: "var(--surface)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(0,0,0,.5)" },
   drawerHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--line)" },
-  drawerTitle: { fontSize: 17, fontWeight: 800 },
+  drawerTitle: { fontSize: 26, fontWeight: 500, fontFamily: "var(--font-display)", color: "var(--text-strong)" },
   drawerSub: { fontSize: 12, color: "var(--text-mute)", marginTop: 2 },
   closeBtn: { width: 30, height: 30, borderRadius: 3, background: "var(--raised-2)", border: "1px solid var(--line-strong)", color: "var(--text-2)", fontSize: 13, cursor: "pointer" },
   drawerBody: { flex: 1, overflowY: "auto", padding: 16 },
   miniStats: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 12 },
   mini: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 3, padding: "8px 6px", textAlign: "center" },
   miniK: { fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-mute)" },
-  miniV: { fontSize: 15, fontWeight: 800, marginTop: 2 },
-  section: { fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", margin: "14px 0 8px" },
+  miniV: { fontSize: 19, fontWeight: 500, fontFamily: "var(--font-display)", marginTop: 2, fontVariantNumeric: "tabular-nums" },
+  section: { fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)", margin: "14px 0 8px" },
   handsHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  dlBtn: { padding: "6px 12px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 11.5, fontWeight: 800, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" },
+  dlBtn: { padding: "6px 12px", background: "var(--gain-deep)", color: "var(--ink)", border: "none", borderRadius: 3, fontSize: 11.5, fontWeight: 600, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" },
   payForm: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" },
   input: { flex: 1, minWidth: 80, padding: "8px 9px", background: "var(--field)", border: "1px solid var(--line)", borderRadius: 3, color: "var(--text)", fontSize: 13, outline: "none", boxSizing: "border-box" },
-  payBtn: { padding: "8px 14px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  payBtn: { padding: "8px 14px", background: "var(--gold-grad)", border: "none", borderRadius: 3, color: "var(--ink)", fontSize: 12.5, fontWeight: 600, cursor: "pointer" },
   payRow: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid var(--line)" },
   handBlock: { borderBottom: "1px solid var(--line)" },
   handRow: { display: "flex", justifyContent: "space-between", padding: "8px 2px", fontSize: 12.5, cursor: "pointer", color: "var(--text-2)" },
