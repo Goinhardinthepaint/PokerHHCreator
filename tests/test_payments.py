@@ -240,3 +240,16 @@ def test_seven_two_lines_and_the_payout_quarter(env):
     lost = {**SEVEN_TWO_PAID, "rows": [{**SEVEN_TWO_PAID["rows"][0], "result": "lost"}], "payouts": []}
     quiet = submit(c, hand=_side_hand({"seven_two": lost}), timestamp_seconds=22).get_json()["earnings"]
     assert paid == round(plain + 0.25, 2) and quiet == plain
+
+
+def test_a_credit_counts_in_totals_and_square_ups_from_its_date(env):
+    _, auth_db = env
+    uid, _ = new_worker(env)
+    add_hand(auth_db, uid, "StreamDDDDD", 1, "2026-10-08T20:00:00+00:00", pieces=10)          # $0.40
+    auth_db.add_credit(uid, 5.50, "duplicates already paid", "2026-10-09T05:00:00+00:00")
+    auth_db.add_credit(uid, 2.00, "later credit", "2026-10-12T15:00:00+00:00")
+    d = auth_db.user_dashboard(uid)
+    assert d["credits"] == 7.50 and d["total"] == round(0.40 + 7.50, 2) and d["hands"] == 1
+    assert [c["note"] for c in d["credit_items"]] == ["duplicates already paid", "later credit"]
+    s = auth_db.earned_through(uid, date(2026, 10, 9))
+    assert s["credits"] == 5.50 and s["earned"] == 5.90

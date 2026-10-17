@@ -82,8 +82,9 @@ def now_iso():
 
 
 # A row that counts as a worker's hand (paid, counted, exported). Other types:
-# 'tutorial_bonus' (a one-off $1 credit) and 'duplicate' (a second copy of a
-# hand that was already saved; kept for the record, never paid or counted).
+# 'tutorial_bonus' (a one-off $1 credit), 'credit' (an earnings adjustment, see
+# add_credit) and 'duplicate' (a second copy of a hand that was already saved;
+# kept for the record, never paid or counted).
 HAND_ROW = "COALESCE(type,'hand') = 'hand'"
 H_HAND_ROW = "COALESCE(h.type,'hand') = 'hand'"
 
@@ -927,6 +928,11 @@ def _earnings_breakdown(conn, user_id):
         "SELECT COALESCE(SUM(earnings),0) AS b FROM hands WHERE user_id = ? AND type = 'tutorial_bonus'",
         (user_id,),
     ).fetchone()["b"]
+    credit_rows = conn.execute(
+        "SELECT earnings, pt4_text AS note, created_at FROM hands WHERE user_id = ? AND type = 'credit' ORDER BY id",
+        (user_id,),
+    ).fetchall()
+    credits = round(sum(r["earnings"] or 0 for r in credit_rows), 2)
 
     # Stream bonus = $0.05 per the user's hands that live in a completed stream.
     bonus_hands = conn.execute(
@@ -947,7 +953,7 @@ def _earnings_breakdown(conn, user_id):
     base = round(cards_income + actions_income + completion + side_game_bonus, 2)
     months = _month_bonuses(conn, user_id, hands)
     month_bonus = round(sum(m["amount"] for m in months), 2)
-    total = round(base + stream_bonus + month_bonus + tutorial_bonus, 2)
+    total = round(base + stream_bonus + month_bonus + tutorial_bonus + credits, 2)
     return {
         "hands": hands,
         "pieces": cards + actions,
@@ -963,6 +969,9 @@ def _earnings_breakdown(conn, user_id):
         "month_bonus_detail": months[0] if months else None,  # newest assigned month
         "month_bonuses": months,
         "tutorial_bonus": round(tutorial_bonus, 2),
+        "credits": credits,
+        "credit_items": [{"amount": round(r["earnings"] or 0, 2), "note": r["note"] or "", "date": (r["created_at"] or "")[:10]}
+                         for r in credit_rows],
         "base": base,
         "total": total,
         "paid": round(paid, 2),
@@ -1223,6 +1232,21 @@ def record_payment(user_id, amount, date, note):
     conn.close()
 
 
+def add_credit(user_id, amount, note, created_at=None):
+    """Add money a worker is owed that isn't a hand: an earnings adjustment
+    (negative takes money back). Stored like the tutorial bonus, as a hands row
+    of type 'credit' with the note in pt4_text, so it counts in every total
+    and in a square-up from its date on. `created_at` dates it (UTC ISO)."""
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO hands (user_id, stream_id, youtube_url, timestamp_seconds, pt4_text, "
+        "cards_count, actions_count, earnings, type, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (user_id, None, None, 0, note or "", 0, 0, round(float(amount), 2), "credit", created_at or now_iso()),
+    )
+    conn.commit()
+    conn.close()
+
+
 def mark_duplicate_hands(conn=None):
     """Mark second copies of an already-saved hand as type 'duplicate': the same
     worker, stream, timestamp and identical hand-history text, keeping the
@@ -1259,17 +1283,20 @@ def earned_through(user_id, through):
         "COALESCE(h.side_payouts,0) AS side_payouts, "
         "h.earnings AS earnings, h.created_at AS created_at, s.is_complete AS done, s.completed_at AS done_at "
         "FROM hands h LEFT JOIN streams s ON s.id = h.stream_id "
-        "WHERE h.user_id = ? AND COALESCE(h.type,'hand') IN ('hand','tutorial_bonus')",
+        "WHERE h.user_id = ? AND COALESCE(h.type,'hand') IN ('hand','tutorial_bonus','credit')",
         (user_id,),
     ).fetchall()
     hands = cards = actions = bonus_hands = side_payouts = 0
-    tutorial = 0.0
+    tutorial = credits = 0.0
     for r in rows:
         t = _parse_ts(r["created_at"])
         if not t or t >= cutoff:
             continue
         if r["type"] == "tutorial_bonus":
             tutorial += r["earnings"] or 0
+            continue
+        if r["type"] == "credit":
+            credits += r["earnings"] or 0
             continue
         hands += 1
         cards += r["cards"] or 0
@@ -1290,11 +1317,11 @@ def earned_through(user_id, through):
         "SELECT COALESCE(SUM(amount),0) AS p FROM payments WHERE user_id = ?", (user_id,)
     ).fetchone()["p"]
     conn.close()
-    earned = round(base + stream_bonus + month_bonus + tutorial, 2)
+    earned = round(base + stream_bonus + month_bonus + tutorial + credits, 2)
     return {
         "through": str(through)[:10], "hands": hands, "base": base,
         "stream_bonus": stream_bonus, "month_bonus": month_bonus,
-        "tutorial_bonus": round(tutorial, 2), "earned": earned,
+        "tutorial_bonus": round(tutorial, 2), "credits": round(credits, 2), "earned": earned,
         "paid": round(paid, 2), "to_pay": round(earned - paid, 2),
     }
 

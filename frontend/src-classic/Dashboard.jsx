@@ -65,6 +65,7 @@ export default function Dashboard({ user, dashboard: d }) {
         <Row k="Side-game payouts" v={fmtMoney(d.side_game_bonus || 0)} sub={`${d.side_payouts || 0} × $0.25 (bounty paid / squid round settled)`} accent="#fbbf24" />
         <Row k="Stream bonuses" v={fmtMoney(d.stream_bonus)} sub="$0.05/hand once a stream is marked complete" accent="#fbbf24" />
         <Row k="Month bonus" v={fmtMoney(d.month_bonus)} sub={am ? `${fmtMonth(am.month)} · ${BONUS_LABEL[am.status]}` : "no month assigned"} accent="#fbbf24" />
+        {d.credits ? <Row k="Adjustments" v={fmtMoney(d.credits)} sub={(d.credit_items || []).map((c) => c.note).filter(Boolean).join(" · ") || "credits"} accent="#fbbf24" /> : null}
         {d.tutorial_bonus > 0 && <Row k="Tutorial bonus" v={fmtMoney(d.tutorial_bonus)} sub="onboarding reward" accent="#fbbf24" />}
         <div style={st.divider} />
         <Row k="Base" v={fmtMoney(d.base)} />
